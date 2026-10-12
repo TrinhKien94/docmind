@@ -1,0 +1,34 @@
+# ============================================================
+# DocMind doc-service-py — OPTIONAL heavy ML deps
+# ------------------------------------------------------------
+# This file is NOT installed in CI and NOT required to boot the service.
+# Every engine in app/engines/ lazy-imports its real library inside parse()
+# wrapped in try/except ImportError and ALWAYS falls back to deterministic
+# stub canonical blocks when the import (or model) is unavailable.
+#
+# Install only when you want real parsing on a prepared machine:
+#   python -m pip install -r requirements-ml.txt
+#
+# CPU-only. No GPU anywhere. Models are downloaded lazily on first real use.
+# NOTE: pins are indicative; verify platform wheels before pinning hard.
+# MinerU is intentionally DEFERRED (license to be verified) and is NOT a
+# valid parse_engine in the canonical contract.
+# ============================================================
+
+# Text-based simple PDFs — fast text extraction.
+pymupdf>=1.24.0
+
+# Text-based complex PDFs — structural parsing (tables, layout, formulas).
+docling>=2.0.0
+
+# Scanned pages / images — OCR + PP-Structure (CPU build of PaddlePaddle).
+paddlepaddle==2.6.1          # CPU wheel
+paddleocr>=2.9.0
+
+# PDF classification (text vs scanned vs mixed) — firecrawl pdf-inspector.
+# Package/binding name may differ per release; adjust when integrating.
+# firecrawl-pdf-inspector
+
+# Embeddings / rerank experiments (CPU). The Java service owns production
+# embeddings; this is here only for local parser-side experiments.
+sentence-transformers>=3.0.0

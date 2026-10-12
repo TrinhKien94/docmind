@@ -1,0 +1,16 @@
+# Keep the build context small and reproducible.
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+tests/
+artifacts/
+debug/
+requirements-ml.txt
+*.md
+.git/
+.gitignore
+.env
+.env.*

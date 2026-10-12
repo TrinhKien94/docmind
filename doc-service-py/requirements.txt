@@ -1,0 +1,28 @@
+# ============================================================
+# DocMind doc-service-py — BASE runtime (CI installs ONLY this file)
+# These are the only deps needed to boot the service and pass tests.
+# Heavy/uncertain ML deps live in requirements-ml.txt (optional) and are
+# LAZY-imported behind stub engines, so the service runs with no models.
+# ============================================================
+
+# Floor pins (>=) so pip resolves wheels for the host Python (CI/Docker use
+# 3.11; local dev may be newer). Pydantic 2.11+ ships cp314 wheels.
+fastapi>=0.115.6
+uvicorn[standard]>=0.34.0
+pydantic>=2.11.0
+pydantic-settings>=2.7.1
+python-multipart>=0.0.20
+
+# Magic-byte MIME sniffing. We ship our own byte-signature sniffer in
+# app/validation.py (works with no native libmagic), and OPTIONALLY use
+# python-magic when libmagic is present on the host for extra coverage.
+# python-magic is pure-python bindings; libmagic1 is installed in Docker.
+python-magic>=0.4.27
+
+# Structured JSON logging (one JSON object per line) with context binding.
+structlog>=24.4.0
+
+# Test runner (kept here so `pip install -r requirements.txt` enables pytest;
+# it is dev-only but lightweight and lets CI run tests from the base file).
+pytest>=8.3.4
+httpx>=0.28.1
