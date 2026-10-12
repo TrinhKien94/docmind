@@ -1,0 +1,64 @@
+package com.example.docmind.controller;
+
+import com.example.docmind.dto.DocumentStatusResponse;
+import com.example.docmind.dto.DocumentUploadResponse;
+import com.example.docmind.service.DocumentService;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.Map;
+
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/** Controller slice test cho /api/documents (DocumentService mock). */
+@WebMvcTest(DocumentController.class)
+class DocumentControllerTest {
+
+    @Autowired
+    private MockMvc mockMvc;
+
+    @MockitoBean
+    private DocumentService documentService;
+
+    @Test
+    void uploadReturns201WithDocumentAndJobId() throws Exception {
+        when(documentService.upload(any()))
+                .thenReturn(new DocumentUploadResponse("doc-123", "job-456", "PARSING"));
+
+        MockMultipartFile file = new MockMultipartFile(
+                "file", "notes.pdf", MediaType.APPLICATION_PDF_VALUE,
+                "%PDF-1.4 sample".getBytes());
+
+        mockMvc.perform(multipart("/api/documents").file(file))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.document_id").value("doc-123"))
+                .andExpect(jsonPath("$.job_id").value("job-456"))
+                .andExpect(jsonPath("$.status").value("PARSING"))
+                // Correlation id phải được sinh và echo ra response header (MDC chain).
+                .andExpect(header().exists("X-Correlation-Id"));
+    }
+
+    @Test
+    void getStatusReturnsDocumentStatus() throws Exception {
+        when(documentService.getStatus("doc-123"))
+                .thenReturn(new DocumentStatusResponse("doc-123", "notes.pdf", "READY", 3,
+                        Map.of("pymupdf", 2, "docling", 1)));
+
+        mockMvc.perform(get("/api/documents/doc-123"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("READY"))
+                .andExpect(jsonPath("$.pages").value(3))
+                .andExpect(jsonPath("$.engine_breakdown.pymupdf").value(2));
+    }
+}

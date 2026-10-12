@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Structured JSON logging cho DocMind api-java.
+  Mỗi dòng log là 1 JSON object mang chuỗi correlation (correlation_id, document_id,
+  job_id, stage) lấy từ SLF4J MDC — để sau này truy vết lỗi xuyên suốt các stage:
+  validate / detect-mime / submit-parse / poll-job / normalize / chunk / embed /
+  retrieve / rerank / citation-validate.
+
+  Dùng ch.qos.logback JsonEncoder (có sẵn trong Boot, không cần dependency ngoài)
+  với includeMdc để mọi key MDC tự xuất hiện trong JSON.
+-->
+<configuration>
+    <springProperty scope="context" name="LOG_LEVEL" source="logging.level.root" defaultValue="INFO"/>
+
+    <appender name="JSON" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="ch.qos.logback.classic.encoder.JsonEncoder">
+            <withSequenceNumber>false</withSequenceNumber>
+            <withArguments>false</withArguments>
+            <withMessage>true</withMessage>
+            <withLoggerName>true</withLoggerName>
+            <withLevel>true</withLevel>
+            <withThreadName>true</withThreadName>
+            <withMDC>true</withMDC>
+            <withThrowable>true</withThrowable>
+            <withContext>false</withContext>
+        </encoder>
+    </appender>
+
+    <root level="${LOG_LEVEL}">
+        <appender-ref ref="JSON"/>
+    </root>
+</configuration>
