@@ -23,6 +23,7 @@ from __future__ import annotations
 import time
 import uuid
 
+from app.engines import office_parser
 from app.engines.base import EngineAdapter, PageKind, ParseContext
 from app.logging_config import get_logger, stage_context
 from app.schema import Block, BlockType, ParseEngine
@@ -266,20 +267,175 @@ class PaddleOcrEngine(_BaseEngine):
 
 
 class OfficeEngine(_BaseEngine):
-    """Native parsing for docx/pptx/xlsx/md/html + web (no heavy models)."""
+    """Native parsing for docx/xlsx (real) + pptx/doc/md/html/web (stub).
+
+    Real paths lazy-import python-docx / openpyxl via ``app.engines.office_parser``
+    and build canonical blocks there. If the backing library is missing, or the
+    real parse raises, we log and fall back to :meth:`_sample_blocks` so the
+    service still boots and the job still completes (base-class contract: this
+    method MUST NOT raise). Legacy ``.doc`` / OOXML ``.pptx`` are intentionally
+    stub-only — real pptx parsing is out of scope.
+    """
 
     name = ParseEngine.OFFICE.value
     version = "stub-office-0.1"
     _real_module = ""  # office parsing uses stdlib/light libs, no ML model
 
+    # OOXML MIMEs that have a real parser (mirrors router._OFFICE_MIMES subset).
+    _DOCX_MIME = (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+    _XLSX_MIME = (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
     def supports(self, page_kind: PageKind) -> bool:
         return page_kind in (PageKind.OFFICE, PageKind.WEB)
+
+    def _format(self, ctx: ParseContext) -> str:
+        """Return 'docx' | 'xlsx' | 'stub' from the detected mime (+ filename).
+
+        Magic-byte mime is authoritative (see validation.detect_mime); the
+        filename extension is a secondary tiebreak when the mime is a generic
+        zip/ole value that the sniffer could not disambiguate.
+        """
+        mime = ctx.mime or ""
+        if mime == self._DOCX_MIME:
+            return "docx"
+        if mime == self._XLSX_MIME:
+            return "xlsx"
+        name = (ctx.filename or "").lower()
+        if mime in ("application/zip", "application/octet-stream"):
+            if name.endswith(".docx"):
+                return "docx"
+            if name.endswith(".xlsx"):
+                return "xlsx"
+        return "stub"
+
+    def _make_block_factory(self, ctx: ParseContext):
+        """Return a ``mk`` closure that stamps the office field-value contract.
+
+        Office formats have no page coordinates, so ``bbox`` is the zero sentinel
+        ``(0.0, 0.0, 0.0, 0.0)``; ``confidence`` is 1.0 (native extraction, not
+        OCR); ``latex`` is always None (no formula blocks); ``page`` is ctx.page
+        (always 1 for office). The caller passes a monotonic ``local_index`` so
+        ``order = ctx.order_start + local_index`` stays monotonic within the call.
+        """
+
+        def mk(
+            local_index: int,
+            *,
+            type: BlockType,
+            text: str,
+            markdown: str,
+            html: str,
+            heading_path: list[str],
+            parse_version: str,
+        ) -> Block:
+            return Block(
+                block_id=_block_id(ctx.document_id, ctx.page, local_index),
+                page=ctx.page,
+                order=ctx.order_start + local_index,
+                type=type,
+                text=text,
+                markdown=markdown,
+                html=html,
+                latex=None,  # office never produces formula blocks
+                bbox=(0.0, 0.0, 0.0, 0.0),  # office formats expose no coordinates
+                confidence=1.0,  # native text extraction, not OCR
+                heading_path=heading_path,
+                parse_engine=self.name,
+                parse_version=parse_version,
+            )
+
+        return mk
 
     def parse(self, payload: bytes, ctx: ParseContext) -> list[Block]:
         started = time.perf_counter()
         with stage_context(engine=self.name, page=ctx.page):
-            # No heavy lib to import for office/web; always real-ish stub output.
-            return self._emit(self._sample_blocks(ctx), ctx, started)
+            fmt = self._format(ctx)
+
+            if fmt == "stub":
+                # Legacy .doc / .ppt / .pptx / md / txt / web -> stub blocks.
+                log.info(
+                    "office stub path (real parsing out of scope for this type)",
+                    stage="parse",
+                    engine=self.name,
+                    page=ctx.page,
+                    mime=ctx.mime,
+                )
+                return self._emit(self._sample_blocks(ctx), ctx, started)
+
+            if fmt == "docx":
+                if office_parser.load_docx() is None:
+                    log.info(
+                        "engine falling back to stub (lib unavailable)",
+                        stage="parse",
+                        engine=self.name,
+                        page=ctx.page,
+                        detail="python-docx not installed",
+                    )
+                    return self._emit(self._sample_blocks(ctx), ctx, started)
+                try:
+                    mk = self._make_block_factory(ctx)
+                    blocks = office_parser.parse_docx(payload, mk)
+                    parse_version = (
+                        blocks[0].parse_version if blocks else "python-docx-?"
+                    )
+                    log.info(
+                        "office parsed docx",
+                        stage="parse",
+                        engine=self.name,
+                        page=ctx.page,
+                        library=parse_version,
+                        block_count=len(blocks),
+                    )
+                    return self._emit(blocks, ctx, started)
+                except Exception as exc:  # corrupt file / unexpected lib error
+                    log.warning(
+                        "office real parse failed; using stub",
+                        stage="parse",
+                        engine=self.name,
+                        page=ctx.page,
+                        error=str(exc),
+                    )
+                    return self._emit(self._sample_blocks(ctx), ctx, started)
+
+            # fmt == "xlsx"
+            if office_parser.load_openpyxl() is None:
+                log.info(
+                    "engine falling back to stub (lib unavailable)",
+                    stage="parse",
+                    engine=self.name,
+                    page=ctx.page,
+                    detail="openpyxl not installed",
+                )
+                return self._emit(self._sample_blocks(ctx), ctx, started)
+            try:
+                mk = self._make_block_factory(ctx)
+                meta: dict = {}
+                blocks = office_parser.parse_xlsx(payload, mk, meta)
+                log.info(
+                    "office parsed xlsx",
+                    stage="parse",
+                    engine=self.name,
+                    page=ctx.page,
+                    library=meta.get("library", "openpyxl-?"),
+                    sheet_names=meta.get("sheet_names", []),
+                    sheet_rows=meta.get("sheet_rows", {}),
+                    truncated_sheets=meta.get("truncated_sheets", []),
+                    block_count=len(blocks),
+                )
+                return self._emit(blocks, ctx, started)
+            except Exception as exc:  # corrupt file / unexpected lib error
+                log.warning(
+                    "office real parse failed; using stub",
+                    stage="parse",
+                    engine=self.name,
+                    page=ctx.page,
+                    error=str(exc),
+                )
+                return self._emit(self._sample_blocks(ctx), ctx, started)
 
     def _sample_blocks(self, ctx: ParseContext) -> list[Block]:
         title = f"{ctx.filename}"
