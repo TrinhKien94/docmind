@@ -92,11 +92,11 @@ docker compose -f docmind/docker-compose.yml up --build
 
 ### `api-java` (orchestrator) — ingest async + chat
 
-| Method | Path                      | Purpose |
-|--------|---------------------------|---------|
-| POST   | `/v1/documents`           | Upload a file -> starts ingest. Returns **202** with `{ "job_id": "..." }`. |
-| GET    | `/v1/documents/{jobId}`   | Ingest job status (mirrors parser states + indexing). |
-| POST   | `/v1/chat`                | Ask a question. Request `{ "question": "...", "document_ids": [...] }`; response includes the answer and `citations[]` referencing `document_id` + `page` + `bbox` + `block_ids`. |
+| Method | Path                     | Purpose |
+|--------|--------------------------|---------|
+| POST   | `/api/documents`         | Upload a file (`multipart/form-data`, field `file`) -> starts ingest. Returns **201** with `{ "document_id": "...", "job_id": "...", "status": "..." }`. |
+| GET    | `/api/documents/{id}`    | Ingest job status (mirrors parser states + indexing). |
+| POST   | `/api/chat`              | Ask a question. Request `{ "question": "...", "document_ids": [...], "top_k": N }`; response includes the answer and `citations[]` referencing `document_id` + `page` + `bbox` + `block_ids`. |
 
 The exact block/chunk fields these endpoints exchange are defined in
 [`docs/canonical-schema.md`](docs/canonical-schema.md) — read that first.
@@ -106,7 +106,7 @@ The exact block/chunk fields these endpoints exchange are defined in
 ## Ingest flow
 
 ```
-upload (POST /v1/documents to api-java)
+upload (POST /api/documents to api-java)
    |
    v
 validate / hash (sha256) / detect mime     [antivirus hook: later]
@@ -136,7 +136,7 @@ embedding + BM25 index  (pgvector + text index in Postgres)
 ## Chat flow (Java-only; never calls Python)
 
 ```
-question (POST /v1/chat to api-java)
+question (POST /api/chat to api-java)
    |
    v
 embed query + BM25 query  (hybrid)
