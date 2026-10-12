@@ -1,0 +1,42 @@
+# ============================================================
+# DocMind — gitignore (monorepo: Java api-java + Python doc-service-py)
+# ============================================================
+
+### Environment / secrets ###
+.env
+*.env.local
+# Chỉ commit bản mẫu .env.example
+!.env.example
+
+### Java / Maven (api-java) ###
+target/
+HELP.md
+.mvn/wrapper/maven-wrapper.jar
+!**/src/main/**/target/
+!**/src/test/**/target/
+
+### Python (doc-service-py) ###
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.pytest_cache/
+
+### DocMind debug artifacts (render ảnh, JSON trung gian) ###
+artifacts/
+debug/
+
+### IDE / editor ###
+.idea/
+*.iml
+*.iws
+*.ipr
+.vscode/
+.classpath
+.project
+.settings/
+
+### OS ###
+.DS_Store
+Thumbs.db

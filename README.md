@@ -1,0 +1,187 @@
+# DocMind
+
+A document-grounded RAG system (NotebookLLM-style): upload documents, then ask
+questions answered **only** from what was uploaded, with citations back to the
+exact page / block. DocMind lives inside the `digital-spirituality` monorepo
+alongside the sibling `horoscope` service.
+
+---
+
+## Architecture
+
+Two services plus Postgres:
+
+- **`api-java`** — Spring Boot 4 **orchestrator** and the **chat / RAG brain**.
+  Owns the database (via Flyway + JPA), the ingest job lifecycle, chunking,
+  embedding + BM25 indexing, hybrid retrieval, reranking, LLM answer generation,
+  and citation validation. Listens on **port 8090**.
+- **`doc-service-py`** — FastAPI **document parser**. Takes a raw file and returns
+  canonical blocks (see [`docs/canonical-schema.md`](docs/canonical-schema.md)).
+  It routes a file to the right engine (PyMuPDF / Docling / PaddleOCR+PP-Structure
+  for scans / native office parsers), then normalizes everything into the shared
+  canonical schema. Listens on **port 8091**.
+- **`postgres`** — PostgreSQL 16 + **pgvector** (host **port 5433** -> 5432).
+
+**The chat path is Java-only.** During chat, `api-java` reads already-parsed,
+already-indexed data from Postgres and talks to the LLM/embedding providers
+itself. It **never calls** `doc-service-py` on the chat path — the Python service
+is only involved during **ingest**.
+
+```
+                 upload / chat (HTTP)
+                         |
+                         v
++--------------------------------------------------+
+|  api-java (8090)  — orchestrator + chat/RAG      |
+|  ingest jobs | chunking | embedding | BM25 |     |
+|  hybrid retrieval | rerank | LLM | citations     |
++------------------+------------------+------------+
+                   |                  |
+   parse (ingest   |                  | SQL + pgvector
+    only)          v                  v
+     +---------------------+   +---------------------+
+     | doc-service-py 8091 |   |  postgres 5433->5432|
+     |  parser + OCR +     |   |  pgvector extension |
+     |  canonical blocks   |   |  Flyway-owned tables|
+     +---------------------+   +---------------------+
+```
+
+### Deviation from the sibling `horoscope` project
+
+`horoscope` runs Spring Boot 3.3.11 with Redis and **no SQL database**. DocMind
+intentionally deviates: **Spring Boot 4.0.0** and **PostgreSQL + pgvector +
+Flyway + JPA**. Any steering that mentions a different Spring Boot patch version
+or MySQL does **not** apply to DocMind's datastore. We keep the `horoscope`
+conventions that still fit: Maven `mvnw` wrapper, `${ENV_VAR:default}` config
+style, committed `.env.example` + gitignored `.env`.
+
+---
+
+## Running with docker compose
+
+Ports: **8090** api · **8091** doc-service · **5433** postgres (host).
+
+```bash
+# 1) create your local secrets file
+cp docmind/.env.example docmind/.env   # (Windows: copy)
+
+# 2) validate the compose file (no daemon needed)
+docker compose -f docmind/docker-compose.yml config
+
+# 3) bring everything up
+docker compose -f docmind/docker-compose.yml up --build
+```
+
+> The `api-java` and `doc-service-py` build contexts and their Dockerfiles are
+> filled in by FEAT-003 / FEAT-002. `docker compose config` validates the file
+> itself and does not require those Dockerfiles.
+
+---
+
+## REST API contract
+
+### `doc-service-py` (parser) — async job pattern
+
+| Method | Path                     | Purpose |
+|--------|--------------------------|---------|
+| GET    | `/healthz`               | Liveness. |
+| GET    | `/readyz`                | Readiness (dependencies / lazy models). |
+| POST   | `/v1/parse`              | Submit a file for parsing. Returns **202** with `{ "job_id": "..." }`. |
+| GET    | `/v1/jobs/{id}`          | Job status: `queued` \| `running` \| `succeeded` \| `failed`. |
+| GET    | `/v1/jobs/{id}/result`   | Canonical `Document` JSON (see canonical schema) once `succeeded`. |
+
+### `api-java` (orchestrator) — ingest async + chat
+
+| Method | Path                      | Purpose |
+|--------|---------------------------|---------|
+| POST   | `/v1/documents`           | Upload a file -> starts ingest. Returns **202** with `{ "job_id": "..." }`. |
+| GET    | `/v1/documents/{jobId}`   | Ingest job status (mirrors parser states + indexing). |
+| POST   | `/v1/chat`                | Ask a question. Request `{ "question": "...", "document_ids": [...] }`; response includes the answer and `citations[]` referencing `document_id` + `page` + `bbox` + `block_ids`. |
+
+The exact block/chunk fields these endpoints exchange are defined in
+[`docs/canonical-schema.md`](docs/canonical-schema.md) — read that first.
+
+---
+
+## Ingest flow
+
+```
+upload (POST /v1/documents to api-java)
+   |
+   v
+validate / hash (sha256) / detect mime     [antivirus hook: later]
+   |
+   v
+api-java calls doc-service-py POST /v1/parse  -> 202 job_id
+   |
+   v
+doc-service-py routes by file type:
+   .md/.html/.docx/.pptx/.xlsx -> office parser
+   .pdf -> classify:
+       text simple   -> pymupdf
+       text complex  -> docling
+       scanned       -> paddleocr (render page -> OCR + PP-Structure)
+       mixed         -> per page: text parser or paddleocr
+   |
+   v
+Normalizer -> canonical Document { blocks[] }  (see canonical-schema.md)
+   |
+   v
+api-java: chunk (inherit document_id/heading_path/block_ids/page/bbox)
+   |
+   v
+embedding + BM25 index  (pgvector + text index in Postgres)
+```
+
+## Chat flow (Java-only; never calls Python)
+
+```
+question (POST /v1/chat to api-java)
+   |
+   v
+embed query + BM25 query  (hybrid)
+   |
+   v
+hybrid retrieval over Postgres (pgvector + BM25)
+   |
+   v
+reranker
+   |
+   v
+LLM answer with citations  (LLM via Gemini key, or stub LLM if no key)
+   |
+   v
+citation validation (answer spans must map to retrieved chunks)
+```
+
+---
+
+## Observability / correlation-id model
+
+Every ingest and chat request carries a **correlation id** (generated by
+`api-java` if absent, propagated to `doc-service-py` as a header, and attached
+to the parse job). Both services emit **structured JSON logs** that include the
+correlation id, the `job_id`, the service name, and the stage, so a single
+request can be traced end-to-end across Java -> Python -> Postgres. This is
+deliberate: the pipeline has many stages, so logs must make it obvious **where**
+a failure happened. Log level is controlled by `DOCMIND_LOG_LEVEL`.
+
+---
+
+## Deliberate scope notes
+
+- **MinerU is intentionally DEFERRED** until its license is verified. It is not
+  wired into the parser router and is **not** a valid `parse_engine` value in the
+  canonical schema. PyMuPDF / Docling / PaddleOCR / office parsers cover the
+  current paths.
+- **Formula handling targets LaTeX output.** A `formula` block carries its LaTeX
+  in the `latex` field (non-null only for `type == "formula"`); see the canonical
+  schema for the exact rule.
+- **Chat uses a stub LLM** until a Gemini API key is set via `GEMINI_API_KEYS`,
+  so the system boots and answers (with placeholder generation) with no key.
+- Heavy ML dependencies in the Python service are **lazy-imported behind stubs**
+  so the service boots and tests pass CPU-only without model downloads.
+
+See [`db/README.md`](db/README.md) for the init-SQL vs. Flyway ownership split
+and [`docs/canonical-schema.md`](docs/canonical-schema.md) for the shared data
+contract.

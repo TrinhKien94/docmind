@@ -1,0 +1,71 @@
+# ============================================================
+# DocMind — docker-compose
+#   postgres        : PostgreSQL 16 + pgvector (host 5433 -> 5432)
+#   doc-service-py  : FastAPI document parser (host 8091)
+#   api-java        : Spring Boot 4 orchestrator + chat/RAG (host 8090)
+# Validate without a running daemon:
+#   docker compose -f docmind/docker-compose.yml config
+# NOTE: api-java/ and doc-service-py/ build contexts exist now; their
+# Dockerfiles are added in FEAT-003 / FEAT-002. `docker compose config`
+# only validates the file and does not require the Dockerfiles yet.
+# ============================================================
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: docmind-postgres
+    environment:
+      POSTGRES_DB: docmind
+      POSTGRES_USER: docmind
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-docmind}
+    ports:
+      # Host 5433 tránh đụng Postgres cục bộ (5432) nếu có.
+      - "5433:5432"
+    volumes:
+      - docmind-pgdata:/var/lib/postgresql/data
+      # Chỉ chạy một lần khi khởi tạo volume: bật extension vector.
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U docmind -d docmind"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  doc-service-py:
+    build: ./doc-service-py
+    container_name: docmind-doc-service
+    ports:
+      - "8091:8091"
+    environment:
+      - DOCMIND_LOG_LEVEL=${DOCMIND_LOG_LEVEL:-INFO}
+      # false = không ghi artifact debug (ảnh render, JSON trung gian) ra đĩa.
+      - DOCMIND_PERSIST_ARTIFACTS=${DOCMIND_PERSIST_ARTIFACTS:-false}
+    restart: unless-stopped
+
+  api-java:
+    build: ./api-java
+    container_name: docmind-api
+    ports:
+      - "8090:8090"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      doc-service-py:
+        condition: service_started
+    env_file:
+      - ./.env
+    environment:
+      # Trong mạng compose dùng hostname service + cổng nội bộ 5432.
+      - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/docmind}
+      - SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME:-docmind}
+      - SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-docmind}}
+      - DOC_SERVICE_BASE_URL=${DOC_SERVICE_BASE_URL:-http://doc-service-py:8091}
+      # Trống mặc định -> chat dùng LLM stub cho tới khi gắn key Gemini.
+      - GEMINI_API_KEYS=${GEMINI_API_KEYS:-}
+      - DOCMIND_LOG_LEVEL=${DOCMIND_LOG_LEVEL:-INFO}
+    restart: unless-stopped
+
+volumes:
+  docmind-pgdata:
