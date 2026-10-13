@@ -61,8 +61,13 @@ services:
       - SPRING_DATASOURCE_URL=${SPRING_DATASOURCE_URL:-jdbc:postgresql://postgres:5432/docmind}
       - SPRING_DATASOURCE_USERNAME=${SPRING_DATASOURCE_USERNAME:-docmind}
       - SPRING_DATASOURCE_PASSWORD=${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD:-docmind}}
-      - DOC_SERVICE_BASE_URL=${DOC_SERVICE_BASE_URL:-http://doc-service-py:8091}
-      # Trống mặc định -> chat dùng LLM stub cho tới khi gắn key Gemini.
+      # 9Router -> Codex GPT-6 Astra integration
+      - NINEROUTER_ENABLED=${NINEROUTER_ENABLED:-true}
+      - NINEROUTER_BASE_URL=${NINEROUTER_BASE_URL:-http://host.docker.internal:20128/v1}
+      - NINEROUTER_API_KEY=${NINEROUTER_API_KEY:-sk-9af495182557ea7e-713jdu-0feaf415}
+      - NINEROUTER_MODEL=${NINEROUTER_MODEL:-codex/gpt-6-astra}
+      - CODEX_RELAY_URL=${CODEX_RELAY_URL:-http://host.docker.internal:11500/v1}
+      # Trống mặc định -> chat dùng 9Router/Codex hoặc stub cho tới khi gắn key Gemini.
       - GEMINI_API_KEYS=${GEMINI_API_KEYS:-}
       - DOCMIND_LOG_LEVEL=${DOCMIND_LOG_LEVEL:-INFO}
     restart: unless-stopped

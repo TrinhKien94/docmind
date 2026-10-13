@@ -125,7 +125,7 @@ hybrid retrieval over Postgres (pgvector + BM25)
 reranker
    |
    v
-LLM answer with citations  (LLM via Gemini key, or stub LLM if no key)
+LLM answer with citations  (9Router -> Codex GPT-6 Astra, Gemini key, or stub LLM)
    |
    v
 citation validation (answer spans must map to retrieved chunks)
@@ -147,6 +147,7 @@ a failure happened. Log level is controlled by `DOCMIND_LOG_LEVEL`.
 
 ## Deliberate scope notes
 
+- **Tích hợp 9Router + Codex (GPT-6 Astra)**: Hệ thống định tuyến mặc định luồng sinh câu trả lời RAG qua **9Router** (`http://127.0.0.1:20128/v1`) với model `codex/gpt-6-astra`, bảo lưu nguyên vẹn setting config hiện tại của OpenAI Codex CLI và `ch-relay` (`127.0.0.1:11500`). Khi 9Router chưa bật hoặc cần dự phòng, `NineRouterLlmClient` tự động chuyển tiếp an toàn (fallback) sang direct Codex relay hoặc stub mà không làm gián đoạn luồng chat. Script khởi chạy tiện ích đi kèm: `start_9router.ps1`.
 - **MinerU is intentionally DEFERRED** until its license is verified. It is not
   wired into the parser router and is **not** a valid `parse_engine` value in the
   canonical schema. PyMuPDF / Docling / PaddleOCR / office parsers cover the
@@ -154,8 +155,8 @@ a failure happened. Log level is controlled by `DOCMIND_LOG_LEVEL`.
 - **Formula handling targets LaTeX output.** A `formula` block carries its LaTeX
   in the `latex` field (non-null only for `type == "formula"`); see the canonical
   schema for the exact rule.
-- **Chat uses a stub LLM** until a Gemini API key is set via `GEMINI_API_KEYS`,
-  so the system boots and answers (with placeholder generation) with no key.
+- **Chat uses 9Router / Codex** mặc định, hoặc Gemini nếu cấu hình `GEMINI_API_KEYS`,
+  hoặc stub LLM nếu tắt cả hai, đảm bảo hệ thống luôn khởi động và trả lời mà không bị chết.
 - Heavy ML dependencies in the Python service are **lazy-imported behind stubs**
   so the service boots and tests pass CPU-only without model downloads.
 
