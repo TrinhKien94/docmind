@@ -1,9 +1,9 @@
 /**
  * DocMind API Service Layer
- * Tương tác với backend Spring Boot (cổng 8090) qua /api
+ * Tương tác với backend Spring Boot (cổng 8090) qua VITE_API_BASE_URL hoặc /api
  */
 
-const API_BASE = '/api'
+const API_BASE = import.meta.env?.VITE_API_BASE_URL || '/api'
 
 export const api = {
   /**
@@ -108,7 +108,7 @@ export const api = {
 
   /**
    * Tư vấn & chăm sóc khách hàng sử dụng prompt được huấn luyện trước
-   * (người dùng đóng vai trò khách hàng mua hàng hoặc sử dụng dịch vụ)
+   * kết hợp tự tiến hoá học hỏi EvoAgentX.
    * POST /api/customer-chat
    */
   async customerChat({
@@ -161,13 +161,80 @@ export const api = {
   },
 
   /**
-   * Lấy thông tin bộ prompt & kịch bản khách hàng được huấn luyện trước
+   * Lấy thông tin bộ prompt & kịch bản khách hàng được huấn luyện trước từ cấu hình backend
    * GET /api/customer-chat/prompts
    */
   async getCustomerPrompts() {
     const res = await fetch(`${API_BASE}/customer-chat/prompts`)
     if (!res.ok) {
       throw new Error(`Không thể lấy thông tin prompt khách hàng (HTTP ${res.status})`)
+    }
+    return await res.json()
+  },
+
+  /**
+   * Lấy trạng thái tự tiến hoá học hỏi EvoAgentX và danh sách quy tắc đã học
+   * GET /api/customer-chat/evolution
+   */
+  async getCustomerEvolution() {
+    const res = await fetch(`${API_BASE}/customer-chat/evolution`)
+    if (!res.ok) {
+      throw new Error(`Không thể lấy trạng thái tự tiến hoá (HTTP ${res.status})`)
+    }
+    return await res.json()
+  },
+
+  /**
+   * Gửi đánh giá / phản hồi của khách hàng sau lần chat để cập nhật TextGrad & MIPRO
+   * POST /api/customer-chat/feedback
+   */
+  async submitCustomerFeedback({
+    interactionId,
+    question,
+    answer,
+    scenario,
+    rating,
+    helpful,
+    feedback
+  }) {
+    const res = await fetch(`${API_BASE}/customer-chat/feedback`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
+      body: JSON.stringify({
+        interaction_id: interactionId,
+        question,
+        answer,
+        scenario,
+        rating,
+        helpful,
+        feedback
+      })
+    })
+
+    if (!res.ok) {
+      throw new Error(`Không thể gửi phản hồi khách hàng (HTTP ${res.status})`)
+    }
+    return await res.json()
+  },
+
+  /**
+   * Kích hoạt chủ động một chu kỳ tự tiến hoá EvoAgentX
+   * POST /api/customer-chat/evolve
+   */
+  async triggerCustomerEvolution(scenario) {
+    const res = await fetch(`${API_BASE}/customer-chat/evolve`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json'
+      },
+      body: JSON.stringify(scenario ? { scenario } : {})
+    })
+    if (!res.ok) {
+      throw new Error(`Không thể kích hoạt chu kỳ tiến hoá (HTTP ${res.status})`)
     }
     return await res.json()
   }

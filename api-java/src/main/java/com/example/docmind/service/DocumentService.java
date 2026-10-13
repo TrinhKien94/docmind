@@ -6,6 +6,7 @@ import com.example.docmind.client.model.CanonicalDocument;
 import com.example.docmind.client.model.JobStatusResponse;
 import com.example.docmind.client.model.ParseSubmitResponse;
 import com.example.docmind.config.DocServiceProperties;
+import com.example.docmind.config.UploadProperties;
 import com.example.docmind.dto.DocumentStatusResponse;
 import com.example.docmind.dto.DocumentUploadResponse;
 import com.example.docmind.entity.BlockEntity;
@@ -21,6 +22,7 @@ import tools.jackson.core.JacksonException;
 import tools.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -51,6 +53,7 @@ public class DocumentService {
     private final EmbeddingClient embeddingClient;
     private final DocServiceProperties docServiceProps;
     private final ObjectMapper objectMapper;
+    private final UploadProperties uploadProps;
 
     public DocumentService(DocumentRepository documentRepository,
                            BlockRepository blockRepository,
@@ -59,6 +62,19 @@ public class DocumentService {
                            EmbeddingClient embeddingClient,
                            DocServiceProperties docServiceProps,
                            ObjectMapper objectMapper) {
+        this(documentRepository, blockRepository, chunkRepository, docServiceClient,
+                embeddingClient, docServiceProps, objectMapper, new UploadProperties());
+    }
+
+    @Autowired
+    public DocumentService(DocumentRepository documentRepository,
+                           BlockRepository blockRepository,
+                           ChunkRepository chunkRepository,
+                           DocServiceClient docServiceClient,
+                           EmbeddingClient embeddingClient,
+                           DocServiceProperties docServiceProps,
+                           ObjectMapper objectMapper,
+                           UploadProperties uploadProps) {
         this.documentRepository = documentRepository;
         this.blockRepository = blockRepository;
         this.chunkRepository = chunkRepository;
@@ -66,6 +82,7 @@ public class DocumentService {
         this.embeddingClient = embeddingClient;
         this.docServiceProps = docServiceProps;
         this.objectMapper = objectMapper;
+        this.uploadProps = uploadProps != null ? uploadProps : new UploadProperties();
     }
 
     /** Upload: validate + hash + persist + submit parse. Trả về 201 payload. */
@@ -80,7 +97,10 @@ public class DocumentService {
         } catch (IOException e) {
             throw new IllegalStateException("Không đọc được file upload", e);
         }
-        String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : "upload";
+        String fallbackName = (uploadProps.getDefaultFilename() != null && !uploadProps.getDefaultFilename().isBlank())
+                ? uploadProps.getDefaultFilename().strip()
+                : "upload";
+        String originalName = file.getOriginalFilename() != null ? file.getOriginalFilename() : fallbackName;
 
         // stage=validate + detect-mime (magic-byte, KHÔNG theo đuôi file).
         CorrelationIds.setStage("validate");
@@ -90,7 +110,7 @@ public class DocumentService {
         CorrelationIds.setStage("detect-mime");
         String mime = FileValidation.detectMime(bytes, originalName);
         log.info("detect-mime detected={}", mime);
-        FileValidation.requireSupported(mime);
+        FileValidation.requireSupported(mime, uploadProps.getAllowedMimes());
         CorrelationIds.clearStage();
 
         // Dedup theo sha256: nếu đã có, trả lại document hiện tại (không parse lại).

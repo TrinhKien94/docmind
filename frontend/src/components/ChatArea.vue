@@ -15,7 +15,7 @@
             </h3>
             <p class="context-subtitle">
               <span v-if="chatMode === 'customer'">
-                Vai trò: <strong>Khách hàng mua hàng / sử dụng dịch vụ</strong> · Prompt huấn luyện sẵn
+                Vai trò: <strong>Khách hàng mua hàng / sử dụng dịch vụ</strong> · Prompt huấn luyện sẵn · 🧬 <strong>EvoAgentX Gen #{{ evolutionGen }}</strong>
                 <template v-if="selectedDocs.length > 0"> + {{ selectedDocs.length }} tài liệu</template>
               </span>
               <span v-else-if="selectedDocs.length > 0">
@@ -181,6 +181,25 @@
                   </svg>
                   <span>{{ copiedIndex === index ? 'Đã sao chép' : 'Sao chép' }}</span>
                 </button>
+
+                <template v-if="chatMode === 'customer'">
+                  <button
+                    class="action-btn"
+                    :disabled="!!msg.feedbackSubmitted"
+                    title="Đánh giá hữu ích để EvoAgentX chắt lọc mẫu Few-Shot (MIPRO)"
+                    @click="emit('submit-feedback', { index, helpful: true, rating: 5 })"
+                  >
+                    <span>👍 {{ msg.feedbackSubmitted === 'positive' ? 'Đã ghi nhận hữu ích' : 'Hữu ích' }}</span>
+                  </button>
+                  <button
+                    class="action-btn"
+                    :disabled="!!msg.feedbackSubmitted"
+                    title="Báo cần cải thiện để EvoAgentX sinh quy tắc TextGrad mới"
+                    @click="emit('submit-feedback', { index, helpful: false, rating: 2, feedback: 'Cần trả lời chi tiết, rõ ràng và bám sát nhu cầu khách hàng hơn' })"
+                  >
+                    <span>👎 {{ msg.feedbackSubmitted === 'negative' ? 'Đã gửi phản tư TextGrad' : 'Cần cải thiện' }}</span>
+                  </button>
+                </template>
               </div>
             </div>
           </div>
@@ -266,10 +285,14 @@ const props = defineProps({
   isAsking: {
     type: Boolean,
     default: false
+  },
+  evolutionGen: {
+    type: Number,
+    default: 0
   }
 })
 
-const emit = defineEmits(['ask-question', 'clear-chat'])
+const emit = defineEmits(['ask-question', 'submit-feedback', 'clear-chat'])
 
 const chatMode = ref('customer')
 const selectedScenario = ref('AUTO')

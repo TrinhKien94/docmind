@@ -2,6 +2,10 @@ package com.example.docmind.controller;
 
 import com.example.docmind.dto.Citation;
 import com.example.docmind.dto.CustomerChatResponse;
+import com.example.docmind.dto.CustomerEvolutionStatusResponse;
+import com.example.docmind.dto.CustomerEvolutionStatusResponse.EvolvedExampleInfo;
+import com.example.docmind.dto.CustomerEvolutionStatusResponse.LearnedGuidelineInfo;
+import com.example.docmind.dto.CustomerEvolutionStatusResponse.TextualGradientInfo;
 import com.example.docmind.dto.CustomerPromptTemplateResponse;
 import com.example.docmind.service.CustomerChatService;
 import com.example.docmind.service.retrieval.CustomerScenario;
@@ -13,15 +17,18 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Controller slice test cho API tư vấn khách hàng dùng prompt huấn luyện trước. */
+/** Controller slice test cho API tư vấn khách hàng dùng prompt huấn luyện trước và EvoAgentX. */
 @WebMvcTest(CustomerChatController.class)
 class CustomerChatControllerTest {
 
@@ -46,7 +53,10 @@ class CustomerChatControllerTest {
                 "customer-sales-service-v1",
                 "9router:codex/gpt-6-astra",
                 CustomerScenario.SALES.suggestedQuestions(),
-                List.of(citation)
+                List.of(citation),
+                "ix-sales-001",
+                2,
+                3
         );
         when(customerChatService.chat(any())).thenReturn(mockResp);
 
@@ -71,7 +81,10 @@ class CustomerChatControllerTest {
                 .andExpect(jsonPath("$.prompt_template_id").value("customer-sales-service-v1"))
                 .andExpect(jsonPath("$.model").value("9router:codex/gpt-6-astra"))
                 .andExpect(jsonPath("$.suggested_questions").isArray())
-                .andExpect(jsonPath("$.citations[0].chunk_id").value("chunk-sales-1"));
+                .andExpect(jsonPath("$.citations[0].chunk_id").value("chunk-sales-1"))
+                .andExpect(jsonPath("$.interaction_id").value("ix-sales-001"))
+                .andExpect(jsonPath("$.evolution_generation").value(2))
+                .andExpect(jsonPath("$.applied_learned_guidelines").value(3));
     }
 
     @Test
@@ -187,5 +200,78 @@ class CustomerChatControllerTest {
                 .andExpect(jsonPath("$.scenarios").isArray())
                 .andExpect(jsonPath("$.scenarios.length()").value(5))
                 .andExpect(jsonPath("$.sample_prompt_preview").isNotEmpty());
+    }
+
+    @Test
+    void evolutionEndpointsGetStatusSubmitFeedbackTriggerEvolveAndReset() throws Exception {
+        CustomerEvolutionStatusResponse statusResp = new CustomerEvolutionStatusResponse(
+                true,
+                "evoagentx-textgrad-mipro",
+                3,
+                12,
+                4,
+                0.88,
+                Map.of("SALES", List.of(new LearnedGuidelineInfo(
+                        "g-001", "SALES", "Luôn nêu rõ ưu đãi gói năm",
+                        "TextGrad critique", 0.92, 3, "hash-001", "2026-10-14T00:00:00Z"))),
+                Map.of("SALES", List.of(new EvolvedExampleInfo(
+                        "ex-001", "SALES", "Gói Pro giá sao?", "Dạ gói Pro 499k/tháng [1].",
+                        0.95, 2, "hash-ex-001", "2026-10-14T00:00:00Z"))),
+                List.of(new TextualGradientInfo(
+                        "ix-001", "SALES", "Gói Pro giá sao?", 0.65,
+                        "Thiếu thông tin chiết khấu năm", "Bổ sung thông tin chiết khấu năm",
+                        "CREATED_GUIDELINE", "2026-10-14T00:00:00Z"))
+        );
+
+        when(customerChatService.getEvolutionStatus()).thenReturn(statusResp);
+        when(customerChatService.submitFeedback(any())).thenReturn(statusResp);
+        when(customerChatService.triggerEvolution(eq("SALES"))).thenReturn(statusResp);
+
+        CustomerEvolutionStatusResponse resetResp = new CustomerEvolutionStatusResponse(
+                true, "evoagentx-textgrad-mipro", 0, 0, 0, 0.0, Map.of(), Map.of(), List.of());
+        when(customerChatService.resetEvolution()).thenReturn(resetResp);
+
+        mockMvc.perform(get("/api/customer-chat/evolution"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.strategy").value("evoagentx-textgrad-mipro"))
+                .andExpect(jsonPath("$.evolution_generation").value(3))
+                .andExpect(jsonPath("$.learned_guidelines.SALES[0].rule").value("Luôn nêu rõ ưu đãi gói năm"));
+
+        mockMvc.perform(post("/api/customer-chat/feedback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "interaction_id": "ix-001",
+                                  "scenario": "SALES",
+                                  "rating": 5,
+                                  "helpful": true,
+                                  "feedback": "Tư vấn rất nhiệt tình!"
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.evolution_generation").value(3));
+
+        // Rating vượt ngưỡng 1..5 -> 400 Bad Request
+        mockMvc.perform(post("/api/customer-chat/feedback")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "interaction_id": "ix-001",
+                                  "rating": 99
+                                }
+                                """))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/customer-chat/evolve")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"scenario\": \"SALES\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.strategy").value("evoagentx-textgrad-mipro"));
+
+        mockMvc.perform(delete("/api/customer-chat/evolution"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.evolution_generation").value(0))
+                .andExpect(jsonPath("$.learned_guidelines").isEmpty());
     }
 }

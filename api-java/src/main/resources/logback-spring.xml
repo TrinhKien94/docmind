@@ -4,10 +4,10 @@
   Mỗi dòng log là 1 JSON object mang chuỗi correlation (correlation_id, document_id,
   job_id, stage) lấy từ SLF4J MDC — để sau này truy vết lỗi xuyên suốt các stage:
   validate / detect-mime / submit-parse / poll-job / normalize / chunk / embed /
-  retrieve / rerank / citation-validate.
+  retrieve / rerank / citation-validate / customer-chat.
 
   Dùng ch.qos.logback JsonEncoder (có sẵn trong Boot, không cần dependency ngoài)
-  với includeMdc để mọi key MDC tự xuất hiện trong JSON.
+  với withFormattedMessage=true để nội suy đầy đủ các tham số {} trong log.
 -->
 <configuration>
     <springProperty scope="context" name="LOG_LEVEL" source="logging.level.root" defaultValue="INFO"/>
@@ -16,7 +16,8 @@
         <encoder class="ch.qos.logback.classic.encoder.JsonEncoder">
             <withSequenceNumber>false</withSequenceNumber>
             <withArguments>false</withArguments>
-            <withMessage>true</withMessage>
+            <withMessage>false</withMessage>
+            <withFormattedMessage>true</withFormattedMessage>
             <withLoggerName>true</withLoggerName>
             <withLevel>true</withLevel>
             <withThreadName>true</withThreadName>

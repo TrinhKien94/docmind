@@ -4,10 +4,15 @@ import com.example.docmind.config.CustomerSupportProperties;
 import com.example.docmind.dto.Citation;
 import com.example.docmind.dto.CustomerChatRequest;
 import com.example.docmind.dto.CustomerChatResponse;
+import com.example.docmind.dto.CustomerEvolutionStatusResponse;
+import com.example.docmind.dto.CustomerEvolutionStatusResponse.EvolvedExampleInfo;
+import com.example.docmind.dto.CustomerEvolutionStatusResponse.LearnedGuidelineInfo;
+import com.example.docmind.dto.CustomerFeedbackRequest;
 import com.example.docmind.dto.CustomerPromptTemplateResponse;
 import com.example.docmind.entity.DocumentEntity;
 import com.example.docmind.repository.DocumentRepository;
 import com.example.docmind.repository.RetrievedChunk;
+import com.example.docmind.service.evolution.CustomerSelfEvolutionService;
 import com.example.docmind.service.llm.LlmClient;
 import com.example.docmind.service.retrieval.CustomerPromptBuilder;
 import com.example.docmind.service.retrieval.CustomerScenario;
@@ -27,52 +32,80 @@ import java.util.UUID;
 
 /**
  * Service xử lý API trả lời người dùng đóng vai trò khách hàng mua hàng hoặc sử dụng dịch vụ
- * bằng bộ prompt được huấn luyện trước ({@link CustomerPromptBuilder}).
+ * bằng bộ prompt được huấn luyện trước ({@link CustomerPromptBuilder}) kết hợp chiến lược
+ * tự tiến hoá học hỏi sau các lần chat ({@link CustomerSelfEvolutionService} - EvoAgentX).
  *
  * <p>Kết hợp:
  * <ol>
  *   <li>Nhận diện kịch bản khách hàng (Mua hàng, Sử dụng dịch vụ, Bảo hành/Đổi trả, Đơn hàng/Thanh toán).</li>
  *   <li>Hybrid RAG retrieval trên tài liệu chỉ định hoặc tự động lấy các tài liệu READY trong hệ thống.</li>
- *   <li>Dựng prompt được huấn luyện trước (Persona + Scenario Playbook + Few-Shot + Store Policy + RAG Context).</li>
- *   <li>Gọi LLM (9Router Codex GPT-6 Astra mặc định, hoặc Gemini/Stub) và kiểm tra tính hợp lệ của citations.</li>
+ *   <li>Truy xuất các quy tắc đã học (Learned Guidelines) và mẫu hội thoại tiến hoá (Evolved Few-Shots) từ EvoAgentX engine.</li>
+ *   <li>Dựng prompt được huấn luyện trước + tri thức tự tiến hoá + RAG Context.</li>
+ *   <li>Gọi LLM (9Router Codex GPT-6 Astra mặc định, hoặc Gemini/Stub), kiểm tra citations và thực thi bước tự tiến hoá sau chat.</li>
  * </ol>
  */
 @Service
 public class CustomerChatService {
 
     private static final Logger log = LoggerFactory.getLogger(CustomerChatService.class);
-    private static final int SNIPPET_MAX = 240;
 
     private final RetrievalService retrievalService;
     private final DocumentRepository documentRepository;
     private final LlmClient llmClient;
     private final CustomerSupportProperties customerProps;
+    private final CustomerSelfEvolutionService evolutionService;
+
+    /**
+     * Constructor 4 tham số giữ tương thích ngược cho các unit test hiện hữu.
+     */
+    public CustomerChatService(RetrievalService retrievalService,
+                               DocumentRepository documentRepository,
+                               LlmClient llmClient,
+                               CustomerSupportProperties customerProps) {
+        this(retrievalService, documentRepository, llmClient, customerProps,
+                new CustomerSelfEvolutionService(customerProps, llmClient));
+    }
 
     @Autowired
     public CustomerChatService(RetrievalService retrievalService,
                                DocumentRepository documentRepository,
                                LlmClient llmClient,
-                               CustomerSupportProperties customerProps) {
+                               CustomerSupportProperties customerProps,
+                               CustomerSelfEvolutionService evolutionService) {
         this.retrievalService = retrievalService;
         this.documentRepository = documentRepository;
         this.llmClient = llmClient;
-        this.customerProps = customerProps;
+        this.customerProps = customerProps != null ? customerProps : new CustomerSupportProperties();
+        this.evolutionService = evolutionService != null
+                ? evolutionService
+                : new CustomerSelfEvolutionService(this.customerProps, llmClient);
     }
 
     public CustomerChatResponse chat(CustomerChatRequest request) {
         if (request == null || !request.isQuestionProvided()) {
             throw new IllegalArgumentException("question hoặc message của khách hàng không được để trống");
         }
-        if (request.topK() != null && (request.topK() < 1 || request.topK() > 50)) {
-            throw new IllegalArgumentException("top_k phải nằm trong khoảng từ 1 đến 50");
+        int minTopK = customerProps.getMinTopK() > 0 ? customerProps.getMinTopK() : 1;
+        int maxTopK = customerProps.getMaxTopK() >= minTopK ? customerProps.getMaxTopK() : 50;
+        if (request.topK() != null && (request.topK() < minTopK || request.topK() > maxTopK)) {
+            throw new IllegalArgumentException(
+                    "top_k phải nằm trong khoảng từ " + minTopK + " đến " + maxTopK);
         }
 
         String question = request.resolvedQuestion();
-        CustomerScenario scenario = CustomerScenario.resolve(request.scenario(), question);
+        CustomerScenario scenario = CustomerScenario.resolve(request.scenario(), question, customerProps);
+        List<CustomerScenario> secondaryScenarios =
+                CustomerScenario.detectSecondaryScenarios(question, scenario, customerProps);
+
+        String defaultRole = (customerProps.getDefaultCustomerRole() != null
+                && !customerProps.getDefaultCustomerRole().isBlank())
+                ? customerProps.getDefaultCustomerRole().strip()
+                : CustomerPromptBuilder.DEFAULT_CUSTOMER_ROLE;
         String customerRole = (request.customerRole() != null && !request.customerRole().isBlank())
                 ? request.customerRole().strip()
-                : CustomerPromptBuilder.DEFAULT_CUSTOMER_ROLE;
-        int defaultTopK = (customerProps.getDefaultTopK() >= 1 && customerProps.getDefaultTopK() <= 50)
+                : defaultRole;
+
+        int defaultTopK = (customerProps.getDefaultTopK() >= minTopK && customerProps.getDefaultTopK() <= maxTopK)
                 ? customerProps.getDefaultTopK()
                 : 5;
         int topK = request.topK() != null ? request.topK() : defaultTopK;
@@ -80,8 +113,15 @@ public class CustomerChatService {
         // 1) Truy xuất ngữ cảnh tài liệu (nếu khách hàng truyền document_ids hoặc tự động tìm tài liệu READY).
         List<ReciprocalRankFusion.FusedChunk> fused = retrieveChunksForCustomer(request.documentIds(), question, topK);
 
-        // 2) Dựng prompt được huấn luyện trước cho vai trò tư vấn khách hàng mua hàng / sử dụng dịch vụ.
-        String prompt = CustomerPromptBuilder.build(request, scenario, customerProps, fused);
+        // 2) Lấy tri thức đã tiến hoá từ EvoAgentX Self-Evolution Engine cho kịch bản hiện tại.
+        List<LearnedGuidelineInfo> activeGuidelines =
+                evolutionService.getActiveGuidelinesForScenario(scenario);
+        List<EvolvedExampleInfo> activeExamples =
+                evolutionService.getActiveExamplesForScenario(scenario);
+
+        // 3) Dựng prompt được huấn luyện trước + tri thức tự tiến hoá.
+        String prompt = CustomerPromptBuilder.build(
+                request, scenario, customerProps, fused, activeGuidelines, activeExamples);
         String answer = llmClient != null ? llmClient.complete(prompt) : null;
         if (answer == null || answer.isBlank() || answer.strip().startsWith("[9router-error]")) {
             log.warn("LLM returned empty or error response; generating pre-trained customer fallback for scenario={}",
@@ -89,10 +129,10 @@ public class CustomerChatService {
             answer = buildPretrainedFallbackAnswer(request, scenario, fused);
         }
         String modelName = llmClient != null ? llmClient.name() : "pretrained-fallback";
-        log.info("stage=customer-chat engine={} scenario={} fused_chunks={}",
-                modelName, scenario.code(), fused.size());
+        log.info("stage=customer-chat engine={} scenario={} fused_chunks={} applied_guidelines={}",
+                modelName, scenario.code(), fused.size(), activeGuidelines.size());
 
-        // 3) Dựng citations truy ngược về chunk/document/block/page/bbox/heading_path.
+        // 4) Dựng citations truy ngược về chunk/document/block/page/bbox/heading_path.
         List<Citation> citations = new ArrayList<>(fused.size());
         Set<UUID> retrievedIds = new HashSet<>();
         for (ReciprocalRankFusion.FusedChunk fc : fused) {
@@ -111,7 +151,7 @@ public class CustomerChatService {
             ));
         }
 
-        // 4) Citation-validate: đảm bảo mọi citation đều thuộc tập chunk thực sự được retrieve.
+        // 5) Citation-validate: đảm bảo mọi citation đều thuộc tập chunk thực sự được retrieve.
         long invalid = citations.stream()
                 .filter(cit -> !retrievedIds.contains(UUID.fromString(cit.chunkId())))
                 .count();
@@ -119,14 +159,21 @@ public class CustomerChatService {
             citations.removeIf(cit -> !retrievedIds.contains(UUID.fromString(cit.chunkId())));
         }
 
+        // 6) Thực thi chiến lược tự tiến hoá học hỏi sau lần chat (EvoAgentX TextGrad & MIPRO).
+        String interactionId = evolutionService.recordAndEvolveAfterChat(
+                request, scenario, secondaryScenarios, answer, fused, modelName);
+
         return new CustomerChatResponse(
                 answer,
                 customerRole,
                 scenario.code(),
                 customerProps.getPromptTemplateId(),
                 modelName,
-                scenario.suggestedQuestions(),
-                citations
+                scenario.suggestedQuestions(customerProps),
+                citations,
+                interactionId,
+                evolutionService.getCurrentGeneration(),
+                activeGuidelines.size()
         );
     }
 
@@ -134,22 +181,69 @@ public class CustomerChatService {
      * Trả về thông tin cấu hình bộ prompt được huấn luyện trước và danh sách các kịch bản hỗ trợ khách hàng.
      */
     public CustomerPromptTemplateResponse getPromptTemplates() {
+        String sampleQuestion = (customerProps.getSamplePreviewQuestion() != null
+                && !customerProps.getSamplePreviewQuestion().isBlank())
+                ? customerProps.getSamplePreviewQuestion().strip()
+                : "Tư vấn giúp tôi gói dịch vụ phù hợp và chính sách bảo hành khi mua hàng?";
+
         CustomerChatRequest sampleReq = new CustomerChatRequest(
-                "Tư vấn giúp tôi gói dịch vụ phù hợp và chính sách bảo hành khi mua hàng?",
+                sampleQuestion,
                 CustomerScenario.SALES.code(),
                 null,
                 customerProps.getDefaultTopK()
         );
-        String preview = CustomerPromptBuilder.build(sampleReq, CustomerScenario.SALES, customerProps, List.of());
+        List<LearnedGuidelineInfo> salesGuidelines =
+                evolutionService.getActiveGuidelinesForScenario(CustomerScenario.SALES);
+        List<EvolvedExampleInfo> salesExamples =
+                evolutionService.getActiveExamplesForScenario(CustomerScenario.SALES);
+        String preview = CustomerPromptBuilder.build(
+                sampleReq, CustomerScenario.SALES, customerProps, List.of(), salesGuidelines, salesExamples);
+
+        String defaultRole = (customerProps.getDefaultCustomerRole() != null
+                && !customerProps.getDefaultCustomerRole().isBlank())
+                ? customerProps.getDefaultCustomerRole().strip()
+                : CustomerPromptBuilder.DEFAULT_CUSTOMER_ROLE;
+        String persona = (customerProps.getAssistantPersona() != null
+                && !customerProps.getAssistantPersona().isBlank())
+                ? customerProps.getAssistantPersona().strip()
+                : CustomerPromptBuilder.ASSISTANT_PERSONA;
 
         return new CustomerPromptTemplateResponse(
                 customerProps.getPromptTemplateId(),
                 customerProps.getStoreName(),
-                CustomerPromptBuilder.DEFAULT_CUSTOMER_ROLE,
-                CustomerPromptBuilder.ASSISTANT_PERSONA,
-                CustomerScenario.allScenarioInfos(),
+                defaultRole,
+                persona,
+                CustomerScenario.allScenarioInfos(customerProps),
                 preview
         );
+    }
+
+    /**
+     * Tiếp nhận phản hồi từ khách hàng (rating, helpful, comment/correction) để cập nhật bộ nhớ tiến hoá.
+     */
+    public CustomerEvolutionStatusResponse submitFeedback(CustomerFeedbackRequest feedbackRequest) {
+        return evolutionService.recordFeedbackAndEvolve(feedbackRequest);
+    }
+
+    /**
+     * Kích hoạt chủ động 1 chu kỳ tối ưu hoá EvoAgentX TextGrad + MIPRO.
+     */
+    public CustomerEvolutionStatusResponse triggerEvolution(String scenario) {
+        return evolutionService.triggerEvolutionCycle(scenario);
+    }
+
+    /**
+     * Lấy trạng thái hiện tại của động cơ tự tiến hoá EvoAgentX và danh sách quy tắc đã học.
+     */
+    public CustomerEvolutionStatusResponse getEvolutionStatus() {
+        return evolutionService.getStatus();
+    }
+
+    /**
+     * Đặt lại bộ nhớ tự tiến hoá về trạng thái khởi đầu.
+     */
+    public CustomerEvolutionStatusResponse resetEvolution() {
+        return evolutionService.resetEvolutionMemory();
     }
 
     private List<ReciprocalRankFusion.FusedChunk> retrieveChunksForCustomer(
@@ -210,9 +304,13 @@ public class CustomerChatService {
     private String buildPretrainedFallbackAnswer(CustomerChatRequest request,
                                                  CustomerScenario scenario,
                                                  List<ReciprocalRankFusion.FusedChunk> fused) {
+        String defaultSalutation = (customerProps.getFallbackCustomerSalutation() != null
+                && !customerProps.getFallbackCustomerSalutation().isBlank())
+                ? customerProps.getFallbackCustomerSalutation().strip()
+                : "Anh/Chị";
         String customerName = (request.customerName() != null && !request.customerName().isBlank())
                 ? request.customerName().strip()
-                : "Anh/Chị";
+                : defaultSalutation;
         String storeName = (customerProps.getStoreName() != null && !customerProps.getStoreName().isBlank())
                 ? customerProps.getStoreName().strip()
                 : "DocMind Store & Digital Services";
@@ -222,7 +320,7 @@ public class CustomerChatService {
           .append(" đã quan tâm đến sản phẩm và dịch vụ của **").append(storeName).append("**.\n\n");
         sb.append("Về câu hỏi của ").append(customerName).append(" (\"")
           .append(request.resolvedQuestion()).append("\") thuộc kịch bản **")
-          .append(scenario.title()).append("**, em xin phép thông tin chi tiết như sau:\n\n");
+          .append(scenario.title(customerProps)).append("**, em xin phép thông tin chi tiết như sau:\n\n");
 
         if (fused != null && !fused.isEmpty()) {
             int idx = 1;
@@ -251,11 +349,12 @@ public class CustomerChatService {
         return Arrays.stream(bbox).boxed().toList();
     }
 
-    private static String snippet(String text) {
+    private String snippet(String text) {
         if (text == null) {
             return "";
         }
+        int maxLen = customerProps.getSnippetMaxLength() > 0 ? customerProps.getSnippetMaxLength() : 240;
         String t = text.strip();
-        return t.length() <= SNIPPET_MAX ? t : t.substring(0, SNIPPET_MAX) + "…";
+        return t.length() <= maxLen ? t : t.substring(0, maxLen) + "…";
     }
 }

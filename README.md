@@ -74,11 +74,42 @@ is only involved during **ingest**.
 | GET    | `/api/documents`         | List all uploaded documents with status, pages count, and engine breakdown. |
 | GET    | `/api/documents/{id}`    | Ingest job status (mirrors parser states + indexing). |
 | POST   | `/api/chat`              | Ask a question. Request `{ "question": "...", "document_ids": [...], "top_k": N }`; response includes the answer and `citations[]` referencing `document_id` + `page` + `bbox` + `block_ids`. |
-| POST   | `/api/customer-chat`     | Customer sales & service consultation using pre-trained prompt (`SALES`, `SERVICE_SUPPORT`, `WARRANTY_RETURN`, `ORDER_BILLING`, `GENERAL`). Aliases: `/api/chat/customer`, `/api/customer-support/chat`. |
+| POST   | `/api/customer-chat`     | Customer sales & service consultation using pre-trained prompt (`SALES`, `SERVICE_SUPPORT`, `WARRANTY_RETURN`, `ORDER_BILLING`, `GENERAL`) + EvoAgentX self-evolving guidelines & exemplars. Aliases: `/api/chat/customer`, `/api/customer-support/chat`. |
 | GET    | `/api/customer-chat/prompts` | Inspect the pre-trained customer support prompt template, supported scenarios, and suggested customer questions. |
+| GET    | `/api/customer-chat/evolution` | Inspect the EvoAgentX self-evolution engine state: current generation, quality score, learned guidelines per scenario, evolved MIPRO few-shot exemplars, and recent TextGrad reflections. |
+| POST   | `/api/customer-chat/feedback` | Submit explicit customer feedback (`interaction_id`, `rating` 1..5, `helpful`, `feedback`) to trigger TextGrad guideline learning or MIPRO exemplar promotion. |
+| POST   | `/api/customer-chat/evolve` | Proactively trigger an EvoAgentX TextGrad + MIPRO optimization cycle (optionally scoped by `scenario`). |
+| DELETE | `/api/customer-chat/evolution` | Reset the self-evolving memory store to its initial state. |
 
 The exact block/chunk fields these endpoints exchange are defined in
 [`docs/canonical-schema.md`](docs/canonical-schema.md) — read that first.
+
+---
+
+## EvoAgentX Self-Evolving Customer Support Strategy
+
+After every customer chat turn (`POST /api/customer-chat`) and explicit feedback (`POST /api/customer-chat/feedback`), `CustomerSelfEvolutionService` executes a 3-pillar self-evolving learning loop inspired by **EvoAgentX**:
+
+1. **TextGrad Multi-Criteria Loss & Textual Gradient Reflection**:
+   - Evaluates each consultation response across 4 weighted dimensions (`salutation & tone`, `grounding & citation`, `completeness & structure`, `actionability & contact`) plus implicit customer correction signals in conversation history.
+   - Generates a structured **Textual Gradient** (either deterministically or via LLM `<EVOLVED_GUIDELINE>` reflection) and synthesizes concrete `LearnedGuidelineInfo` rules for the active scenario.
+2. **MIPRO Few-Shot Exemplar Bootstrapping**:
+   - High-scoring or positively rated Q&A turns are automatically promoted into `EvolvedExampleInfo` few-shot exemplars and injected into subsequent prompts alongside base few-shot examples.
+3. **Long-Term Memory SHA-256 Deduplication & Persistence**:
+   - Uses normalized SHA-256 content hashes to deduplicate learned rules and exemplars, boosting `reinforcement_count` and `confidence_score` when a rule is repeatedly validated, pruning to top-K utility per scenario, and optionally persisting atomically to disk (`CUSTOMER_EVOLUTION_PERSIST_TO_DISK=true`).
+
+---
+
+## Externalized Configuration
+
+All store identity, personas, scenario playbooks, keywords, few-shot examples, EvoAgentX evolution parameters, CORS rules, upload MIME allow-lists, and upstream service paths are externalized into [`api-java/src/main/resources/application.properties`](api-java/src/main/resources/application.properties) and [`.env.example`](.env.example):
+
+- `docmind.customer-support.*` — Store branding, persona, default customer role, salutations, RAG `top_k` bounds, history window limits, base few-shot examples, per-scenario playbooks/keywords/aliases (`scenarios.SALES.*`, `scenarios.SERVICE_SUPPORT.*`, etc.), and EvoAgentX self-evolution settings (`evolution.*`).
+- `docmind.cors.*` — Path pattern, allowed origin patterns, methods, headers, exposed headers, credentials, and max-age.
+- `docmind.upload.*` — Max upload bytes and allowed MIME types.
+- `docmind.chat.*` — Default/min/max `top_k`, snippet max length, and PostgreSQL FTS configuration (`fts-config`).
+- `docmind.doc-service.*` — Parser endpoint paths (`parse-path`, `job-status-path`, `job-result-path`, `embed-path`, `rerank-path`).
+- `ninerouter.*` & `gemini.*` — Primary/fallback LLM URLs, endpoint paths, timeouts, and fallback messages.
 
 ---
 
@@ -115,7 +146,7 @@ embedding + BM25 index  (pgvector + text index in Postgres)
 ## Chat flow (Java-only; never calls Python)
 
 ```
-question (POST /api/chat to api-java)
+question (POST /api/chat or POST /api/customer-chat to api-java)
    |
    v
 embed query + BM25 query  (hybrid)
@@ -124,13 +155,13 @@ embed query + BM25 query  (hybrid)
 hybrid retrieval over Postgres (pgvector + BM25)
    |
    v
-reranker
+reranker + EvoAgentX active guidelines & few-shot exemplars
    |
    v
 LLM answer with citations  (9Router -> Codex GPT-6 Astra, Gemini key, or stub LLM)
    |
    v
-citation validation (answer spans must map to retrieved chunks)
+citation validation + EvoAgentX post-chat TextGrad & MIPRO self-evolution
 ```
 
 ---

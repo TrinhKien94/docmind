@@ -66,6 +66,10 @@ public class NineRouterLlmClient implements LlmClient {
     @Override
     @SuppressWarnings("unchecked")
     public String complete(String prompt) {
+        String completionsUri = (props.getChatCompletionsPath() != null && !props.getChatCompletionsPath().isBlank())
+                ? props.getChatCompletionsPath().strip()
+                : "/chat/completions";
+
         // 1) Thử gọi qua 9Router
         try {
             Map<String, Object> body = Map.of(
@@ -76,7 +80,7 @@ public class NineRouterLlmClient implements LlmClient {
             );
 
             var requestSpec = http.post()
-                    .uri("/chat/completions")
+                    .uri(completionsUri)
                     .header("Content-Type", "application/json");
 
             if (props.getApiKey() != null && !props.getApiKey().isBlank()) {
@@ -116,7 +120,7 @@ public class NineRouterLlmClient implements LlmClient {
                 );
 
                 Map<String, Object> resp = directRelay.post()
-                        .uri("/chat/completions")
+                        .uri(completionsUri)
                         .header("Authorization", "Bearer " + token)
                         .header("Content-Type", "application/json")
                         .body(body)
@@ -137,7 +141,9 @@ public class NineRouterLlmClient implements LlmClient {
             log.error("Direct Codex relay fallback also failed: {}", e.getMessage());
         }
 
-        return "[9router-error] Không thể kết nối tới 9Router hoặc Codex relay.";
+        return (props.getFallbackErrorMessage() != null && !props.getFallbackErrorMessage().isBlank())
+                ? props.getFallbackErrorMessage().strip()
+                : "[9router-error] Không thể kết nối tới 9Router hoặc Codex relay.";
     }
 
     @Override
@@ -195,8 +201,13 @@ public class NineRouterLlmClient implements LlmClient {
             return envToken.trim();
         }
         try {
-            String userHome = System.getProperty("user.home");
-            Path authPath = Path.of(userHome, ".codex", "auth.json");
+            String configuredPath = (props.getCodexAuthFilePath() != null && !props.getCodexAuthFilePath().isBlank())
+                    ? props.getCodexAuthFilePath().strip()
+                    : ".codex/auth.json";
+            Path candidate = Path.of(configuredPath);
+            Path authPath = candidate.isAbsolute()
+                    ? candidate
+                    : Path.of(System.getProperty("user.home")).resolve(candidate);
             if (Files.exists(authPath)) {
                 JsonNode root = objectMapper.readTree(authPath.toFile());
                 JsonNode tokenNode = root.path("tokens").path("access_token");
@@ -205,7 +216,7 @@ public class NineRouterLlmClient implements LlmClient {
                 }
             }
         } catch (Exception e) {
-            log.warn("Could not read access token from ~/.codex/auth.json: {}", e.getMessage());
+            log.warn("Could not read access token from codex auth file: {}", e.getMessage());
         }
         return null;
     }

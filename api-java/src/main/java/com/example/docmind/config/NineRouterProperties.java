@@ -32,6 +32,15 @@ public class NineRouterProperties {
     /** Optional Codex Auth Token override (hữu ích trong Docker/CI). */
     private String codexAuthToken = "";
 
+    /** Đường dẫn file auth.json của Codex tương đối theo user.home (hoặc đường dẫn tuyệt đối). */
+    private String codexAuthFilePath = ".codex/auth.json";
+
+    /** Đường dẫn endpoint chat completions chuẩn OpenAI. */
+    private String chatCompletionsPath = "/chat/completions";
+
+    /** Chuỗi thông báo trả về khi cả 9Router và Codex relay đều không phản hồi. */
+    private String fallbackErrorMessage = "[9router-error] Không thể kết nối tới 9Router hoặc Codex relay.";
+
     /** Timeout (ms) cho LLM generation. */
     private int timeoutMs = 60000;
 }

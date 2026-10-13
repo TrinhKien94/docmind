@@ -30,7 +30,9 @@
         :all-docs="documents"
         :messages="messages"
         :is-asking="isAsking"
+        :evolution-gen="evolutionGen"
         @ask-question="handleAskQuestion"
+        @submit-feedback="handleSubmitFeedback"
         @clear-chat="handleClearChat"
       />
     </div>
@@ -62,6 +64,7 @@ const inspectingDoc = ref(null)
 const toastMessage = ref('')
 const toastType = ref('info')
 const chatAreaRef = ref(null)
+const evolutionGen = ref(0)
 
 const pollingTimers = new Map()
 
@@ -88,6 +91,14 @@ const initApp = async () => {
     if (online) {
       isConnected.value = true
       await fetchDocuments()
+      try {
+        const evo = await api.getCustomerEvolution()
+        if (evo && typeof evo.evolution_generation === 'number') {
+          evolutionGen.value = evo.evolution_generation
+        }
+      } catch {
+        // ignore
+      }
       showToast('Đã kết nối thành công tới DocMind Backend (cổng 8090)', 'success')
     } else {
       useDemoData()
@@ -344,10 +355,18 @@ const handleAskQuestion = async ({ question, documentIds, topK, mode = 'customer
       messages.value.push({
         role: 'assistant',
         content: res.answer || 'Dạ em xin ghi nhận câu hỏi và hỗ trợ Anh/Chị ngay ạ.',
+        question,
         scenario: res.scenario,
+        interactionId: res.interaction_id,
+        evolutionGeneration: res.evolution_generation,
+        appliedGuidelines: res.applied_learned_guidelines || 0,
         suggestedQuestions: res.suggested_questions || [],
-        citations: res.citations || []
+        citations: res.citations || [],
+        feedbackSubmitted: null
       })
+      if (typeof res.evolution_generation === 'number') {
+        evolutionGen.value = res.evolution_generation
+      }
     } else {
       const res = await api.chat({
         documentIds,
@@ -370,6 +389,39 @@ const handleAskQuestion = async ({ question, documentIds, topK, mode = 'customer
   } finally {
     isAsking.value = false
     chatAreaRef.value?.scrollToBottom()
+  }
+}
+
+const handleSubmitFeedback = async ({ index, helpful, rating, feedback }) => {
+  const msg = messages.value[index]
+  if (!msg) return
+  msg.feedbackSubmitted = helpful ? 'positive' : 'negative'
+
+  if (!isConnected.value) {
+    evolutionGen.value += 1
+    showToast('Đã ghi nhận phản hồi và cập nhật quy tắc tự tiến hoá EvoAgentX (Demo)', 'success')
+    return
+  }
+
+  try {
+    const evoStatus = await api.submitCustomerFeedback({
+      interactionId: msg.interactionId,
+      question: msg.question,
+      answer: msg.content,
+      scenario: msg.scenario,
+      rating,
+      helpful,
+      feedback
+    })
+    if (evoStatus && typeof evoStatus.evolution_generation === 'number') {
+      evolutionGen.value = evoStatus.evolution_generation
+    }
+    showToast(
+      `EvoAgentX đã học hỏi từ phản hồi (Thế hệ tiến hoá #${evolutionGen.value})!`,
+      'success'
+    )
+  } catch (e) {
+    showToast(`Gửi phản hồi thất bại: ${e.message}`, 'error')
   }
 }
 

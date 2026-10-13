@@ -23,9 +23,16 @@ __pycache__/
 venv/
 .pytest_cache/
 
-### DocMind debug artifacts (render ảnh, JSON trung gian) ###
+### Frontend (Vue / Vite) ###
+node_modules/
+dist/
+
+### DocMind debug artifacts & local search/evolution storage ###
 artifacts/
 debug/
+.codesearch/
+data/
+api-java/data/
 
 ### IDE / editor ###
 .idea/

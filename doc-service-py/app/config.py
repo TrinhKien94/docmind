@@ -35,9 +35,12 @@ class Settings(BaseSettings):
     # Upload size guard (bytes). 50 MiB default; validation enforces it.
     max_upload_bytes: int = 50 * 1024 * 1024
 
-    # Model names reserved for later real-engine wiring (not used by stubs).
+    # Model & embedding settings (overridable via env vars).
     paddleocr_lang: str = "en"
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+    embedding_dim: int = 384
+    embedding_max_batch: int = 256
+    embedding_device: str = "cpu"
 
     # HTTP header the Java orchestrator sets so logs share one correlation id.
     correlation_header: str = "X-Correlation-Id"
