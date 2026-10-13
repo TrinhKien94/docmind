@@ -23,6 +23,7 @@ behind stub engines, so the service boots and all tests pass on CPU with only
 | POST | `/v1/parse` | `202` → `{ "job_id": str, "document_id": str, "cached": bool }` (multipart field `file`) |
 | GET  | `/v1/jobs/{job_id}` | `200` → `{ job_id, document_id, status, filename, sha256, cached, pages_total, pages_done, page_progress[], engine_breakdown, error }` (`404` if unknown) |
 | GET  | `/v1/jobs/{job_id}/result` | `200` → canonical `Document` JSON (`404` until `status == succeeded`) |
+| POST | `/v1/embed` | `200` → `{ "model": str, "dim": 384, "embeddings": [[...384 floats...], ...] }` (request `{ "texts": [...] }`) |
 | GET  | `/healthz` | `200` liveness |
 | GET  | `/readyz` | `200` readiness + `optional_ml_libs` importability map |
 
@@ -58,6 +59,32 @@ curl http://localhost:8091/v1/jobs/<job_id>/result
 Engines detect their backend at parse time and transparently fall back to stub
 output when a library or model is unavailable. **MinerU is intentionally
 deferred** (license to be verified) and is not a valid `parse_engine`.
+
+## Embeddings (`POST /v1/embed`)
+
+The Java service calls `POST /v1/embed` to turn chunk/query text into vectors.
+
+- Contract: request `{ "texts": [...] }` → `{ "model": <id|"stub">, "dim": 384,
+  "embeddings": [[...384 floats...], ...] }`. One vector per input, order
+  preserved; an empty `texts` list returns `200` with `embeddings: []`.
+- Real provider: when `requirements-ml.txt` is installed, the service uses
+  `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` (384-dim, CPU,
+  Vietnamese-friendly), **lazy-loaded on the FIRST `/v1/embed` call**. That
+  first call is slow (model download + load — can be tens of seconds offline the
+  first time); subsequent calls are fast. Vectors are L2-normalized
+  (cosine == dot).
+- Stub fallback: without `requirements-ml.txt` (the default Docker image), the
+  endpoint serves a **deterministic 384-dim STUB** and logs a WARNING. The
+  service always answers `/v1/embed`.
+- Batch is capped at 256 (cap-and-log) and individual texts over 20 000 chars
+  are truncated (logged). Every line carries `stage="embed-serve"` + the
+  correlation chain.
+
+Optional model pre-download (avoids first-call latency in production):
+
+```powershell
+.venv\Scripts\python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2')"
+```
 
 ## Configuration (env vars)
 

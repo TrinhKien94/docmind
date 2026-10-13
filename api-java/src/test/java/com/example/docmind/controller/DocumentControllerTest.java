@@ -61,4 +61,17 @@ class DocumentControllerTest {
                 .andExpect(jsonPath("$.pages").value(3))
                 .andExpect(jsonPath("$.engine_breakdown.pymupdf").value(2));
     }
+
+    @Test
+    void listReturnsDocumentList() throws Exception {
+        when(documentService.listAll())
+                .thenReturn(java.util.List.of(new DocumentStatusResponse("doc-123", "notes.pdf", "READY", 3,
+                        Map.of("pymupdf", 2, "docling", 1))));
+
+        mockMvc.perform(get("/api/documents"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].document_id").value("doc-123"))
+                .andExpect(jsonPath("$[0].filename").value("notes.pdf"))
+                .andExpect(jsonPath("$[0].status").value("READY"));
+    }
 }

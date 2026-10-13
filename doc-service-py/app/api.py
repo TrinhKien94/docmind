@@ -17,8 +17,10 @@ import importlib.util
 
 from fastapi import APIRouter, BackgroundTasks, File, Header, Request, UploadFile
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 
 from app.config import get_settings
+from app.embeddings import MAX_BATCH, get_embedding_provider
 from app.jobs import JobState, get_job_store
 from app.logging_config import bind_context, clear_context, get_logger
 from app.service import process_parse_job, submit_parse
@@ -40,6 +42,16 @@ _OPTIONAL_ML_LIBS = [
 
 def _correlation_from(header_value: str | None) -> str | None:
     return header_value or None
+
+
+# Per-text char cap: truncate very long inputs before embedding (logged).
+_MAX_CHARS = 20_000
+
+
+class EmbedRequest(BaseModel):
+    """Request body for POST /v1/embed: a list of texts to embed."""
+
+    texts: list[str]
 
 
 @router.post("/v1/parse", status_code=202)
@@ -152,6 +164,87 @@ async def get_job_result(
         log.info("job result served", stage="result", cached=job.cached)
         # mode="json" renders enums/tuples to their JSON-safe forms.
         return JSONResponse(status_code=200, content=job.result.model_dump(mode="json"))
+    finally:
+        clear_context()
+
+
+@router.post("/v1/embed")
+async def embed(
+    body: EmbedRequest,
+    x_correlation_id: str | None = Header(default=None),
+) -> JSONResponse:
+    """Embed a batch of texts; return one 384-dim vector per input (order kept).
+
+    Contract: request ``{"texts": [...]}`` -> ``{"model": <id|"stub">, "dim": 384,
+    "embeddings": [[...384 floats...], ...]}``. Empty list -> 200 with empty
+    embeddings (no model load). Batch is capped at ``MAX_BATCH`` (cap-and-log),
+    and overly long individual texts are truncated at ``_MAX_CHARS`` (logged).
+    The active provider is real sentence-transformers when installed, else a
+    deterministic 384-dim stub — the service always answers.
+    """
+    bind_context(correlation_id=_correlation_from(x_correlation_id))
+    try:
+        provider = get_embedding_provider()
+
+        texts = body.texts
+        if not texts:
+            # Empty input: no model load, empty embeddings, dim still reported.
+            log.info(
+                "embed served (empty input)",
+                stage="embed-serve",
+                provider=provider.name,
+                batch_size=0,
+            )
+            return JSONResponse(
+                status_code=200,
+                content={"model": provider.name, "dim": provider.dim, "embeddings": []},
+            )
+
+        # Cap batch size (process only the first MAX_BATCH; log the overflow).
+        original_count = len(texts)
+        if original_count > MAX_BATCH:
+            log.warning(
+                "embed batch capped",
+                stage="embed-serve",
+                provider=provider.name,
+                requested=original_count,
+                cap=MAX_BATCH,
+            )
+            texts = texts[:MAX_BATCH]
+
+        # Truncate overly long individual texts before embedding.
+        truncated = 0
+        prepared: list[str] = []
+        for t in texts:
+            s = t or ""
+            if len(s) > _MAX_CHARS:
+                s = s[:_MAX_CHARS]
+                truncated += 1
+            prepared.append(s)
+        if truncated:
+            log.warning(
+                "embed truncated long texts",
+                stage="embed-serve",
+                provider=provider.name,
+                truncated=truncated,
+                max_chars=_MAX_CHARS,
+            )
+
+        embeddings = provider.embed(prepared)
+        log.info(
+            "embed served",
+            stage="embed-serve",
+            provider=provider.name,
+            batch_size=len(prepared),
+        )
+        return JSONResponse(
+            status_code=200,
+            content={
+                "model": provider.name,
+                "dim": provider.dim,
+                "embeddings": embeddings,
+            },
+        )
     finally:
         clear_context()
 

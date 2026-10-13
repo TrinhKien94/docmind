@@ -13,4 +13,19 @@ import org.springframework.stereotype.Component;
 public class EmbeddingProperties {
 
     private int dim = 384;
+
+    /** Cấu hình gọi embedding thật qua doc-service-py (POST /v1/embed). */
+    private Remote remote = new Remote();
+
+    /** Nhóm key docmind.embedding.remote.* */
+    @Getter
+    @Setter
+    public static class Remote {
+
+        /** Bật/tắt remote embedding; false => chỉ dùng stub. */
+        private boolean enabled = true;
+
+        /** Đường dẫn endpoint embed trên doc-service-py. */
+        private String endpointPath = "/v1/embed";
+    }
 }

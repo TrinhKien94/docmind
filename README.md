@@ -20,6 +20,7 @@ Two services plus Postgres:
   It routes a file to the right engine (PyMuPDF / Docling / PaddleOCR+PP-Structure
   for scans / native office parsers), then normalizes everything into the shared
   canonical schema. Listens on **port 8091**.
+- **`frontend`** — Vue 3 + Vite **web client**. Giao diện tải lên file (kéo thả), theo dõi trạng thái real-time (`READY`, `PARSING`, `FAILED`), phân bổ engine, và chat hỏi đáp RAG với trích dẫn citations. Chạy tại **port 3000**.
 - **`postgres`** — PostgreSQL 16 + **pgvector** (host **port 5433** -> 5432).
 
 **The chat path is Java-only.** During chat, `api-java` reads already-parsed,
@@ -29,6 +30,11 @@ is only involved during **ingest**.
 
 ```
                  upload / chat (HTTP)
+                         |
+                         v
++--------------------------------------------------+
+|  frontend (3000)  — Vue 3 / Vite UI              |
++--------------------------------------------------+
                          |
                          v
 +--------------------------------------------------+
@@ -45,36 +51,6 @@ is only involved during **ingest**.
      |  canonical blocks   |   |  Flyway-owned tables|
      +---------------------+   +---------------------+
 ```
-
-### Deviation from the sibling `horoscope` project
-
-`horoscope` runs Spring Boot 3.3.11 with Redis and **no SQL database**. DocMind
-intentionally deviates: **Spring Boot 4.0.0** and **PostgreSQL + pgvector +
-Flyway + JPA**. Any steering that mentions a different Spring Boot patch version
-or MySQL does **not** apply to DocMind's datastore. We keep the `horoscope`
-conventions that still fit: Maven `mvnw` wrapper, `${ENV_VAR:default}` config
-style, committed `.env.example` + gitignored `.env`.
-
----
-
-## Running with docker compose
-
-Ports: **8090** api · **8091** doc-service · **5433** postgres (host).
-
-```bash
-# 1) create your local secrets file
-cp docmind/.env.example docmind/.env   # (Windows: copy)
-
-# 2) validate the compose file (no daemon needed)
-docker compose -f docmind/docker-compose.yml config
-
-# 3) bring everything up
-docker compose -f docmind/docker-compose.yml up --build
-```
-
-> The `api-java` and `doc-service-py` build contexts and their Dockerfiles are
-> filled in by FEAT-003 / FEAT-002. `docker compose config` validates the file
-> itself and does not require those Dockerfiles.
 
 ---
 
@@ -95,6 +71,7 @@ docker compose -f docmind/docker-compose.yml up --build
 | Method | Path                     | Purpose |
 |--------|--------------------------|---------|
 | POST   | `/api/documents`         | Upload a file (`multipart/form-data`, field `file`) -> starts ingest. Returns **201** with `{ "document_id": "...", "job_id": "...", "status": "..." }`. |
+| GET    | `/api/documents`         | List all uploaded documents with status, pages count, and engine breakdown. |
 | GET    | `/api/documents/{id}`    | Ingest job status (mirrors parser states + indexing). |
 | POST   | `/api/chat`              | Ask a question. Request `{ "question": "...", "document_ids": [...], "top_k": N }`; response includes the answer and `citations[]` referencing `document_id` + `page` + `bbox` + `block_ids`. |
 

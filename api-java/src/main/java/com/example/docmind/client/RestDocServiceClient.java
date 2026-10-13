@@ -14,6 +14,7 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 
 /**
  * Implementation RestClient của {@link DocServiceClient}.
@@ -56,8 +57,14 @@ public class RestDocServiceClient implements DocServiceClient {
             log.info("submit-parse OK job_id={} document_id={} cached={}",
                     resp.jobId(), resp.documentId(), resp.cached());
             return resp;
+        } catch (RestClientResponseException e) {
+            // Lỗi HTTP có response: log cả status + body thật (không nuốt chi tiết).
+            log.error("submit-parse FAILED status={} body={}",
+                    e.getStatusCode(), e.getResponseBodyAsString());
+            throw new DocServiceException("Gọi /v1/parse thất bại (" + e.getStatusCode()
+                    + "): " + e.getResponseBodyAsString(), e);
         } catch (RestClientException e) {
-            log.error("submit-parse FAILED: {}", e.getMessage());
+            log.error("submit-parse FAILED (no response): {}", e.getMessage());
             throw new DocServiceException("Gọi /v1/parse thất bại: " + e.getMessage(), e);
         } finally {
             CorrelationIds.clearStage();

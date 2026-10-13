@@ -29,6 +29,10 @@ paddleocr>=2.9.0
 # Package/binding name may differ per release; adjust when integrating.
 # firecrawl-pdf-inspector
 
-# Embeddings / rerank experiments (CPU). The Java service owns production
-# embeddings; this is here only for local parser-side experiments.
+# Embeddings (CPU) — PRODUCTION parser-side embedding provider for POST /v1/embed.
+# app/embeddings.py lazy-loads sentence-transformers on FIRST /v1/embed call
+# (never at import time); when this lib (or the model) is absent the endpoint
+# serves a deterministic 384-dim STUB fallback and logs a WARNING. Installing
+# this file enables the REAL multilingual MiniLM provider; the base image stays
+# stub-only on purpose (requirements.txt is NOT touched).
 sentence-transformers>=3.0.0

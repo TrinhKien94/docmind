@@ -45,7 +45,14 @@
             <artifactId>postgresql</artifactId>
         </dependency>
 
-        <!-- Flyway: schema đời thực do Flyway sở hữu (init SQL chỉ bật extension vector) -->
+        <!-- Flyway: schema đời thực do Flyway sở hữu (init SQL chỉ bật extension vector).
+             Boot 4 modular hoá auto-config: chỉ flyway-core KHÔNG kích hoạt
+             FlywayAutoConfiguration (migration sẽ không chạy lúc khởi động).
+             Phải thêm module spring-boot-flyway để Flyway migrate tự chạy. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-flyway</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.flywaydb</groupId>
             <artifactId>flyway-core</artifactId>

@@ -179,6 +179,13 @@ public class DocumentService {
         DocumentEntity doc = documentRepository.findById(documentId)
                 .orElseThrow(() -> new ResourceNotFoundException("Document không tồn tại: " + documentId));
 
+        // QUAN TRỌNG: insertChunk (native SQL) chạy TỨC THÌ và có FK ->documents.
+        // Hibernate trì hoãn INSERT documents/blocks tới cuối transaction, nên nếu
+        // không flush trước, chunk sẽ vi phạm FK (document_id chưa có trong DB) ->
+        // transaction abort (SQLState 25P02) -> rollback toàn bộ. Flush để ép thứ tự
+        // ghi: documents + blocks xuống DB TRƯỚC khi insert chunk.
+        documentRepository.saveAndFlush(doc);
+
         List<CanonicalBlock> blocks = result.blocks() == null ? List.of() : result.blocks();
 
         // stage=normalize: persist blocks nguyên trạng.
@@ -200,6 +207,7 @@ public class DocumentService {
                 .parseVersion(b.parseVersion())
                 .build()).toList();
         blockRepository.saveAll(blockEntities);
+        blockRepository.flush();   // blocks xuống DB trước khi dựng chunk
         log.info("normalize persisted_blocks={}", blockEntities.size());
 
         // stage=chunk: nhóm block -> chunk.
@@ -225,6 +233,20 @@ public class DocumentService {
         doc.setStatsJson(engineBreakdownJson(result));
         documentRepository.save(doc);
         log.info("ingest done document_id={} pages={} status=READY", documentId, pages);
+    }
+
+    @Transactional(readOnly = true)
+    public List<DocumentStatusResponse> listAll() {
+        return documentRepository.findAllByOrderByCreatedAtDesc().stream().map(doc -> {
+            Map<String, Integer> breakdown = parseBreakdown(doc.getStatsJson());
+            return new DocumentStatusResponse(
+                    doc.getId().toString(),
+                    doc.getFilename(),
+                    doc.getStatus(),
+                    doc.getPages(),
+                    breakdown
+            );
+        }).toList();
     }
 
     @Transactional(readOnly = true)
