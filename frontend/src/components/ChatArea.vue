@@ -10,9 +10,15 @@
             </svg>
           </div>
           <div>
-            <h3 class="header-title">Hỏi đáp tài liệu (RAG Grounded)</h3>
+            <h3 class="header-title">
+              {{ chatMode === 'customer' ? 'Tư vấn Khách hàng (Mua hàng & Dịch vụ)' : 'Hỏi đáp tài liệu (RAG Grounded)' }}
+            </h3>
             <p class="context-subtitle">
-              <span v-if="selectedDocs.length > 0">
+              <span v-if="chatMode === 'customer'">
+                Vai trò: <strong>Khách hàng mua hàng / sử dụng dịch vụ</strong> · Prompt huấn luyện sẵn
+                <template v-if="selectedDocs.length > 0"> + {{ selectedDocs.length }} tài liệu</template>
+              </span>
+              <span v-else-if="selectedDocs.length > 0">
                 Phạm vi: <strong>{{ selectedDocs.length }} tài liệu</strong> ({{ selectedDocsNames }})
               </span>
               <span v-else class="text-warning">
@@ -24,6 +30,27 @@
       </div>
 
       <div class="header-right">
+        <!-- Chat Mode Selector -->
+        <div class="top-k-control" title="Chế độ hội thoại">
+          <label for="mode-select">Chế độ:</label>
+          <select id="mode-select" v-model="chatMode">
+            <option value="customer">🛍️ Khách hàng (Mua hàng & Dịch vụ)</option>
+            <option value="rag">📄 Hỏi đáp Tài liệu (RAG thuần)</option>
+          </select>
+        </div>
+
+        <!-- Customer Scenario Selector -->
+        <div v-if="chatMode === 'customer'" class="top-k-control" title="Kịch bản prompt được huấn luyện trước">
+          <label for="scenario-select">Kịch bản:</label>
+          <select id="scenario-select" v-model="selectedScenario">
+            <option value="AUTO">Tự động nhận diện</option>
+            <option value="SALES">Mua hàng & Báo giá</option>
+            <option value="SERVICE_SUPPORT">Sử dụng Dịch vụ & Kỹ thuật</option>
+            <option value="WARRANTY_RETURN">Bảo hành & Đổi trả</option>
+            <option value="ORDER_BILLING">Đơn hàng & Thanh toán</option>
+          </select>
+        </div>
+
         <!-- Top-K Setting -->
         <div class="top-k-control" title="Số lượng chunk ngữ cảnh tối đa gửi vào prompt RAG">
           <label for="topk-select">Top-K:</label>
@@ -63,7 +90,12 @@
         </div>
         <h2 class="hero-title">Chào mừng đến với DocMind</h2>
         <p class="hero-desc">
-          Hệ thống trả lời câu hỏi <strong>chính xác 100%</strong> dựa trên tài liệu đã upload, kèm số trang và trích dẫn kiểm chứng nguồn.
+          <template v-if="chatMode === 'customer'">
+            Trợ lý AI sử dụng <strong>Prompt được huấn luyện trước</strong> để tư vấn và giải đáp cho bạn trong vai trò <strong>khách hàng mua hàng hoặc sử dụng dịch vụ</strong>.
+          </template>
+          <template v-else>
+            Hệ thống trả lời câu hỏi <strong>chính xác 100%</strong> dựa trên tài liệu đã upload, kèm số trang và trích dẫn kiểm chứng nguồn.
+          </template>
         </p>
 
         <!-- Starter Suggestions -->
@@ -71,10 +103,10 @@
           <div class="starters-label">Gợi ý câu hỏi bắt đầu:</div>
           <div class="starters-grid">
             <button 
-              v-for="(prompt, idx) in starterPrompts" 
+              v-for="(prompt, idx) in activeStarterPrompts" 
               :key="idx" 
               class="starter-card"
-              :disabled="selectedDocs.length === 0"
+              :disabled="chatMode === 'rag' && selectedDocs.length === 0"
               @click="submitQuestion(prompt)"
             >
               <div class="starter-icon">✨</div>
@@ -177,13 +209,13 @@
 
     <!-- Chat Input Section -->
     <footer class="chat-input-wrapper">
-      <div class="input-card" :class="{ 'has-focus': isFocused, 'is-disabled': selectedDocs.length === 0 }">
+      <div class="input-card" :class="{ 'has-focus': isFocused, 'is-disabled': chatMode === 'rag' && selectedDocs.length === 0 }">
         <textarea 
           ref="inputRef"
           v-model="questionInput" 
-          placeholder="Đặt câu hỏi về nội dung trong các tài liệu đã chọn..."
+          :placeholder="chatMode === 'customer' ? 'Nhập câu hỏi của bạn trong vai trò khách hàng mua hàng hoặc sử dụng dịch vụ...' : 'Đặt câu hỏi về nội dung trong các tài liệu đã chọn...'"
           rows="1"
-          :disabled="selectedDocs.length === 0 || isAsking"
+          :disabled="(chatMode === 'rag' && selectedDocs.length === 0) || isAsking"
           @focus="isFocused = true"
           @blur="isFocused = false"
           @keydown.enter="handleEnter"
@@ -239,6 +271,8 @@ const props = defineProps({
 
 const emit = defineEmits(['ask-question', 'clear-chat'])
 
+const chatMode = ref('customer')
+const selectedScenario = ref('AUTO')
 const topK = ref(5)
 const questionInput = ref('')
 const isFocused = ref(false)
@@ -246,12 +280,23 @@ const inputRef = ref(null)
 const messagesScrollRef = ref(null)
 const copiedIndex = ref(-1)
 
-const starterPrompts = [
+const customerStarterPrompts = [
+  'Tư vấn giúp mình gói dịch vụ phù hợp cho nhóm 10 người và báo giá chi tiết?',
+  'Hướng dẫn các bước kích hoạt và sử dụng dịch vụ sau khi thanh toán?',
+  'Chính sách bảo hành 12 tháng và đổi trả hoàn tiền trong 7 ngày đầu như thế nào?',
+  'Cửa hàng hỗ trợ những hình thức thanh toán nào và có xuất hóa đơn VAT không?'
+]
+
+const ragStarterPrompts = [
   'Tóm tắt nội dung chính và các điểm cốt lõi của tài liệu',
   'Kiến trúc hệ thống bao gồm những thành phần và cổng dịch vụ nào?',
   'Quy trình ingest và luồng chat hoạt động như thế nào?',
   'Liệt kê các bảng biểu, công thức hoặc số liệu quan trọng'
 ]
+
+const activeStarterPrompts = computed(() => {
+  return chatMode.value === 'customer' ? customerStarterPrompts : ragStarterPrompts
+})
 
 const selectedDocsNames = computed(() => {
   return props.selectedDocs.map(d => d.filename).slice(0, 2).join(', ') + 
@@ -259,7 +304,8 @@ const selectedDocsNames = computed(() => {
 })
 
 const canSend = computed(() => {
-  return questionInput.value.trim().length > 0 && props.selectedDocs.length > 0 && !props.isAsking
+  const hasDocCondition = chatMode.value === 'customer' || props.selectedDocs.length > 0
+  return questionInput.value.trim().length > 0 && hasDocCondition && !props.isAsking
 })
 
 const renderMarkdown = (text) => {
@@ -289,12 +335,15 @@ const handleEnter = (e) => {
 
 const submitQuestion = (query) => {
   const q = query.trim()
-  if (!q || props.selectedDocs.length === 0 || props.isAsking) return
+  const hasDocCondition = chatMode.value === 'customer' || props.selectedDocs.length > 0
+  if (!q || !hasDocCondition || props.isAsking) return
 
   emit('ask-question', {
     question: q,
     documentIds: props.selectedDocs.map(d => d.document_id),
-    topK: topK.value
+    topK: topK.value,
+    mode: chatMode.value,
+    scenario: selectedScenario.value
   })
 
   questionInput.value = ''

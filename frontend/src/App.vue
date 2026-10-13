@@ -292,9 +292,14 @@ const handleToggleSelectAll = () => {
 }
 
 /**
- * Hỏi đáp chat RAG
+ * Hỏi đáp chat RAG hoặc Tư vấn khách hàng (Prompt được huấn luyện trước)
  */
-const handleAskQuestion = async ({ question, documentIds, topK }) => {
+const handleAskQuestion = async ({ question, documentIds, topK, mode = 'customer', scenario = 'AUTO', customerName = 'Quý khách' }) => {
+  const priorHistory = messages.value
+    .filter(m => m && m.content)
+    .slice(-10)
+    .map(m => ({ role: m.role, content: m.content }))
+
   // Thêm tin nhắn câu hỏi của user
   messages.value.push({
     role: 'user',
@@ -325,21 +330,41 @@ const handleAskQuestion = async ({ question, documentIds, topK }) => {
   }
 
   try {
-    const res = await api.chat({
-      documentIds,
-      question,
-      topK
-    })
+    if (mode === 'customer') {
+      const res = await api.customerChat({
+        question,
+        customerName,
+        customerRole: 'Khách hàng mua hàng hoặc sử dụng dịch vụ',
+        scenario: scenario === 'AUTO' ? undefined : scenario,
+        documentIds,
+        topK,
+        history: priorHistory
+      })
 
-    messages.value.push({
-      role: 'assistant',
-      content: res.answer || 'Không tìm thấy câu trả lời phù hợp trong tài liệu.',
-      citations: res.citations || []
-    })
+      messages.value.push({
+        role: 'assistant',
+        content: res.answer || 'Dạ em xin ghi nhận câu hỏi và hỗ trợ Anh/Chị ngay ạ.',
+        scenario: res.scenario,
+        suggestedQuestions: res.suggested_questions || [],
+        citations: res.citations || []
+      })
+    } else {
+      const res = await api.chat({
+        documentIds,
+        question,
+        topK
+      })
+
+      messages.value.push({
+        role: 'assistant',
+        content: res.answer || 'Không tìm thấy câu trả lời phù hợp trong tài liệu.',
+        citations: res.citations || []
+      })
+    }
   } catch (err) {
     messages.value.push({
       role: 'assistant',
-      content: `⚠️ **Lỗi truy vấn RAG:** ${err.message}\n\nHãy đảm bảo tài liệu đã ở trạng thái READY và service backend đang hoạt động.`,
+      content: `⚠️ **Lỗi truy vấn:** ${err.message}\n\nHãy đảm bảo service backend đang hoạt động.`,
       citations: []
     })
   } finally {

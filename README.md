@@ -74,6 +74,8 @@ is only involved during **ingest**.
 | GET    | `/api/documents`         | List all uploaded documents with status, pages count, and engine breakdown. |
 | GET    | `/api/documents/{id}`    | Ingest job status (mirrors parser states + indexing). |
 | POST   | `/api/chat`              | Ask a question. Request `{ "question": "...", "document_ids": [...], "top_k": N }`; response includes the answer and `citations[]` referencing `document_id` + `page` + `bbox` + `block_ids`. |
+| POST   | `/api/customer-chat`     | Customer sales & service consultation using pre-trained prompt (`SALES`, `SERVICE_SUPPORT`, `WARRANTY_RETURN`, `ORDER_BILLING`, `GENERAL`). Aliases: `/api/chat/customer`, `/api/customer-support/chat`. |
+| GET    | `/api/customer-chat/prompts` | Inspect the pre-trained customer support prompt template, supported scenarios, and suggested customer questions. |
 
 The exact block/chunk fields these endpoints exchange are defined in
 [`docs/canonical-schema.md`](docs/canonical-schema.md) — read that first.

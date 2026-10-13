@@ -36,9 +36,14 @@ public class NineRouterLlmClient implements LlmClient {
     private final RestClient directRelay;
     private final ObjectMapper objectMapper;
 
+    @org.springframework.beans.factory.annotation.Autowired
+    public NineRouterLlmClient(NineRouterProperties props) {
+        this(props, new ObjectMapper());
+    }
+
     public NineRouterLlmClient(NineRouterProperties props, ObjectMapper objectMapper) {
         this.props = props;
-        this.objectMapper = objectMapper;
+        this.objectMapper = objectMapper != null ? objectMapper : new ObjectMapper();
 
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         requestFactory.setConnectTimeout(Duration.ofMillis(props.getTimeoutMs()));

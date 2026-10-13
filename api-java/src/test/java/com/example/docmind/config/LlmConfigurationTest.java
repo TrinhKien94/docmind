@@ -13,7 +13,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LlmConfigurationTest {
 
     private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-            .withBean(ObjectMapper.class, ObjectMapper::new)
             .withUserConfiguration(
                     NineRouterProperties.class,
                     GeminiProperties.class,
