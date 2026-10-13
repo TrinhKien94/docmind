@@ -1,14 +1,35 @@
-# Start 9Router Gateway with Node v24 on port 20128
+# Start 9Router Gateway with Node on port 20128
 # Bind to 127.0.0.1 to avoid port collisions with Tailscale serve
 
 $ErrorActionPreference = "Stop"
 
-$NodePath = "C:\Users\kieIC\AppData\Local\OpenAI\Codex\runtimes\cua_node\cfb32733c877621e\bin\node.exe"
-if (-not (Test-Path $NodePath)) {
-    $NodePath = "C:\Users\kieIC\AppData\Roaming\npm\node.exe"
+$NodeCandidates = @(
+    "C:\Users\kieIC\AppData\Local\OpenAI\Codex\runtimes\cua_node\cfb32733c877621e\bin\node.exe",
+    "C:\Users\kieIC\AppData\Roaming\npm\node.exe",
+    "C:\Program Files\nodejs\node.exe"
+)
+
+$NodePath = $null
+foreach ($cand in $NodeCandidates) {
+    if (Test-Path $cand) {
+        $NodePath = $cand
+        break
+    }
+}
+
+if (-not $NodePath) {
+    $cmd = Get-Command node -ErrorAction SilentlyContinue
+    if ($cmd) { $NodePath = $cmd.Source }
+}
+
+if (-not $NodePath) {
+    throw "Node.exe not found on system."
 }
 
 $CliPath = "C:\Users\kieIC\AppData\Roaming\npm\node_modules\9router\cli.js"
+if (-not (Test-Path $CliPath)) {
+    throw "9Router CLI script not found at $CliPath"
+}
 
 Write-Host "🚀 Starting 9Router Gateway..." -ForegroundColor Cyan
 Write-Host "   Node Binary: $NodePath" -ForegroundColor Gray

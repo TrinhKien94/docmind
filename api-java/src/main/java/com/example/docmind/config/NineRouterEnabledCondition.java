@@ -12,10 +12,14 @@ public class NineRouterEnabledCondition implements Condition {
 
     @Override
     public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
+        return isNineRouterEnabled(context);
+    }
+
+    public static boolean isNineRouterEnabled(ConditionContext context) {
         String enabledStr = context.getEnvironment().getProperty("ninerouter.enabled");
-        if (enabledStr == null) {
+        if (enabledStr == null || enabledStr.isBlank()) {
             return true; // Mặc định kích hoạt
         }
-        return Boolean.parseBoolean(enabledStr);
+        return Boolean.parseBoolean(enabledStr.trim());
     }
 }

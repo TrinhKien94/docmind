@@ -29,6 +29,9 @@ public class NineRouterProperties {
     /** Direct Codex Relay URL fallback nếu 9router không phản hồi. */
     private String codexRelayUrl = "http://127.0.0.1:11500/v1";
 
+    /** Optional Codex Auth Token override (hữu ích trong Docker/CI). */
+    private String codexAuthToken = "";
+
     /** Timeout (ms) cho LLM generation. */
     private int timeoutMs = 60000;
 }

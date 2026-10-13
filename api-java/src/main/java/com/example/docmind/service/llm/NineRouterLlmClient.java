@@ -11,6 +11,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -32,6 +33,7 @@ public class NineRouterLlmClient implements LlmClient {
 
     private final NineRouterProperties props;
     private final RestClient http;
+    private final RestClient directRelay;
     private final ObjectMapper objectMapper;
 
     public NineRouterLlmClient(NineRouterProperties props, ObjectMapper objectMapper) {
@@ -47,11 +49,17 @@ public class NineRouterLlmClient implements LlmClient {
                 .requestFactory(requestFactory)
                 .build();
 
-        log.info("NineRouterLlmClient active (baseUrl={}, model={})",
-                props.getBaseUrl(), props.getModel());
+        this.directRelay = RestClient.builder()
+                .baseUrl(props.getCodexRelayUrl())
+                .requestFactory(requestFactory)
+                .build();
+
+        log.info("NineRouterLlmClient active (baseUrl={}, model={}, timeoutMs={})",
+                props.getBaseUrl(), props.getModel(), props.getTimeoutMs());
     }
 
     @Override
+    @SuppressWarnings("unchecked")
     public String complete(String prompt) {
         // 1) Thử gọi qua 9Router
         try {
@@ -62,11 +70,15 @@ public class NineRouterLlmClient implements LlmClient {
                     )
             );
 
-            Map<String, Object> resp = http.post()
+            var requestSpec = http.post()
                     .uri("/chat/completions")
-                    .header("Authorization", "Bearer " + props.getApiKey())
-                    .header("Content-Type", "application/json")
-                    .body(body)
+                    .header("Content-Type", "application/json");
+
+            if (props.getApiKey() != null && !props.getApiKey().isBlank()) {
+                requestSpec.header("Authorization", "Bearer " + props.getApiKey().trim());
+            }
+
+            Map<String, Object> resp = requestSpec.body(body)
                     .retrieve()
                     .body(Map.class);
 
@@ -75,6 +87,9 @@ public class NineRouterLlmClient implements LlmClient {
                 log.info("Called 9Router successfully via model={}", props.getModel());
                 return answer;
             }
+        } catch (RestClientResponseException e) {
+            log.warn("9Router HTTP error {} (body={}), trying direct Codex relay fallback...",
+                    e.getStatusCode(), e.getResponseBodyAsString());
         } catch (Exception e) {
             log.warn("9Router invocation failed ({}), trying direct Codex relay fallback...", e.getMessage());
         }
@@ -83,12 +98,13 @@ public class NineRouterLlmClient implements LlmClient {
         try {
             String token = resolveCodexAuthToken();
             if (token != null) {
-                RestClient directRelay = RestClient.builder()
-                        .baseUrl(props.getCodexRelayUrl())
-                        .build();
+                String directModel = props.getModel();
+                if (directModel.contains("/")) {
+                    directModel = directModel.substring(directModel.lastIndexOf('/') + 1);
+                }
 
                 Map<String, Object> body = Map.of(
-                        "model", "gpt-6-astra",
+                        "model", directModel,
                         "messages", List.of(
                                 Map.of("role", "user", "content", prompt)
                         )
@@ -104,10 +120,14 @@ public class NineRouterLlmClient implements LlmClient {
 
                 String answer = extractText(resp);
                 if (answer != null && !answer.isBlank()) {
-                    log.info("Direct Codex relay invocation succeeded with gpt-6-astra");
+                    log.info("Direct Codex relay invocation succeeded with model={}", directModel);
                     return answer;
                 }
+            } else {
+                log.warn("Direct Codex relay fallback skipped: no access token available");
             }
+        } catch (RestClientResponseException e) {
+            log.error("Direct Codex relay HTTP error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
         } catch (Exception e) {
             log.error("Direct Codex relay fallback also failed: {}", e.getMessage());
         }
@@ -121,7 +141,7 @@ public class NineRouterLlmClient implements LlmClient {
     }
 
     @SuppressWarnings("unchecked")
-    private String extractText(Map<String, Object> resp) {
+    public String extractText(Map<String, Object> resp) {
         if (resp == null) {
             return null;
         }
@@ -130,9 +150,30 @@ public class NineRouterLlmClient implements LlmClient {
             if (choices == null || choices.isEmpty()) {
                 return null;
             }
-            Map<String, Object> message = (Map<String, Object>) choices.get(0).get("message");
-            if (message != null && message.get("content") != null) {
-                return message.get("content").toString().trim();
+            Map<String, Object> firstChoice = choices.get(0);
+            Map<String, Object> message = (Map<String, Object>) firstChoice.get("message");
+            if (message != null) {
+                Object contentObj = message.get("content");
+                if (contentObj instanceof String str && !str.isBlank()) {
+                    return str.trim();
+                } else if (contentObj instanceof List<?> parts) {
+                    StringBuilder sb = new StringBuilder();
+                    for (Object p : parts) {
+                        if (p instanceof Map<?, ?> partMap) {
+                            Object text = partMap.get("text");
+                            if (text != null) {
+                                sb.append(text);
+                            }
+                        }
+                    }
+                    if (!sb.isEmpty()) {
+                        return sb.toString().trim();
+                    }
+                }
+            }
+            Object textObj = firstChoice.get("text");
+            if (textObj instanceof String s && !s.isBlank()) {
+                return s.trim();
             }
         } catch (Exception e) {
             log.warn("Error parsing 9Router response: {}", e.getMessage());
@@ -141,6 +182,13 @@ public class NineRouterLlmClient implements LlmClient {
     }
 
     private String resolveCodexAuthToken() {
+        if (props.getCodexAuthToken() != null && !props.getCodexAuthToken().isBlank()) {
+            return props.getCodexAuthToken().trim();
+        }
+        String envToken = System.getenv("CODEX_AUTH_TOKEN");
+        if (envToken != null && !envToken.isBlank()) {
+            return envToken.trim();
+        }
         try {
             String userHome = System.getProperty("user.home");
             Path authPath = Path.of(userHome, ".codex", "auth.json");
