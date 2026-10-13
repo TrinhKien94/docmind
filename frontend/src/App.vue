@@ -31,6 +31,7 @@
         :messages="messages"
         :is-asking="isAsking"
         :evolution-gen="evolutionGen"
+        :customer-scenarios="customerScenarios"
         @ask-question="handleAskQuestion"
         @submit-feedback="handleSubmitFeedback"
         @clear-chat="handleClearChat"
@@ -65,6 +66,8 @@ const toastMessage = ref('')
 const toastType = ref('info')
 const chatAreaRef = ref(null)
 const evolutionGen = ref(0)
+const customerScenarios = ref([])
+const defaultCustomerRole = ref('Khách hàng mua hàng hoặc sử dụng dịch vụ')
 
 const pollingTimers = new Map()
 
@@ -82,6 +85,28 @@ const showToast = (msg, type = 'info', timeout = 4000) => {
   }, timeout)
 }
 
+const syncCustomerBackendConfig = async () => {
+  try {
+    const [evo, prompts] = await Promise.allSettled([
+      api.getCustomerEvolution(),
+      api.getCustomerPrompts()
+    ])
+    if (evo.status === 'fulfilled' && evo.value && typeof evo.value.evolution_generation === 'number') {
+      evolutionGen.value = evo.value.evolution_generation
+    }
+    if (prompts.status === 'fulfilled' && prompts.value) {
+      if (Array.isArray(prompts.value.scenarios)) {
+        customerScenarios.value = prompts.value.scenarios
+      }
+      if (prompts.value.default_customer_role) {
+        defaultCustomerRole.value = prompts.value.default_customer_role
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Kiểm tra backend và tải dữ liệu ban đầu
  */
@@ -91,14 +116,7 @@ const initApp = async () => {
     if (online) {
       isConnected.value = true
       await fetchDocuments()
-      try {
-        const evo = await api.getCustomerEvolution()
-        if (evo && typeof evo.evolution_generation === 'number') {
-          evolutionGen.value = evo.evolution_generation
-        }
-      } catch {
-        // ignore
-      }
+      await syncCustomerBackendConfig()
       showToast('Đã kết nối thành công tới DocMind Backend (cổng 8090)', 'success')
     } else {
       useDemoData()
@@ -127,6 +145,7 @@ const toggleDemoMode = async () => {
       if (online) {
         isConnected.value = true
         await fetchDocuments()
+        await syncCustomerBackendConfig()
         showToast('Kết nối backend thành công!', 'success')
       } else {
         showToast('Không thể kết nối localhost:8090. Vẫn giữ Chế độ Demo.', 'error')
@@ -331,7 +350,10 @@ const handleAskQuestion = async ({ question, documentIds, topK, mode = 'customer
       messages.value.push({
         role: 'assistant',
         content: matched.answer,
-        citations: matched.citations
+        question: mode === 'customer' ? question : undefined,
+        scenario: mode === 'customer' ? (scenario === 'AUTO' ? 'SALES' : scenario) : undefined,
+        citations: matched.citations,
+        feedbackSubmitted: null
       })
 
       isAsking.value = false
@@ -345,7 +367,7 @@ const handleAskQuestion = async ({ question, documentIds, topK, mode = 'customer
       const res = await api.customerChat({
         question,
         customerName,
-        customerRole: 'Khách hàng mua hàng hoặc sử dụng dịch vụ',
+        customerRole: defaultCustomerRole.value,
         scenario: scenario === 'AUTO' ? undefined : scenario,
         documentIds,
         topK,

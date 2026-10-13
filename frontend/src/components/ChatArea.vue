@@ -44,10 +44,9 @@
           <label for="scenario-select">Kịch bản:</label>
           <select id="scenario-select" v-model="selectedScenario">
             <option value="AUTO">Tự động nhận diện</option>
-            <option value="SALES">Mua hàng & Báo giá</option>
-            <option value="SERVICE_SUPPORT">Sử dụng Dịch vụ & Kỹ thuật</option>
-            <option value="WARRANTY_RETURN">Bảo hành & Đổi trả</option>
-            <option value="ORDER_BILLING">Đơn hàng & Thanh toán</option>
+            <option v-for="sc in scenarioOptions" :key="sc.scenario" :value="sc.scenario">
+              {{ sc.display_name }}
+            </option>
           </select>
         </div>
 
@@ -182,7 +181,7 @@
                   <span>{{ copiedIndex === index ? 'Đã sao chép' : 'Sao chép' }}</span>
                 </button>
 
-                <template v-if="chatMode === 'customer'">
+                <template v-if="chatMode === 'customer' && (msg.interactionId || msg.question)">
                   <button
                     class="action-btn"
                     :disabled="!!msg.feedbackSubmitted"
@@ -289,6 +288,10 @@ const props = defineProps({
   evolutionGen: {
     type: Number,
     default: 0
+  },
+  customerScenarios: {
+    type: Array,
+    default: () => []
   }
 })
 
@@ -302,6 +305,20 @@ const isFocused = ref(false)
 const inputRef = ref(null)
 const messagesScrollRef = ref(null)
 const copiedIndex = ref(-1)
+
+const defaultScenarioOptions = [
+  { scenario: 'SALES', display_name: 'Mua hàng & Báo giá' },
+  { scenario: 'SERVICE_SUPPORT', display_name: 'Sử dụng Dịch vụ & Kỹ thuật' },
+  { scenario: 'WARRANTY_RETURN', display_name: 'Bảo hành & Đổi trả' },
+  { scenario: 'ORDER_BILLING', display_name: 'Đơn hàng & Thanh toán' }
+]
+
+const scenarioOptions = computed(() => {
+  if (Array.isArray(props.customerScenarios) && props.customerScenarios.length > 0) {
+    return props.customerScenarios.filter(s => s.scenario && s.scenario !== 'GENERAL')
+  }
+  return defaultScenarioOptions
+})
 
 const customerStarterPrompts = [
   'Tư vấn giúp mình gói dịch vụ phù hợp cho nhóm 10 người và báo giá chi tiết?',
@@ -318,7 +335,24 @@ const ragStarterPrompts = [
 ]
 
 const activeStarterPrompts = computed(() => {
-  return chatMode.value === 'customer' ? customerStarterPrompts : ragStarterPrompts
+  if (chatMode.value !== 'customer') {
+    return ragStarterPrompts
+  }
+  if (Array.isArray(props.customerScenarios) && props.customerScenarios.length > 0) {
+    if (selectedScenario.value !== 'AUTO') {
+      const matched = props.customerScenarios.find(s => s.scenario === selectedScenario.value)
+      if (matched && Array.isArray(matched.suggested_questions) && matched.suggested_questions.length > 0) {
+        return matched.suggested_questions
+      }
+    }
+    const collected = props.customerScenarios
+      .filter(s => s.scenario !== 'GENERAL' && Array.isArray(s.suggested_questions) && s.suggested_questions.length > 0)
+      .map(s => s.suggested_questions[0])
+    if (collected.length > 0) {
+      return collected.slice(0, 4)
+    }
+  }
+  return customerStarterPrompts
 })
 
 const selectedDocsNames = computed(() => {

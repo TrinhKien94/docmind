@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     embedding_model: str = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
     embedding_dim: int = 384
     embedding_max_batch: int = 256
+    embedding_max_chars: int = 20_000
     embedding_device: str = "cpu"
 
     # HTTP header the Java orchestrator sets so logs share one correlation id.

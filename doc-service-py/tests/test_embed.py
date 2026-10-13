@@ -91,12 +91,13 @@ def test_real_model_semantic_sanity_check():
 
 
 def test_externalized_settings_override_embed_and_cors_config(monkeypatch):
-    """Externalized env vars override model names, dimensions, batch size, and device."""
+    """Externalized env vars override model names, dimensions, batch size, max chars, and device."""
     from app.config import Settings
 
     monkeypatch.setenv("EMBEDDING_MODEL", "custom-multilingual-embed-v2")
     monkeypatch.setenv("EMBEDDING_DIM", "512")
     monkeypatch.setenv("EMBEDDING_MAX_BATCH", "128")
+    monkeypatch.setenv("EMBEDDING_MAX_CHARS", "40000")
     monkeypatch.setenv("EMBEDDING_DEVICE", "cuda")
     monkeypatch.setenv("CORRELATION_HEADER", "X-Request-Id")
 
@@ -104,6 +105,7 @@ def test_externalized_settings_override_embed_and_cors_config(monkeypatch):
     assert settings.embedding_model == "custom-multilingual-embed-v2"
     assert settings.embedding_dim == 512
     assert settings.embedding_max_batch == 128
+    assert settings.embedding_max_chars == 40000
     assert settings.embedding_device == "cuda"
     assert settings.correlation_header == "X-Request-Id"
 

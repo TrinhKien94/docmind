@@ -61,11 +61,15 @@ public class CustomerSelfEvolutionService {
     private static final Pattern EVOLVED_TAG_PATTERN = Pattern.compile(
             "(?is)<\\s*evolved_guideline\\s*>(.*?)<\\s*/\\s*evolved_guideline\\s*>"
     );
+    private static final Pattern UNCLOSED_EVOLVED_TAG_PATTERN = Pattern.compile(
+            "(?is)<\\s*evolved_guideline\\s*>(.+)$"
+    );
     private static final Pattern CITATION_MARKER_PATTERN = Pattern.compile("\\[(\\d+)]");
 
     private final CustomerSupportProperties customerProps;
     private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
+    private final Object stateLock = new Object();
 
     private final AtomicInteger evolutionGeneration = new AtomicInteger(0);
     private final AtomicLong totalInteractions = new AtomicLong(0);
@@ -110,7 +114,7 @@ public class CustomerSelfEvolutionService {
      * Lấy danh sách các quy tắc đã tiến hoá (Learned Guidelines) áp dụng cho kịch bản hiện tại
      * (kết hợp quy tắc chuyên biệt của kịch bản + quy tắc chung GENERAL).
      */
-    public synchronized List<LearnedGuidelineInfo> getActiveGuidelinesForScenario(CustomerScenario scenario) {
+    public List<LearnedGuidelineInfo> getActiveGuidelinesForScenario(CustomerScenario scenario) {
         CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
         if (evo == null || !evo.isEnabled()) {
             return List.of();
@@ -118,32 +122,34 @@ public class CustomerSelfEvolutionService {
         String code = scenario != null ? scenario.code() : CustomerScenario.GENERAL.code();
         int maxInPrompt = Math.max(1, evo.getMaxGuidelinesInPrompt());
 
-        List<LearnedGuidelineInfo> combined = new ArrayList<>();
-        List<LearnedGuidelineInfo> scenarioList = learnedGuidelines.getOrDefault(code, List.of());
-        combined.addAll(scenarioList);
+        synchronized (stateLock) {
+            List<LearnedGuidelineInfo> combined = new ArrayList<>();
+            List<LearnedGuidelineInfo> scenarioList = learnedGuidelines.getOrDefault(code, List.of());
+            combined.addAll(scenarioList);
 
-        if (!CustomerScenario.GENERAL.code().equals(code)) {
-            List<LearnedGuidelineInfo> generalList =
-                    learnedGuidelines.getOrDefault(CustomerScenario.GENERAL.code(), List.of());
-            for (LearnedGuidelineInfo g : generalList) {
-                if (combined.stream().noneMatch(existing -> existing.contentHash().equals(g.contentHash()))) {
-                    combined.add(g);
+            if (!CustomerScenario.GENERAL.code().equals(code)) {
+                List<LearnedGuidelineInfo> generalList =
+                        learnedGuidelines.getOrDefault(CustomerScenario.GENERAL.code(), List.of());
+                for (LearnedGuidelineInfo g : generalList) {
+                    if (combined.stream().noneMatch(existing -> existing.contentHash().equals(g.contentHash()))) {
+                        combined.add(g);
+                    }
                 }
             }
-        }
 
-        return combined.stream()
-                .sorted(Comparator.comparingDouble(
-                        (LearnedGuidelineInfo g) -> g.confidenceScore() + 0.05 * g.reinforcementCount()
-                ).reversed())
-                .limit(maxInPrompt)
-                .toList();
+            return combined.stream()
+                    .sorted(Comparator.comparingDouble(
+                            (LearnedGuidelineInfo g) -> g.confidenceScore() + 0.05 * g.reinforcementCount()
+                    ).reversed())
+                    .limit(maxInPrompt)
+                    .toList();
+        }
     }
 
     /**
      * Lấy danh sách các mẫu hội thoại Few-Shot đã tiến hoá cho kịch bản hiện tại.
      */
-    public synchronized List<EvolvedExampleInfo> getActiveExamplesForScenario(CustomerScenario scenario) {
+    public List<EvolvedExampleInfo> getActiveExamplesForScenario(CustomerScenario scenario) {
         CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
         if (evo == null || !evo.isEnabled()) {
             return List.of();
@@ -151,29 +157,34 @@ public class CustomerSelfEvolutionService {
         String code = scenario != null ? scenario.code() : CustomerScenario.GENERAL.code();
         int maxInPrompt = Math.max(1, evo.getMaxFewShotExemplarsInPrompt());
 
-        List<EvolvedExampleInfo> list = evolvedExamples.getOrDefault(code, List.of());
-        return list.stream()
-                .sorted(Comparator.comparingDouble(
-                        (EvolvedExampleInfo e) -> e.qualityScore() + 0.03 * e.reinforcementCount()
-                ).reversed())
-                .limit(maxInPrompt)
-                .toList();
+        synchronized (stateLock) {
+            List<EvolvedExampleInfo> list = evolvedExamples.getOrDefault(code, List.of());
+            return list.stream()
+                    .sorted(Comparator.comparingDouble(
+                            (EvolvedExampleInfo e) -> e.qualityScore() + 0.03 * e.reinforcementCount()
+                    ).reversed())
+                    .limit(maxInPrompt)
+                    .toList();
+        }
     }
 
     /**
      * Ghi nhận phiên chat vừa hoàn tất và thực thi chiến lược tự tiến hoá học hỏi (nếu bật).
+     * Thực hiện LLM reflection (nếu có) bên ngoài khoá bộ nhớ để không chặn các luồng chat đồng thời.
      *
      * @return mã {@code interaction_id} của lượt hội thoại này.
      */
-    public synchronized String recordAndEvolveAfterChat(CustomerChatRequest request,
-                                                        CustomerScenario primaryScenario,
-                                                        List<CustomerScenario> secondaryScenarios,
-                                                        String answer,
-                                                        List<ReciprocalRankFusion.FusedChunk> fusedChunks,
-                                                        String modelName) {
+    public String recordAndEvolveAfterChat(CustomerChatRequest request,
+                                           CustomerScenario primaryScenario,
+                                           List<CustomerScenario> secondaryScenarios,
+                                           String answer,
+                                           List<ReciprocalRankFusion.FusedChunk> fusedChunks,
+                                           String modelName) {
         String interactionId = UUID.randomUUID().toString();
         String question = request != null ? request.resolvedQuestion() : "";
-        String scenarioCode = primaryScenario != null ? primaryScenario.code() : CustomerScenario.GENERAL.code();
+        CustomerScenario resolvedPrimary = primaryScenario != null ? primaryScenario : CustomerScenario.GENERAL;
+        List<CustomerScenario> resolvedSecondaries = secondaryScenarios != null ? secondaryScenarios : List.of();
+        String scenarioCode = resolvedPrimary.code();
         int chunkCount = fusedChunks != null ? fusedChunks.size() : 0;
 
         CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
@@ -186,8 +197,8 @@ public class CustomerSelfEvolutionService {
         EvaluationResult eval = evaluateInteraction(
                 question,
                 answer,
-                primaryScenario != null ? primaryScenario : CustomerScenario.GENERAL,
-                secondaryScenarios != null ? secondaryScenarios : List.of(),
+                resolvedPrimary,
+                resolvedSecondaries,
                 chunkCount,
                 implicitSignal,
                 null,
@@ -195,34 +206,47 @@ public class CustomerSelfEvolutionService {
                 null
         );
 
-        cumulativeQualityScore += eval.qualityScore();
-
         InteractionEpisode episode = new InteractionEpisode(
                 interactionId,
                 question,
                 answer != null ? answer : "",
                 scenarioCode,
-                secondaryScenarios != null ? secondaryScenarios.stream().map(CustomerScenario::code).toList() : List.of(),
+                resolvedSecondaries.stream().map(CustomerScenario::code).toList(),
                 chunkCount,
                 modelName != null ? modelName : "unknown",
                 eval.qualityScore(),
                 OffsetDateTime.now().toString()
         );
-        storeEpisode(episode);
 
-        if (evo != null && evo.isEnabled() && evo.isAutoEvolveAfterChat()) {
-            boolean shouldCallLlmReflection = evo.isLlmReflectionEnabled()
-                    && evo.getLlmReflectionEveryNInteractions() > 0
-                    && (currentCount % evo.getLlmReflectionEveryNInteractions() == 0);
+        boolean shouldEvolve = evo != null && evo.isEnabled() && evo.isAutoEvolveAfterChat();
+        boolean shouldCallLlmReflection = shouldEvolve
+                && evo.isLlmReflectionEnabled()
+                && ((evo.getLlmReflectionEveryNInteractions() > 0
+                        && (currentCount % evo.getLlmReflectionEveryNInteractions() == 0))
+                || implicitSignal == ImplicitSignal.NEGATIVE
+                || eval.qualityScore() < evo.getLowScoreThresholdForCorrection());
 
-            applyEvolutionStep(
-                    episode,
-                    eval,
-                    implicitSignal,
-                    null,
-                    shouldCallLlmReflection
-            );
-            persistToDiskIfEnabled();
+        String precomputedLlmGuideline = null;
+        if (shouldCallLlmReflection && llmClient != null
+                && needsGuidelineEvolution(resolvedPrimary, resolvedSecondaries, eval, implicitSignal, null)) {
+            precomputedLlmGuideline = tryGenerateGuidelineViaLlm(episode, eval, null);
+        }
+
+        synchronized (stateLock) {
+            cumulativeQualityScore += eval.qualityScore();
+            storeEpisode(episode);
+
+            if (shouldEvolve) {
+                applyEvolutionStepWithCandidate(
+                        episode,
+                        eval,
+                        implicitSignal,
+                        null,
+                        shouldCallLlmReflection,
+                        precomputedLlmGuideline
+                );
+                persistToDiskIfEnabled();
+            }
         }
 
         return interactionId;
@@ -232,32 +256,36 @@ public class CustomerSelfEvolutionService {
      * Tiếp nhận phản hồi tường minh của khách hàng (POST /api/customer-chat/feedback)
      * và chạy ngay bước cập nhật đạo hàm văn bản (TextGrad step) + cập nhật bộ nhớ dài hạn.
      */
-    public synchronized CustomerEvolutionStatusResponse recordFeedbackAndEvolve(CustomerFeedbackRequest feedbackReq) {
+    public CustomerEvolutionStatusResponse recordFeedbackAndEvolve(CustomerFeedbackRequest feedbackReq) {
         if (feedbackReq == null || !feedbackReq.isTargetProvided()) {
             throw new IllegalArgumentException("Phản hồi khách hàng phải có interaction_id hoặc question");
         }
         totalFeedbackCount.incrementAndGet();
 
-        InteractionEpisode episode = null;
+        InteractionEpisode existingEpisode = null;
         if (feedbackReq.interactionId() != null && !feedbackReq.interactionId().isBlank()) {
-            episode = episodeStore.get(feedbackReq.interactionId().strip());
+            synchronized (stateLock) {
+                existingEpisode = episodeStore.get(feedbackReq.interactionId().strip());
+            }
         }
 
         String question = (feedbackReq.question() != null && !feedbackReq.question().isBlank())
                 ? feedbackReq.question().strip()
-                : (episode != null ? episode.question() : "");
+                : (existingEpisode != null ? existingEpisode.question() : "");
         String answer = (feedbackReq.answer() != null && !feedbackReq.answer().isBlank())
                 ? feedbackReq.answer().strip()
-                : (episode != null ? episode.answer() : "");
+                : (existingEpisode != null ? existingEpisode.answer() : "");
         CustomerScenario scenario = CustomerScenario.resolve(
-                feedbackReq.scenario() != null ? feedbackReq.scenario() : (episode != null ? episode.scenario() : null),
+                feedbackReq.scenario() != null
+                        ? feedbackReq.scenario()
+                        : (existingEpisode != null ? existingEpisode.scenario() : null),
                 question,
                 customerProps
         );
         List<CustomerScenario> secondaries = CustomerScenario.detectSecondaryScenarios(question, scenario, customerProps);
-        int chunkCount = episode != null ? episode.retrievedChunkCount() : 0;
-        String interactionId = episode != null
-                ? episode.interactionId()
+        int chunkCount = existingEpisode != null ? existingEpisode.retrievedChunkCount() : 0;
+        String interactionId = existingEpisode != null
+                ? existingEpisode.interactionId()
                 : (feedbackReq.interactionId() != null && !feedbackReq.interactionId().isBlank()
                         ? feedbackReq.interactionId().strip()
                         : UUID.randomUUID().toString());
@@ -274,142 +302,182 @@ public class CustomerSelfEvolutionService {
                 feedbackReq.feedback()
         );
 
-        if (episode == null) {
-            totalInteractions.incrementAndGet();
-            cumulativeQualityScore += eval.qualityScore();
-            episode = new InteractionEpisode(
-                    interactionId,
-                    question,
-                    answer,
-                    scenario.code(),
-                    secondaries.stream().map(CustomerScenario::code).toList(),
-                    chunkCount,
-                    "feedback-submitted",
-                    eval.qualityScore(),
-                    OffsetDateTime.now().toString()
-            );
-            storeEpisode(episode);
-        }
+        InteractionEpisode updatedEpisode = new InteractionEpisode(
+                interactionId,
+                question,
+                answer,
+                scenario.code(),
+                secondaries.stream().map(CustomerScenario::code).toList(),
+                chunkCount,
+                existingEpisode != null ? existingEpisode.modelName() : "feedback-submitted",
+                eval.qualityScore(),
+                OffsetDateTime.now().toString()
+        );
 
         CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
-        boolean isNegativeFeedback = (feedbackReq.rating() != null && feedbackReq.rating() <= 3)
-                || Boolean.FALSE.equals(feedbackReq.helpful())
-                || (feedbackReq.feedback() != null && !feedbackReq.feedback().isBlank());
-        boolean useLlm = evo != null && (evo.isLlmReflectionEnabled()
+        boolean isNegativeFeedback = isNegativeExplicitFeedback(feedbackReq);
+        boolean useLlm = evo != null && evo.isEnabled() && (evo.isLlmReflectionEnabled()
                 || (isNegativeFeedback && evo.isLlmReflectionOnNegativeFeedback()));
 
-        applyEvolutionStep(episode, eval, ImplicitSignal.NEUTRAL, feedbackReq, useLlm);
-        persistToDiskIfEnabled();
+        String precomputedLlmGuideline = null;
+        if (useLlm && llmClient != null
+                && needsGuidelineEvolution(scenario, secondaries, eval, ImplicitSignal.NEUTRAL, feedbackReq)) {
+            precomputedLlmGuideline = tryGenerateGuidelineViaLlm(updatedEpisode, eval, feedbackReq);
+        }
 
-        return getStatus();
+        synchronized (stateLock) {
+            InteractionEpisode currentInStore = episodeStore.get(interactionId);
+            if (currentInStore != null) {
+                cumulativeQualityScore = Math.max(0.0,
+                        cumulativeQualityScore + (eval.qualityScore() - currentInStore.qualityScore()));
+                episodeStore.put(interactionId, updatedEpisode);
+            } else {
+                totalInteractions.incrementAndGet();
+                cumulativeQualityScore += eval.qualityScore();
+                storeEpisode(updatedEpisode);
+            }
+
+            if (evo == null || evo.isEnabled()) {
+                applyEvolutionStepWithCandidate(
+                        updatedEpisode,
+                        eval,
+                        ImplicitSignal.NEUTRAL,
+                        feedbackReq,
+                        useLlm,
+                        precomputedLlmGuideline
+                );
+                persistToDiskIfEnabled();
+            }
+            return getStatus();
+        }
     }
 
     /**
      * Kích hoạt chủ động 1 chu kỳ tối ưu hoá EvoAgentX TextGrad + MIPRO trên các tương tác gần đây.
      */
-    public synchronized CustomerEvolutionStatusResponse triggerEvolutionCycle(String optionalScenario) {
+    public CustomerEvolutionStatusResponse triggerEvolutionCycle(String optionalScenario) {
         CustomerScenario targetScenario = (optionalScenario != null && !optionalScenario.isBlank())
                 ? CustomerScenario.resolve(optionalScenario, "", customerProps)
                 : null;
 
-        List<InteractionEpisode> episodes = episodeOrder.stream()
-                .map(episodeStore::get)
-                .filter(ep -> ep != null && (targetScenario == null || targetScenario.code().equals(ep.scenario())))
-                .toList();
+        List<InteractionEpisode> episodesSnapshot;
+        synchronized (stateLock) {
+            episodesSnapshot = episodeOrder.stream()
+                    .map(episodeStore::get)
+                    .filter(ep -> ep != null && (targetScenario == null || targetScenario.code().equals(ep.scenario())))
+                    .toList();
 
-        if (episodes.isEmpty()) {
-            // Nếu chưa có lịch sử tương tác, khởi tạo quy tắc nền tảng ban đầu cho kịch bản mục tiêu
-            CustomerScenario sc = targetScenario != null ? targetScenario : CustomerScenario.SALES;
-            String seedRule = synthesizeDeterministicGuideline(
-                    sc,
-                    List.of(),
-                    "Khách hàng cần thông tin tư vấn rõ ràng, báo giá minh bạch và hướng dẫn từng bước.",
-                    null,
-                    true
-            );
-            upsertGuideline(sc.code(), seedRule, "EvoAgentX proactive baseline initialization", 0.85);
-            int gen = evolutionGeneration.incrementAndGet();
-            recordGradient(new TextualGradientInfo(
-                    UUID.randomUUID().toString(),
-                    sc.code(),
-                    "(Proactive Evolution Cycle)",
-                    0.85,
-                    "Khởi tạo chu kỳ tiến hoá chủ động khi chưa có phiên chat trong bộ nhớ.",
-                    "Củng cố quy tắc tư vấn trọng tâm cho kịch bản " + sc.code(),
-                    "EVOLVED_GUIDELINE_UPSERT (gen=" + gen + ")",
-                    OffsetDateTime.now().toString()
-            ));
-            persistToDiskIfEnabled();
-            return getStatus();
+            if (episodesSnapshot.isEmpty()) {
+                // Nếu chưa có lịch sử tương tác, khởi tạo quy tắc nền tảng ban đầu cho kịch bản mục tiêu
+                CustomerScenario sc = targetScenario != null ? targetScenario : CustomerScenario.SALES;
+                String seedRule = synthesizeDeterministicGuideline(
+                        sc,
+                        List.of(),
+                        "Khách hàng cần thông tin tư vấn rõ ràng, báo giá minh bạch và hướng dẫn từng bước.",
+                        null,
+                        true
+                );
+                upsertGuideline(sc.code(), seedRule, "EvoAgentX proactive baseline initialization", 0.85);
+                int gen = evolutionGeneration.incrementAndGet();
+                recordGradient(new TextualGradientInfo(
+                        UUID.randomUUID().toString(),
+                        sc.code(),
+                        "(Proactive Evolution Cycle)",
+                        0.85,
+                        "Khởi tạo chu kỳ tiến hoá chủ động khi chưa có phiên chat trong bộ nhớ.",
+                        "Củng cố quy tắc tư vấn trọng tâm cho kịch bản " + sc.code(),
+                        "EVOLVED_GUIDELINE_UPSERT (gen=" + gen + ")",
+                        OffsetDateTime.now().toString()
+                ));
+                persistToDiskIfEnabled();
+                return getStatus();
+            }
         }
 
-        // Duyệt tối đa 5 tương tác gần nhất để phản tư sâu bằng TextGrad
-        int startIdx = Math.max(0, episodes.size() - 5);
-        for (int i = startIdx; i < episodes.size(); i++) {
-            InteractionEpisode ep = episodes.get(i);
+        // Duyệt tối đa 5 tương tác gần nhất để phản tư sâu bằng TextGrad (chạy LLM ngoài lock)
+        int startIdx = Math.max(0, episodesSnapshot.size() - 5);
+        List<InteractionEpisode> batch = episodesSnapshot.subList(startIdx, episodesSnapshot.size());
+        record PrecomputedStep(InteractionEpisode episode, EvaluationResult eval, String llmGuideline) {}
+        List<PrecomputedStep> precomputedSteps = new ArrayList<>(batch.size());
+
+        for (InteractionEpisode ep : batch) {
             CustomerScenario sc = CustomerScenario.resolve(ep.scenario(), ep.question(), customerProps);
             List<CustomerScenario> secs = CustomerScenario.detectSecondaryScenarios(ep.question(), sc, customerProps);
             EvaluationResult eval = evaluateInteraction(
                     ep.question(), ep.answer(), sc, secs, ep.retrievedChunkCount(),
                     ImplicitSignal.NEUTRAL, null, null, null
             );
-            applyEvolutionStep(ep, eval, ImplicitSignal.NEUTRAL, null, true);
+            String llmGuideline = null;
+            if (llmClient != null && needsGuidelineEvolution(sc, secs, eval, ImplicitSignal.NEUTRAL, null)) {
+                llmGuideline = tryGenerateGuidelineViaLlm(ep, eval, null);
+            }
+            precomputedSteps.add(new PrecomputedStep(ep, eval, llmGuideline));
         }
 
-        persistToDiskIfEnabled();
-        return getStatus();
+        synchronized (stateLock) {
+            for (PrecomputedStep step : precomputedSteps) {
+                applyEvolutionStepWithCandidate(
+                        step.episode(), step.eval(), ImplicitSignal.NEUTRAL, null, true, step.llmGuideline());
+            }
+            persistToDiskIfEnabled();
+            return getStatus();
+        }
     }
 
     /**
      * Đặt lại (Reset) bộ nhớ tiến hoá về trạng thái ban đầu.
      */
-    public synchronized CustomerEvolutionStatusResponse resetEvolutionMemory() {
-        evolutionGeneration.set(0);
-        totalInteractions.set(0);
-        totalFeedbackCount.set(0);
-        cumulativeQualityScore = 0.0;
-        for (CustomerScenario sc : CustomerScenario.values()) {
-            learnedGuidelines.put(sc.code(), new ArrayList<>());
-            evolvedExamples.put(sc.code(), new ArrayList<>());
+    public CustomerEvolutionStatusResponse resetEvolutionMemory() {
+        synchronized (stateLock) {
+            evolutionGeneration.set(0);
+            totalInteractions.set(0);
+            totalFeedbackCount.set(0);
+            cumulativeQualityScore = 0.0;
+            for (CustomerScenario sc : CustomerScenario.values()) {
+                learnedGuidelines.put(sc.code(), new ArrayList<>());
+                evolvedExamples.put(sc.code(), new ArrayList<>());
+            }
+            episodeStore.clear();
+            episodeOrder.clear();
+            recentGradients.clear();
+            persistToDiskIfEnabled();
+            return getStatus();
         }
-        episodeStore.clear();
-        episodeOrder.clear();
-        recentGradients.clear();
-        persistToDiskIfEnabled();
-        return getStatus();
     }
 
     /**
      * Trả về trạng thái hiện tại của động cơ tự tiến hoá EvoAgentX.
      */
-    public synchronized CustomerEvolutionStatusResponse getStatus() {
-        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
-        long interactions = totalInteractions.get();
-        double avgScore = interactions > 0
-                ? Math.round((cumulativeQualityScore / interactions) * 1000.0) / 1000.0
-                : 0.0;
+    public CustomerEvolutionStatusResponse getStatus() {
+        synchronized (stateLock) {
+            CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+            long interactions = totalInteractions.get();
+            double avgScore = interactions > 0
+                    ? Math.round(Math.max(0.0, Math.min(1.0, cumulativeQualityScore / interactions)) * 1000.0) / 1000.0
+                    : 0.0;
 
-        Map<String, List<LearnedGuidelineInfo>> guidelinesCopy = new LinkedHashMap<>();
-        for (CustomerScenario sc : CustomerScenario.values()) {
-            guidelinesCopy.put(sc.code(), List.copyOf(learnedGuidelines.getOrDefault(sc.code(), List.of())));
+            Map<String, List<LearnedGuidelineInfo>> guidelinesCopy = new LinkedHashMap<>();
+            for (CustomerScenario sc : CustomerScenario.values()) {
+                guidelinesCopy.put(sc.code(), List.copyOf(learnedGuidelines.getOrDefault(sc.code(), List.of())));
+            }
+
+            Map<String, List<EvolvedExampleInfo>> examplesCopy = new LinkedHashMap<>();
+            for (CustomerScenario sc : CustomerScenario.values()) {
+                examplesCopy.put(sc.code(), List.copyOf(evolvedExamples.getOrDefault(sc.code(), List.of())));
+            }
+
+            return new CustomerEvolutionStatusResponse(
+                    evo == null || evo.isEnabled(),
+                    evo != null ? evo.getStrategy() : "evoagentx-textgrad-mipro",
+                    evolutionGeneration.get(),
+                    interactions,
+                    totalFeedbackCount.get(),
+                    avgScore,
+                    guidelinesCopy,
+                    examplesCopy,
+                    List.copyOf(recentGradients)
+            );
         }
-
-        Map<String, List<EvolvedExampleInfo>> examplesCopy = new LinkedHashMap<>();
-        for (CustomerScenario sc : CustomerScenario.values()) {
-            examplesCopy.put(sc.code(), List.copyOf(evolvedExamples.getOrDefault(sc.code(), List.of())));
-        }
-
-        return new CustomerEvolutionStatusResponse(
-                evo == null || evo.isEnabled(),
-                evo != null ? evo.getStrategy() : "evoagentx-textgrad-mipro",
-                evolutionGeneration.get(),
-                interactions,
-                totalFeedbackCount.get(),
-                avgScore,
-                guidelinesCopy,
-                examplesCopy,
-                List.copyOf(recentGradients)
-        );
     }
 
     public int getCurrentGeneration() {
@@ -420,11 +488,48 @@ public class CustomerSelfEvolutionService {
     // Nội bộ: Đánh giá đa tiêu chí (Loss), tính Textual Gradient & Cập nhật Bộ nhớ
     // =========================================================================
 
-    private void applyEvolutionStep(InteractionEpisode episode,
-                                    EvaluationResult eval,
-                                    ImplicitSignal implicitSignal,
-                                    CustomerFeedbackRequest explicitFeedback,
-                                    boolean invokeLlmOptimizer) {
+    private static boolean isNegativeExplicitFeedback(CustomerFeedbackRequest explicitFeedback) {
+        if (explicitFeedback == null) {
+            return false;
+        }
+        if (Boolean.FALSE.equals(explicitFeedback.helpful())) {
+            return true;
+        }
+        if (explicitFeedback.rating() != null && explicitFeedback.rating() <= 3) {
+            return true;
+        }
+        boolean isExplicitlyPositive = Boolean.TRUE.equals(explicitFeedback.helpful())
+                || (explicitFeedback.rating() != null && explicitFeedback.rating() >= 4);
+        return !isExplicitlyPositive
+                && explicitFeedback.feedback() != null
+                && !explicitFeedback.feedback().isBlank();
+    }
+
+    private boolean needsGuidelineEvolution(CustomerScenario scenario,
+                                            List<CustomerScenario> secondaries,
+                                            EvaluationResult eval,
+                                            ImplicitSignal implicitSignal,
+                                            CustomerFeedbackRequest explicitFeedback) {
+        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+        double lowThreshold = evo != null ? evo.getLowScoreThresholdForCorrection() : 0.78;
+        boolean hasExplicitCorrection = isNegativeExplicitFeedback(explicitFeedback);
+        boolean emptyForScenario;
+        synchronized (stateLock) {
+            emptyForScenario = learnedGuidelines.getOrDefault(scenario.code(), List.of()).isEmpty();
+        }
+        return eval.qualityScore() < lowThreshold
+                || implicitSignal == ImplicitSignal.NEGATIVE
+                || hasExplicitCorrection
+                || (secondaries != null && !secondaries.isEmpty())
+                || emptyForScenario;
+    }
+
+    private void applyEvolutionStepWithCandidate(InteractionEpisode episode,
+                                                 EvaluationResult eval,
+                                                 ImplicitSignal implicitSignal,
+                                                 CustomerFeedbackRequest explicitFeedback,
+                                                 boolean invokeLlmOptimizer,
+                                                 String precomputedLlmGuideline) {
         CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
         CustomerScenario scenario = CustomerScenario.resolve(episode.scenario(), episode.question(), customerProps);
         List<CustomerScenario> secondaries = CustomerScenario.detectSecondaryScenarios(
@@ -434,20 +539,18 @@ public class CustomerSelfEvolutionService {
         double lowThreshold = evo != null ? evo.getLowScoreThresholdForCorrection() : 0.78;
         double exemplarThreshold = evo != null ? evo.getMinScoreForExemplar() : 0.80;
 
-        boolean hasExplicitCorrection = explicitFeedback != null
-                && ((explicitFeedback.feedback() != null && !explicitFeedback.feedback().isBlank())
-                || (explicitFeedback.rating() != null && explicitFeedback.rating() <= 3)
-                || Boolean.FALSE.equals(explicitFeedback.helpful()));
+        boolean hasExplicitCorrection = isNegativeExplicitFeedback(explicitFeedback);
 
-        boolean needsGuidelineEvolution = eval.qualityScore() < lowThreshold
+        boolean needsGuideline = eval.qualityScore() < lowThreshold
                 || implicitSignal == ImplicitSignal.NEGATIVE
                 || hasExplicitCorrection
                 || !secondaries.isEmpty()
                 || learnedGuidelines.getOrDefault(scenario.code(), List.of()).isEmpty();
 
-        if (needsGuidelineEvolution) {
-            String candidateGuideline = null;
-            if (invokeLlmOptimizer && llmClient != null) {
+        if (needsGuideline) {
+            String candidateGuideline = precomputedLlmGuideline;
+            if ((candidateGuideline == null || candidateGuideline.isBlank())
+                    && invokeLlmOptimizer && llmClient != null) {
                 candidateGuideline = tryGenerateGuidelineViaLlm(episode, eval, explicitFeedback);
             }
             if (candidateGuideline == null || candidateGuideline.isBlank()) {
@@ -455,7 +558,7 @@ public class CustomerSelfEvolutionService {
                         scenario,
                         secondaries,
                         eval.textualGradient(),
-                        explicitFeedback != null ? explicitFeedback.feedback() : null,
+                        hasExplicitCorrection && explicitFeedback != null ? explicitFeedback.feedback() : null,
                         episode.retrievedChunkCount() > 0
                 );
             }
@@ -463,6 +566,18 @@ public class CustomerSelfEvolutionService {
             upsertGuideline(scenario.code(), candidateGuideline, eval.textualGradient(), guidelineConfidence);
             int gen = evolutionGeneration.incrementAndGet();
             appliedAction = "EVOLVED_GUIDELINE_UPSERT (gen=" + gen + ")";
+        }
+
+        // Nếu nhận phản hồi tiêu cực hoặc điểm chất lượng bị hạ thấp, loại bỏ mẫu Few-Shot cũ (nếu đã trót lưu)
+        if (hasExplicitCorrection
+                || implicitSignal == ImplicitSignal.NEGATIVE
+                || (explicitFeedback != null && eval.qualityScore() < exemplarThreshold)) {
+            if (evictExemplarIfPresent(scenario.code(), episode.question())) {
+                int gen = evolutionGeneration.incrementAndGet();
+                appliedAction = appliedAction.equals("MONITORED")
+                        ? "EVICTED_EXEMPLAR (gen=" + gen + ")"
+                        : appliedAction + " + EVICTED_EXEMPLAR";
+            }
         }
 
         // MIPRO Exemplar Bootstrapping: Nếu câu trả lời chất lượng cao hoặc khách hàng khen ngợi -> lưu mẫu Few-Shot
@@ -512,11 +627,13 @@ public class CustomerSelfEvolutionService {
         List<String> critiques = new ArrayList<>();
         List<String> gradients = new ArrayList<>();
 
-        // 1. Thái độ, xưng hô & sự đồng cảm (Salutation & Tone)
+        // 1. Thái độ, xưng hô & sự đồng cảm (Salutation & Tone) — đọc từ khoá từ cấu hình
         double toneScore = 0.6;
-        boolean hasPoliteGreeting = normAnswer.contains(" da ") || normAnswer.contains(" chao ")
-                || normAnswer.contains(" cam on ") || normAnswer.contains(" anh chi ")
-                || normAnswer.contains(" quy khach ");
+        List<String> salutationKeywords = (evo != null && evo.getSalutationKeywords() != null
+                && !evo.getSalutationKeywords().isEmpty())
+                ? evo.getSalutationKeywords()
+                : List.of("da", "chao", "cam on", "anh chi", "quy khach", "em xin");
+        boolean hasPoliteGreeting = containsAnyNormalizedKeyword(normAnswer, salutationKeywords);
         if (hasPoliteGreeting) {
             toneScore = 1.0;
         } else {
@@ -566,11 +683,14 @@ public class CustomerSelfEvolutionService {
             }
         }
 
-        // 4. Tính hành động & Hướng dẫn tiếp theo (Actionability / Call-to-Action)
+        // 4. Tính hành động & Hướng dẫn tiếp theo (Actionability / Call-to-Action) — đọc từ khoá từ cấu hình
         double actionScore = 0.70;
-        boolean hasActionOrContact = normAnswer.contains(" hotline ") || normAnswer.contains(" email ")
-                || normAnswer.contains(" lien he ") || normAnswer.contains(" huong dan ")
-                || normAnswer.contains(" dang ky ") || safeAnswer.contains("?");
+        List<String> actionKeywords = (evo != null && evo.getActionabilityKeywords() != null
+                && !evo.getActionabilityKeywords().isEmpty())
+                ? evo.getActionabilityKeywords()
+                : List.of("hotline", "email", "lien he", "huong dan", "dang ky", "dung thu", "bao gia", "ho tro");
+        boolean hasActionOrContact = containsAnyNormalizedKeyword(normAnswer, actionKeywords)
+                || safeAnswer.contains("?");
         if (hasActionOrContact) {
             actionScore = 0.95;
         } else {
@@ -640,19 +760,83 @@ public class CustomerSelfEvolutionService {
                 : List.of("chua dung", "sai roi", "khong phai", "chua hieu", "chua ro", "y toi la", "hoi lai");
 
         String paddedQuestion = CustomerScenario.normalizeWordsPadded(request.resolvedQuestion());
-        for (String neg : negKeywords) {
-            String normNeg = CustomerScenario.normalizeWordsPadded(neg).strip();
-            if (!normNeg.isEmpty() && paddedQuestion.contains(" " + normNeg + " ")) {
-                return ImplicitSignal.NEGATIVE;
-            }
+        if (containsAnyNormalizedKeyword(paddedQuestion, negKeywords)) {
+            return ImplicitSignal.NEGATIVE;
         }
-        for (String pos : posKeywords) {
-            String normPos = CustomerScenario.normalizeWordsPadded(pos).strip();
-            if (!normPos.isEmpty() && paddedQuestion.contains(" " + normPos + " ")) {
-                return ImplicitSignal.POSITIVE;
+        if (containsAnyNormalizedKeyword(paddedQuestion, posKeywords)) {
+            return ImplicitSignal.POSITIVE;
+        }
+
+        // Kiểm tra thêm lịch sử hội thoại: phát hiện khách hàng phải lặp lại cùng câu hỏi hoặc phàn nàn ở lượt gần nhất
+        if (request.history() != null && !request.history().isEmpty()) {
+            String normCurrent = paddedQuestion.strip();
+            List<String> currentTokens = normCurrent.isEmpty() ? List.of() : List.of(normCurrent.split("\\s+"));
+
+            for (int i = request.history().size() - 1; i >= 0; i--) {
+                CustomerChatRequest.ConversationTurn turn = request.history().get(i);
+                if (turn == null || turn.content() == null || turn.content().isBlank()) {
+                    continue;
+                }
+                String role = turn.role() != null ? turn.role().strip().toLowerCase(Locale.ROOT) : "user";
+                boolean isAssistant = customerProps.getAssistantRoleAliases() != null
+                        && customerProps.getAssistantRoleAliases().stream()
+                        .anyMatch(a -> a != null && role.equals(a.strip().toLowerCase(Locale.ROOT)));
+                if (isAssistant) {
+                    continue;
+                }
+                String paddedHistTurn = CustomerScenario.normalizeWordsPadded(turn.content());
+                String normHist = paddedHistTurn.strip();
+                if (currentTokens.size() >= 3 && !normHist.isEmpty()) {
+                    List<String> histTokens = List.of(normHist.split("\\s+"));
+                    long common = currentTokens.stream().filter(histTokens::contains).count();
+                    int denom = Math.max(currentTokens.size(), histTokens.size());
+                    if (denom > 0 && ((double) common / denom) >= 0.75) {
+                        return ImplicitSignal.NEGATIVE;
+                    }
+                }
+                if (containsAnyNormalizedKeyword(paddedHistTurn, negKeywords)) {
+                    return ImplicitSignal.NEGATIVE;
+                }
+                break; // chỉ xét lượt khách hàng gần nhất đối với từ khoá cảm xúc
             }
         }
         return ImplicitSignal.NEUTRAL;
+    }
+
+    private static boolean containsAnyNormalizedKeyword(String paddedHaystack, List<String> keywords) {
+        if (paddedHaystack == null || keywords == null || keywords.isEmpty()) {
+            return false;
+        }
+        for (String kw : keywords) {
+            if (kw != null && !kw.isBlank()) {
+                String normKw = CustomerScenario.normalizeWordsPadded(kw).strip();
+                if (!normKw.isEmpty() && paddedHaystack.contains(" " + normKw + " ")) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    public String extractGuidelineFromLlmOutput(String raw) {
+        if (raw == null || raw.isBlank() || raw.startsWith("[stub-llm]") || raw.startsWith("[9router-error]")) {
+            return null;
+        }
+        Matcher closedMatcher = EVOLVED_TAG_PATTERN.matcher(raw);
+        if (closedMatcher.find()) {
+            String extracted = sanitizeRuleText(closedMatcher.group(1));
+            if (!extracted.isBlank()) {
+                return truncate(extracted, 280);
+            }
+        }
+        Matcher unclosedMatcher = UNCLOSED_EVOLVED_TAG_PATTERN.matcher(raw);
+        if (unclosedMatcher.find()) {
+            String extracted = sanitizeRuleText(unclosedMatcher.group(1));
+            if (!extracted.isBlank()) {
+                return truncate(extracted, 280);
+            }
+        }
+        return null;
     }
 
     private String tryGenerateGuidelineViaLlm(InteractionEpisode episode,
@@ -679,16 +863,7 @@ public class CustomerSelfEvolutionService {
             prompt.append("\nHãy trả về quy tắc cải tiến trong cặp thẻ <EVOLVED_GUIDELINE>...</EVOLVED_GUIDELINE>:");
 
             String raw = llmClient.complete(prompt.toString());
-            if (raw == null || raw.isBlank() || raw.startsWith("[stub-llm]") || raw.startsWith("[9router-error]")) {
-                return null;
-            }
-            Matcher matcher = EVOLVED_TAG_PATTERN.matcher(raw);
-            if (matcher.find()) {
-                String extracted = sanitizeRuleText(matcher.group(1));
-                if (!extracted.isBlank()) {
-                    return truncate(extracted, 280);
-                }
-            }
+            return extractGuidelineFromLlmOutput(raw);
         } catch (Exception e) {
             log.debug("LLM TextGrad reflection skipped ({}); using deterministic TextGrad rule synthesis", e.getMessage());
         }
@@ -713,19 +888,7 @@ public class CustomerSelfEvolutionService {
                 && !textualGradient.startsWith("Duy trì phong cách")) {
             return truncate(sanitizeRuleText(textualGradient), 240);
         }
-        return switch (scenario) {
-            case SALES -> hasRagChunks
-                    ? "Khi tư vấn báo giá (SALES) có tài liệu RAG, luôn nêu rõ tên gói dịch vụ, mức giá cụ thể kèm trích dẫn [n] và gợi ý khách hàng đăng ký dùng thử."
-                    : "Khi tư vấn mua hàng (SALES), hãy phân loại rõ Gói Basic, Gói Pro và Gói Enterprise theo quy mô người dùng để khách hàng dễ lựa chọn.";
-            case SERVICE_SUPPORT ->
-                    "Khi hướng dẫn sử dụng dịch vụ hoặc xử lý kỹ thuật (SERVICE_SUPPORT), luôn trình bày theo từng bước đánh số (Bước 1, Bước 2...) và hỏi xác nhận kết quả thao tác.";
-            case WARRANTY_RETURN ->
-                    "Khi giải đáp bảo hành & đổi trả (WARRANTY_RETURN), luôn mở đầu bằng sự đồng cảm, nêu rõ hạn bảo hành 12 tháng và điều kiện 1 đổi 1 / hoàn tiền trong 7 ngày đầu.";
-            case ORDER_BILLING ->
-                    "Khi tư vấn đơn hàng & thanh toán (ORDER_BILLING), luôn thông tin rõ các phương thức thanh toán (QR Pay, Visa/Mastercard, COD), thời gian kích hoạt và hỗ trợ xuất hóa đơn VAT.";
-            case GENERAL ->
-                    "Luôn xác định nhanh mục đích mua sản phẩm mới hay hỗ trợ dịch vụ đang dùng để cá nhân hoá câu trả lời và cung cấp Hotline/Email hỗ trợ khi cần.";
-        };
+        return scenario.defaultEvolutionGuideline(customerProps, hasRagChunks);
     }
 
     private void upsertGuideline(String scenarioCode, String rawRule, String sourceGradient, double confidence) {
@@ -785,6 +948,23 @@ public class CustomerSelfEvolutionService {
         }
     }
 
+    private boolean evictExemplarIfPresent(String scenarioCode, String question) {
+        if (question == null || question.isBlank()) {
+            return false;
+        }
+        String cleanQ = sanitizeRuleText(question);
+        String normKey = CustomerScenario.normalizeWordsPadded(cleanQ).strip();
+        if (normKey.isEmpty()) {
+            return false;
+        }
+        String hash = FileValidation.sha256Hex(normKey.getBytes(StandardCharsets.UTF_8));
+        List<EvolvedExampleInfo> list = evolvedExamples.get(scenarioCode);
+        if (list == null || list.isEmpty()) {
+            return false;
+        }
+        return list.removeIf(ex -> ex != null && hash.equals(ex.contentHash()));
+    }
+
     private void upsertExemplar(String scenarioCode, String question, String answer, double qualityScore) {
         String cleanQ = sanitizeRuleText(question);
         String cleanA = truncate(sanitizeRuleText(answer), 360);
@@ -840,8 +1020,11 @@ public class CustomerSelfEvolutionService {
     }
 
     private void storeEpisode(InteractionEpisode ep) {
+        boolean isNew = !episodeStore.containsKey(ep.interactionId());
         episodeStore.put(ep.interactionId(), ep);
-        episodeOrder.addLast(ep.interactionId());
+        if (isNew) {
+            episodeOrder.addLast(ep.interactionId());
+        }
         int maxHistory = customerProps.getEvolution() != null
                 && customerProps.getEvolution().getMaxEpisodeHistorySize() > 0
                 ? customerProps.getEvolution().getMaxEpisodeHistorySize()
@@ -891,42 +1074,44 @@ public class CustomerSelfEvolutionService {
         if (evo == null || !evo.isPersistToDisk() || evo.getStoragePath() == null || evo.getStoragePath().isBlank()) {
             return;
         }
-        try {
-            Path target = Path.of(evo.getStoragePath().strip());
-            if (!Files.exists(target)) {
-                return;
-            }
-            CustomerEvolutionStatusResponse snapshot =
-                    objectMapper.readValue(target.toFile(), CustomerEvolutionStatusResponse.class);
-            if (snapshot != null) {
-                evolutionGeneration.set(Math.max(0, snapshot.evolutionGeneration()));
-                totalInteractions.set(Math.max(0L, snapshot.totalInteractions()));
-                totalFeedbackCount.set(Math.max(0L, snapshot.totalFeedbackCount()));
-                cumulativeQualityScore = snapshot.averageQualityScore() * snapshot.totalInteractions();
+        synchronized (stateLock) {
+            try {
+                Path target = Path.of(evo.getStoragePath().strip());
+                if (!Files.exists(target)) {
+                    return;
+                }
+                CustomerEvolutionStatusResponse snapshot =
+                        objectMapper.readValue(target.toFile(), CustomerEvolutionStatusResponse.class);
+                if (snapshot != null) {
+                    evolutionGeneration.set(Math.max(0, snapshot.evolutionGeneration()));
+                    totalInteractions.set(Math.max(0L, snapshot.totalInteractions()));
+                    totalFeedbackCount.set(Math.max(0L, snapshot.totalFeedbackCount()));
+                    cumulativeQualityScore = snapshot.averageQualityScore() * snapshot.totalInteractions();
 
-                if (snapshot.learnedGuidelines() != null) {
-                    snapshot.learnedGuidelines().forEach((k, v) -> {
-                        if (k != null && v != null) {
-                            learnedGuidelines.put(k.toUpperCase(Locale.ROOT), new ArrayList<>(v));
-                        }
-                    });
+                    if (snapshot.learnedGuidelines() != null) {
+                        snapshot.learnedGuidelines().forEach((k, v) -> {
+                            if (k != null && v != null) {
+                                learnedGuidelines.put(k.toUpperCase(Locale.ROOT), new ArrayList<>(v));
+                            }
+                        });
+                    }
+                    if (snapshot.evolvedFewShotExamples() != null) {
+                        snapshot.evolvedFewShotExamples().forEach((k, v) -> {
+                            if (k != null && v != null) {
+                                evolvedExamples.put(k.toUpperCase(Locale.ROOT), new ArrayList<>(v));
+                            }
+                        });
+                    }
+                    if (snapshot.recentGradients() != null) {
+                        recentGradients.clear();
+                        recentGradients.addAll(snapshot.recentGradients());
+                    }
+                    log.info("Loaded EvoAgentX customer evolution memory from {} (gen={}, interactions={})",
+                            target, evolutionGeneration.get(), totalInteractions.get());
                 }
-                if (snapshot.evolvedFewShotExamples() != null) {
-                    snapshot.evolvedFewShotExamples().forEach((k, v) -> {
-                        if (k != null && v != null) {
-                            evolvedExamples.put(k.toUpperCase(Locale.ROOT), new ArrayList<>(v));
-                        }
-                    });
-                }
-                if (snapshot.recentGradients() != null) {
-                    recentGradients.clear();
-                    recentGradients.addAll(snapshot.recentGradients());
-                }
-                log.info("Loaded EvoAgentX customer evolution memory from {} (gen={}, interactions={})",
-                        target, evolutionGeneration.get(), totalInteractions.get());
+            } catch (Exception e) {
+                log.warn("Không thể đọc bộ nhớ tự tiến hoá từ {}: {}", evo.getStoragePath(), e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("Không thể đọc bộ nhớ tự tiến hoá từ {}: {}", evo.getStoragePath(), e.getMessage());
         }
     }
 
@@ -934,7 +1119,7 @@ public class CustomerSelfEvolutionService {
         if (s == null) {
             return "";
         }
-        return s.replaceAll("(?iu)<\\s*/?\\s*(document_context|store_policy_context|conversation_history|evolved_guidelines|evolved_guideline)\\s*>", "")
+        return s.replaceAll("(?iu)<\\s*/?\\s*(document_context|store_policy_context|conversation_history|evolved_guidelines|evolved_guideline)[^>]*>?", "")
                 .replaceAll("(?iu)#+\\s*(vai\\s+trò|quy\\s+tắc|kịch\\s+bản|mẫu\\s+hội\\s+thoại|câu\\s+hỏi|tri\\s+thức)", "")
                 .replaceAll("(?iu)câu\\s+hỏi\\s*:", "nội dung hỏi:")
                 .replace('\n', ' ')

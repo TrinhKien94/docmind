@@ -427,6 +427,7 @@ class CustomerChatServiceTest {
         customProps.setDefaultCustomerRole("Khách hàng Doanh nghiệp B2B");
         customProps.setDefaultCustomerName("Quý doanh nghiệp");
         customProps.setFallbackCustomerSalutation("Quý đối tác");
+        customProps.setCoreRulesTemplate("# QUY TẮC\n1. Luôn tuân thủ chuẩn SLA của {{storeName}} cho {{customerRole}}.\n");
 
         CustomerSupportProperties.FewShotExample customEx = new CustomerSupportProperties.FewShotExample(
                 "Báo giá Cloud Server",
@@ -441,6 +442,7 @@ class CustomerChatServiceTest {
         salesConfig.setPlaybookInstructions("- Luôn đề xuất kiến trúc High Availability.\n- Báo giá kèm SLA 99.99%.");
         salesConfig.setSuggestedQuestions(List.of("SLA của gói Cloud Enterprise là bao nhiêu?"));
         salesConfig.setHighKeywords(List.of("cloud gpu", "sla 99.99"));
+        salesConfig.setDefaultEvolutionGuideline("Khi báo giá Cloud B2B, luôn nêu rõ cam kết uptime SLA 99.99%.");
         customProps.setScenarios(Map.of("SALES", salesConfig));
 
         assertThat(CustomerScenario.resolve(null, "Báo giá cho tôi gói cloud gpu kèm sla 99.99", customProps))
@@ -449,6 +451,8 @@ class CustomerChatServiceTest {
                 .isEqualTo("Tư vấn Giải pháp Cloud B2B");
         assertThat(CustomerScenario.SALES.suggestedQuestions(customProps))
                 .containsExactly("SLA của gói Cloud Enterprise là bao nhiêu?");
+        assertThat(CustomerScenario.SALES.defaultEvolutionGuideline(customProps, false))
+                .isEqualTo("Khi báo giá Cloud B2B, luôn nêu rõ cam kết uptime SLA 99.99%.");
 
         CustomerChatRequest req = new CustomerChatRequest("Báo giá gói Cloud GPU");
         String builtPrompt = CustomerPromptBuilder.build(req, CustomerScenario.SALES, customProps, List.of());
@@ -456,8 +460,142 @@ class CustomerChatServiceTest {
         assertThat(builtPrompt).contains("TechNova Cloud Store");
         assertThat(builtPrompt).contains("Trợ lý Giải pháp Đám mây TechNova");
         assertThat(builtPrompt).contains("Khách hàng Doanh nghiệp B2B");
+        assertThat(builtPrompt).contains("Luôn tuân thủ chuẩn SLA của TechNova Cloud Store cho Khách hàng Doanh nghiệp B2B.");
         assertThat(builtPrompt).contains("Luôn đề xuất kiến trúc High Availability");
         assertThat(builtPrompt).contains("Cloud GPU A100 có giá 15.000.000đ/tháng");
+    }
+
+    @Test
+    void evoAgentXNegativeFeedbackEvictsBootstrappedExemplarAdjustsScoreAndExtractsUnclosedTag() {
+        RetrievalService retrievalService = mock(RetrievalService.class);
+        DocumentRepository documentRepository = mock(DocumentRepository.class);
+        CustomerSupportProperties props = new CustomerSupportProperties();
+        props.getEvolution().setPersistToDisk(false);
+        props.getEvolution().setLlmReflectionEnabled(true);
+
+        LlmClient llmWithUnclosedTag = new LlmClient() {
+            @Override
+            public String complete(String prompt) {
+                if (prompt.contains("<EVOLVED_GUIDELINE>")) {
+                    // Mô phỏng LLM bị cắt ngang token nên thiếu thẻ đóng </EVOLVED_GUIDELINE>
+                    return "<EVOLVED_GUIDELINE>Khi báo giá gói Enterprise, phải đối chiếu kỹ số lượng user tối thiểu và chiết khấu hợp đồng năm.";
+                }
+                return "Dạ em chào Anh Khoa!\n- Gói Enterprise có giá 999.000đ/tháng.\n- Hỗ trợ 24/7.\nAnh Khoa cần em gửi báo giá chi tiết qua email không ạ?";
+            }
+
+            @Override
+            public String name() {
+                return "unclosed-tag-llm";
+            }
+        };
+
+        CustomerSelfEvolutionService evolutionService = new CustomerSelfEvolutionService(
+                props, llmWithUnclosedTag, new ObjectMapper());
+        CustomerChatService service = new CustomerChatService(
+                retrievalService, documentRepository, llmWithUnclosedTag, props, evolutionService);
+
+        CustomerChatResponse chatResp = service.chat(new CustomerChatRequest(
+                "Tư vấn gói Enterprise cho công ty mình",
+                null, null, "Anh Khoa", null, "SALES", null, 5, null, null
+        ));
+
+        CustomerEvolutionStatusResponse statusBeforeFeedback = service.getEvolutionStatus();
+        assertThat(statusBeforeFeedback.evolvedFewShotExamples().get("SALES")).hasSize(1);
+        double scoreBefore = statusBeforeFeedback.averageQualityScore();
+        assertThat(scoreBefore).isGreaterThanOrEqualTo(0.80);
+
+        // Khách hàng bấm 👎 (helpful=false, rating=1) cho đúng interactionId vừa tạo
+        CustomerEvolutionStatusResponse statusAfterNegative = service.submitFeedback(
+                new CustomerFeedbackRequest(
+                        chatResp.interactionId(),
+                        null,
+                        null,
+                        "SALES",
+                        1,
+                        false,
+                        "Báo giá sai số lượng user tối thiểu của gói Enterprise"
+                ));
+
+        // 1. Exemplar đã được tự động thu hồi (evicted) khỏi bộ nhớ MIPRO
+        assertThat(statusAfterNegative.evolvedFewShotExamples().get("SALES")).isEmpty();
+        // 2. Điểm trung bình được điều chỉnh giảm xuống và không nhân đôi số lượt tương tác
+        assertThat(statusAfterNegative.totalInteractions()).isEqualTo(1);
+        assertThat(statusAfterNegative.averageQualityScore()).isLessThan(scoreBefore);
+        // 3. Quy tắc từ thẻ <EVOLVED_GUIDELINE> chưa đóng vẫn được trích xuất thành công
+        assertThat(statusAfterNegative.learnedGuidelines().get("SALES"))
+                .anyMatch(g -> g.rule().contains("phải đối chiếu kỹ số lượng user tối thiểu"));
+    }
+
+    @Test
+    void evoAgentXDetectsImplicitNegativeFromHistoryRepetitionAndReadsDoNotBlockDuringLlmReflection() throws Exception {
+        CustomerSupportProperties props = new CustomerSupportProperties();
+        props.getEvolution().setPersistToDisk(false);
+        props.getEvolution().setLlmReflectionEnabled(true);
+
+        java.util.concurrent.CountDownLatch reflectionEntered = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch releaseReflection = new java.util.concurrent.CountDownLatch(1);
+
+        LlmClient slowReflectiveLlm = new LlmClient() {
+            @Override
+            public String complete(String prompt) {
+                if (prompt.contains("<EVOLVED_GUIDELINE>")) {
+                    reflectionEntered.countDown();
+                    try {
+                        releaseReflection.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                    return "<EVOLVED_GUIDELINE>Khi khách hàng hỏi lặp lại cùng một câu hỏi, hãy đi thẳng vào giải pháp từng bước cụ thể.</EVOLVED_GUIDELINE>";
+                }
+                return "Dạ em chào Anh/Chị!\n- Bước 1: Mở cài đặt.\n- Bước 2: Nhập mã kích hoạt.\nAnh/Chị cần hỗ trợ thêm bước nào không ạ?";
+            }
+
+            @Override
+            public String name() {
+                return "slow-reflective-llm";
+            }
+        };
+
+        CustomerSelfEvolutionService evolutionService = new CustomerSelfEvolutionService(
+                props, slowReflectiveLlm, new ObjectMapper());
+
+        // Câu trả lời có đầy đủ cấu trúc chào hỏi + gạch đầu dòng + CTA, nhưng khách hàng lặp lại y hệt câu hỏi trong history
+        CustomerChatRequest repeatedQuestionReq = new CustomerChatRequest(
+                "Làm sao để kích hoạt mã bản quyền phần mềm trên máy tính mới?",
+                null, null, "Anh Nam", null, "SERVICE_SUPPORT", null, 5,
+                List.of(
+                        new CustomerChatRequest.ConversationTurn("customer", "Làm sao để kích hoạt mã bản quyền phần mềm trên máy tính mới?"),
+                        new CustomerChatRequest.ConversationTurn("assistant", "Dạ anh vào trang chủ nhé.")
+                ),
+                null
+        );
+
+        java.util.concurrent.CompletableFuture<String> future =
+                java.util.concurrent.CompletableFuture.supplyAsync(() ->
+                        evolutionService.recordAndEvolveAfterChat(
+                                repeatedQuestionReq,
+                                CustomerScenario.SERVICE_SUPPORT,
+                                List.of(CustomerScenario.SERVICE_SUPPORT),
+                                "Dạ em chào Anh Nam!\n- Bước 1: Mở ứng dụng.\n- Bước 2: Nhập key.\nAnh Nam cần em hỗ trợ thêm không ạ?",
+                                List.of(),
+                                "slow-reflective-llm"
+                        ));
+
+        // Chờ luồng tiến hóa đi vào LLM reflection call
+        assertThat(reflectionEntered.await(3, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+
+        // Trong khi LLM reflection đang chờ mạng, luồng khác gọi getStatus() vẫn phản hồi tức thì (không bị khóa synchronized)
+        long startNs = System.nanoTime();
+        CustomerEvolutionStatusResponse concurrentStatus = evolutionService.getStatus();
+        long elapsedMs = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNs);
+        assertThat(concurrentStatus).isNotNull();
+        assertThat(elapsedMs).isLessThan(500L);
+
+        releaseReflection.countDown();
+        String interactionId = future.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        assertThat(interactionId).isNotBlank();
+        assertThat(evolutionService.getStatus().learnedGuidelines().get("SERVICE_SUPPORT"))
+                .anyMatch(g -> g.rule().contains("hỏi lặp lại cùng một câu hỏi"));
     }
 
     @Test

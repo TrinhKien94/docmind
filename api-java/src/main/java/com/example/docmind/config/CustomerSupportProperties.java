@@ -109,6 +109,12 @@ public class CustomerSupportProperties {
             "Trả lời tư vấn cho khách hàng (kèm trích dẫn [n] nếu dùng tài liệu):";
 
     /**
+     * Mẫu quy tắc cốt lõi (# QUY TẮC) tuỳ chỉnh trong CustomerPromptBuilder.
+     * Khi để trống sẽ sử dụng bộ 4 quy tắc chuẩn (Thái độ, Trích dẫn, Bảo mật, Chống tiêm lệnh).
+     */
+    private String coreRulesTemplate = "";
+
+    /**
      * Tri thức nền mặc định về chính sách mua hàng, gói dịch vụ, bảo hành & đổi trả
      * để hỗ trợ khách hàng ngay cả khi chưa chỉ định tài liệu cụ thể.
      */
@@ -189,6 +195,8 @@ public class CustomerSupportProperties {
         private String title;
         private String description;
         private String playbookInstructions;
+        private String defaultEvolutionGuideline;
+        private String defaultRagEvolutionGuideline;
         private List<String> suggestedQuestions = new ArrayList<>();
         private List<String> aliases = new ArrayList<>();
         private List<String> highKeywords = new ArrayList<>();
@@ -262,6 +270,16 @@ public class CustomerSupportProperties {
         /** Tiêu đề section đưa các quy tắc tự tiến hoá vào CustomerPromptBuilder. */
         private String evolvedSectionHeader =
                 "# TRI THỨC TỰ TIẾN HOÁ TỪ LỊCH SỬ CSKH (EVOAGENTX SELF-EVOLVED GUIDELINES)";
+
+        /** Từ khoá kiểm tra lời chào và xưng hô lịch sự trong câu trả lời của chuyên viên. */
+        private List<String> salutationKeywords = new ArrayList<>(List.of(
+                "da", "chao", "cam on", "anh chi", "quy khach", "em xin"
+        ));
+
+        /** Từ khoá kiểm tra tính hành động (Call-to-Action) hoặc thông tin liên hệ trong câu trả lời. */
+        private List<String> actionabilityKeywords = new ArrayList<>(List.of(
+                "hotline", "email", "lien he", "huong dan", "dang ky", "dung thu", "bao gia", "ho tro"
+        ));
 
         /** Từ khoá tín hiệu tích cực ngầm định trong phản hồi tiếp theo của khách hàng. */
         private List<String> positiveSignalKeywords = new ArrayList<>(List.of(

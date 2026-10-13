@@ -260,6 +260,32 @@ public enum CustomerScenario {
         return defaultMediumKeywords;
     }
 
+    public String defaultEvolutionGuideline(CustomerSupportProperties props, boolean hasRagChunks) {
+        CustomerSupportProperties.ScenarioConfig cfg = lookupScenarioConfig(props);
+        if (hasRagChunks && cfg != null
+                && cfg.getDefaultRagEvolutionGuideline() != null
+                && !cfg.getDefaultRagEvolutionGuideline().isBlank()) {
+            return cfg.getDefaultRagEvolutionGuideline().strip();
+        }
+        if (cfg != null && cfg.getDefaultEvolutionGuideline() != null
+                && !cfg.getDefaultEvolutionGuideline().isBlank()) {
+            return cfg.getDefaultEvolutionGuideline().strip();
+        }
+        return switch (this) {
+            case SALES -> hasRagChunks
+                    ? "Khi tư vấn báo giá (SALES) có tài liệu RAG, luôn nêu rõ tên gói dịch vụ, mức giá cụ thể kèm trích dẫn [n] và gợi ý khách hàng đăng ký dùng thử."
+                    : "Khi tư vấn mua hàng (SALES), hãy phân loại rõ Gói Basic, Gói Pro và Gói Enterprise theo quy mô người dùng để khách hàng dễ lựa chọn.";
+            case SERVICE_SUPPORT ->
+                    "Khi hướng dẫn sử dụng dịch vụ hoặc xử lý kỹ thuật (SERVICE_SUPPORT), luôn trình bày theo từng bước đánh số (Bước 1, Bước 2...) và hỏi xác nhận kết quả thao tác.";
+            case WARRANTY_RETURN ->
+                    "Khi giải đáp bảo hành & đổi trả (WARRANTY_RETURN), luôn mở đầu bằng sự đồng cảm, nêu rõ hạn bảo hành 12 tháng và điều kiện 1 đổi 1 / hoàn tiền trong 7 ngày đầu.";
+            case ORDER_BILLING ->
+                    "Khi tư vấn đơn hàng & thanh toán (ORDER_BILLING), luôn thông tin rõ các phương thức thanh toán (QR Pay, Visa/Mastercard, COD), thời gian kích hoạt và hỗ trợ xuất hóa đơn VAT.";
+            case GENERAL ->
+                    "Luôn xác định nhanh mục đích mua sản phẩm mới hay hỗ trợ dịch vụ đang dùng để cá nhân hoá câu trả lời và cung cấp Hotline/Email hỗ trợ khi cần.";
+        };
+    }
+
     public CustomerPromptTemplateResponse.ScenarioInfo toScenarioInfo() {
         return toScenarioInfo(null);
     }
