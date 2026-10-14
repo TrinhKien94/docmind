@@ -255,18 +255,22 @@ public class DocumentService {
         log.info("ingest done document_id={} pages={} status=READY", documentId, pages);
     }
 
-    @Transactional(readOnly = true)
     public List<DocumentStatusResponse> listAll() {
-        return documentRepository.findAllByOrderByCreatedAtDesc().stream().map(doc -> {
-            Map<String, Integer> breakdown = parseBreakdown(doc.getStatsJson());
-            return new DocumentStatusResponse(
-                    doc.getId().toString(),
-                    doc.getFilename(),
-                    doc.getStatus(),
-                    doc.getPages(),
-                    breakdown
-            );
-        }).toList();
+        try {
+            return documentRepository.findAllByOrderByCreatedAtDesc().stream().map(doc -> {
+                Map<String, Integer> breakdown = parseBreakdown(doc.getStatsJson());
+                return new DocumentStatusResponse(
+                        doc.getId().toString(),
+                        doc.getFilename(),
+                        doc.getStatus(),
+                        doc.getPages(),
+                        breakdown
+                );
+            }).toList();
+        } catch (Exception e) {
+            log.warn("Database unavailable during listAll ({}); returning empty document list", e.getMessage());
+            return List.of();
+        }
     }
 
     @Transactional(readOnly = true)

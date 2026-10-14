@@ -1,0 +1,10 @@
+{
+  "verdict": "APPROVE",
+  "results": {
+    "textarea_expansion_320x568": true,
+    "unbreakable_string_320x568": true,
+    "touch_target_sizes": true,
+    "rapid_drawer_toggling": true,
+    "starters_grid_320x568": true
+  }
+}

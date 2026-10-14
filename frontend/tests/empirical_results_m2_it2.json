@@ -1,0 +1,959 @@
+{
+  "verdict": "APPROVE",
+  "results": [
+    {
+      "name": "Ultra-compact mobile (iPhone SE 1st)",
+      "width": 320,
+      "height": 568,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (320) <= clientWidth (320)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (320) <= clientWidth (320)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (320) <= clientWidth (320)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (320) <= clientWidth (320)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (320) <= clientWidth (320)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (320) <= clientWidth (320)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (320) <= clientWidth (320)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -272, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 272, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 320, 'docClientWidth': 320, 'appShellScrollWidth': 320, 'appShellClientWidth': 320}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 20, 'y': -31.5, 'width': 280, 'height': 631.015625, 'top': -31.5, 'right': 300, 'bottom': 599.515625, 'left': 20}, 'cardFitsWidth': True, 'cardFitsHeight': False, 'centerHitsModal': True, 'docScrollWidth': 320, 'docClientWidth': 320}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Android baseline",
+      "width": 360,
+      "height": 640,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (360) <= clientWidth (360)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (360) <= clientWidth (360)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (360) <= clientWidth (360)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (360) <= clientWidth (360)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (360) <= clientWidth (360)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (360) <= clientWidth (360)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (360) <= clientWidth (360)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -306, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 306, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 360, 'docClientWidth': 360, 'appShellScrollWidth': 360, 'appShellClientWidth': 360}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 20, 'y': 35.03125, 'width': 320, 'height': 569.921875, 'top': 35.03125, 'right': 340, 'bottom': 604.953125, 'left': 20}, 'cardFitsWidth': True, 'cardFitsHeight': True, 'centerHitsModal': True, 'docScrollWidth': 360, 'docClientWidth': 360}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "iPhone 8 / SE 2nd",
+      "width": 375,
+      "height": 667,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -318.75, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 318.75, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 375, 'docClientWidth': 375, 'appShellScrollWidth': 375, 'appShellClientWidth': 375}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 20, 'y': 57.421875, 'width': 335, 'height': 552.15625, 'top': 57.421875, 'right': 355, 'bottom': 609.578125, 'left': 20}, 'cardFitsWidth': True, 'cardFitsHeight': True, 'centerHitsModal': True, 'docScrollWidth': 375, 'docClientWidth': 375}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "iPhone X / 12 / 13",
+      "width": 375,
+      "height": 812,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -318.75, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 318.75, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 375, 'docClientWidth': 375, 'appShellScrollWidth': 375, 'appShellClientWidth': 375}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 20, 'y': 129.921875, 'width': 335, 'height': 552.15625, 'top': 129.921875, 'right': 355, 'bottom': 682.078125, 'left': 20}, 'cardFitsWidth': True, 'cardFitsHeight': True, 'centerHitsModal': True, 'docScrollWidth': 375, 'docClientWidth': 375}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "iPhone 14 / 15 Pro",
+      "width": 390,
+      "height": 844,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (390) <= clientWidth (390)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (390) <= clientWidth (390)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (390) <= clientWidth (390)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (390) <= clientWidth (390)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (390) <= clientWidth (390)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (390) <= clientWidth (390)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (390) <= clientWidth (390)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -331.5, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 331.5, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 390, 'docClientWidth': 390, 'appShellScrollWidth': 390, 'appShellClientWidth': 390}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 20, 'y': 145.921875, 'width': 350, 'height': 552.15625, 'top': 145.921875, 'right': 370, 'bottom': 698.078125, 'left': 20}, 'cardFitsWidth': True, 'cardFitsHeight': True, 'centerHitsModal': True, 'docScrollWidth': 390, 'docClientWidth': 390}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Pixel 7 / Galaxy S21",
+      "width": 412,
+      "height": 915,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (412) <= clientWidth (412)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (412) <= clientWidth (412)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (412) <= clientWidth (412)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (412) <= clientWidth (412)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (412) <= clientWidth (412)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (412) <= clientWidth (412)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (412) <= clientWidth (412)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -340, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 340, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 412, 'docClientWidth': 412, 'appShellScrollWidth': 412, 'appShellClientWidth': 412}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 20, 'y': 191.609375, 'width': 372, 'height': 531.765625, 'top': 191.609375, 'right': 392, 'bottom': 723.375, 'left': 20}, 'cardFitsWidth': True, 'cardFitsHeight': True, 'centerHitsModal': True, 'docScrollWidth': 412, 'docClientWidth': 412}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "iPhone 11 / XR / Plus",
+      "width": 414,
+      "height": 896,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (414) <= clientWidth (414)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (414) <= clientWidth (414)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (414) <= clientWidth (414)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (414) <= clientWidth (414)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (414) <= clientWidth (414)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (414) <= clientWidth (414)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (414) <= clientWidth (414)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -340, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 340, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 414, 'docClientWidth': 414, 'appShellScrollWidth': 414, 'appShellClientWidth': 414}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 20, 'y': 182.109375, 'width': 374, 'height': 531.765625, 'top': 182.109375, 'right': 394, 'bottom': 713.875, 'left': 20}, 'cardFitsWidth': True, 'cardFitsHeight': True, 'centerHitsModal': True, 'docScrollWidth': 414, 'docClientWidth': 414}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Budget Android landscape/wide",
+      "width": 480,
+      "height": 854,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (480) <= clientWidth (480)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (480) <= clientWidth (480)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (480) <= clientWidth (480)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (480) <= clientWidth (480)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (480) <= clientWidth (480)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (480) <= clientWidth (480)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (480) <= clientWidth (480)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -340, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 340, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 480, 'docClientWidth': 480, 'appShellScrollWidth': 480, 'appShellClientWidth': 480}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 20, 'y': 170.703125, 'width': 440, 'height': 512.578125, 'top': 170.703125, 'right': 460, 'bottom': 683.28125, 'left': 20}, 'cardFitsWidth': True, 'cardFitsHeight': True, 'centerHitsModal': True, 'docScrollWidth': 480, 'docClientWidth': 480}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Small 7-inch tablet portrait",
+      "width": 600,
+      "height": 960,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (600) <= clientWidth (600)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (600) <= clientWidth (600)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (600) <= clientWidth (600)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (600) <= clientWidth (600)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (600) <= clientWidth (600)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (600) <= clientWidth (600)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (600) <= clientWidth (600)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -340, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 340, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 600, 'docClientWidth': 600, 'appShellScrollWidth': 600, 'appShellClientWidth': 600}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 40, 'y': 232.59375, 'width': 520, 'height': 494.8125, 'top': 232.59375, 'right': 560, 'bottom': 727.40625, 'left': 40}, 'cardFitsWidth': True, 'cardFitsHeight': True, 'centerHitsModal': True, 'docScrollWidth': 600, 'docClientWidth': 600}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Mobile upper boundary",
+      "width": 767,
+      "height": 1024,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (767) <= clientWidth (767)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (767) <= clientWidth (767)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (767) <= clientWidth (767)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (767) <= clientWidth (767)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (767) <= clientWidth (767)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (767) <= clientWidth (767)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (767) <= clientWidth (767)",
+          "passed": true
+        },
+        {
+          "name": "Mobile sidebar initially off-canvas",
+          "details": "position=fixed, right=0, transform=matrix(1, 0, 0, 1, -340, 0)",
+          "passed": true
+        },
+        {
+          "name": "Mobile toggle button visible",
+          "details": "toggleVisible=True",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer opens cleanly with backdrop and zero overflow",
+          "details": "{'isOpen': True, 'sidebarLeft': 0, 'sidebarWidth': 340, 'sidebarZIndex': '1000', 'backdropZIndex': '55', 'backdropVisible': True, 'docScrollWidth': 767, 'docClientWidth': 767, 'appShellScrollWidth': 767, 'appShellClientWidth': 767}",
+          "passed": true
+        },
+        {
+          "name": "Document detail modal elevates above drawer (z: 1100 > 1000) with zero overflow",
+          "details": "{'modalOpen': True, 'modalZIndex': '1100', 'cardRect': {'x': 123.5, 'y': 264.59375, 'width': 520, 'height': 494.8125, 'top': 264.59375, 'right': 643.5, 'bottom': 759.40625, 'left': 123.5}, 'cardFitsWidth': True, 'cardFitsHeight': True, 'centerHitsModal': True, 'docScrollWidth': 767, 'docClientWidth': 767}",
+          "passed": true
+        },
+        {
+          "name": "Mobile drawer closes cleanly via Escape",
+          "details": "{'isOpen': False, 'backdropHidden': True}",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Tablet portrait (iPad portrait)",
+      "width": 768,
+      "height": 1024,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (768) <= clientWidth (768)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (768) <= clientWidth (768)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (768) <= clientWidth (768)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (768) <= clientWidth (768)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (388) <= clientWidth (388)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (388) <= clientWidth (388)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (388) <= clientWidth (388)",
+          "passed": true
+        },
+        {
+          "name": "Desktop sidebar in-flow (relative, >=340px) and toggle hidden",
+          "details": "position=relative, width=380, toggleVisible=False",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Tablet portrait alternate",
+      "width": 800,
+      "height": 1280,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (800) <= clientWidth (800)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (800) <= clientWidth (800)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (800) <= clientWidth (800)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (800) <= clientWidth (800)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (420) <= clientWidth (420)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (420) <= clientWidth (420)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (420) <= clientWidth (420)",
+          "passed": true
+        },
+        {
+          "name": "Desktop sidebar in-flow (relative, >=340px) and toggle hidden",
+          "details": "position=relative, width=380, toggleVisible=False",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Tablet landscape (iPad landscape)",
+      "width": 1024,
+      "height": 768,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (1024) <= clientWidth (1024)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (1024) <= clientWidth (1024)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (1024) <= clientWidth (1024)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (1024) <= clientWidth (1024)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (644) <= clientWidth (644)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (644) <= clientWidth (644)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (644) <= clientWidth (644)",
+          "passed": true
+        },
+        {
+          "name": "Desktop sidebar in-flow (relative, >=340px) and toggle hidden",
+          "details": "position=relative, width=380, toggleVisible=False",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Desktop WXGA",
+      "width": 1280,
+      "height": 800,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (1280) <= clientWidth (1280)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (1280) <= clientWidth (1280)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (1280) <= clientWidth (1280)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (1280) <= clientWidth (1280)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (900) <= clientWidth (900)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (900) <= clientWidth (900)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (900) <= clientWidth (900)",
+          "passed": true
+        },
+        {
+          "name": "Desktop sidebar in-flow (relative, >=340px) and toggle hidden",
+          "details": "position=relative, width=380, toggleVisible=False",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Desktop MacBook WXGA+",
+      "width": 1440,
+      "height": 900,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (1440) <= clientWidth (1440)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (1440) <= clientWidth (1440)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (1440) <= clientWidth (1440)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (1440) <= clientWidth (1440)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (1060) <= clientWidth (1060)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (1060) <= clientWidth (1060)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (1060) <= clientWidth (1060)",
+          "passed": true
+        },
+        {
+          "name": "Desktop sidebar in-flow (relative, >=340px) and toggle hidden",
+          "details": "position=relative, width=380, toggleVisible=False",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Desktop Full HD",
+      "width": 1920,
+      "height": 1080,
+      "checks": [
+        {
+          "name": "Container html zero overflow",
+          "details": "scrollWidth (1920) <= clientWidth (1920)",
+          "passed": true
+        },
+        {
+          "name": "Container body zero overflow",
+          "details": "scrollWidth (1920) <= clientWidth (1920)",
+          "passed": true
+        },
+        {
+          "name": "Container .app-shell zero overflow",
+          "details": "scrollWidth (1920) <= clientWidth (1920)",
+          "passed": true
+        },
+        {
+          "name": "Container .main-layout zero overflow",
+          "details": "scrollWidth (1920) <= clientWidth (1920)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-header zero overflow",
+          "details": "scrollWidth (1540) <= clientWidth (1540)",
+          "passed": true
+        },
+        {
+          "name": "Container .messages-area zero overflow",
+          "details": "scrollWidth (1540) <= clientWidth (1540)",
+          "passed": true
+        },
+        {
+          "name": "Container .chat-input-wrapper zero overflow",
+          "details": "scrollWidth (1540) <= clientWidth (1540)",
+          "passed": true
+        },
+        {
+          "name": "Desktop sidebar in-flow (relative, >=340px) and toggle hidden",
+          "details": "position=relative, width=380, toggleVisible=False",
+          "passed": true
+        }
+      ]
+    }
+  ],
+  "total_checks": 168,
+  "passed_checks": 168
+}

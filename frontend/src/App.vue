@@ -8,13 +8,28 @@
       </div>
     </transition>
 
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <transition name="drawer-backdrop-fade">
+      <div 
+        v-if="isMobileSidebarOpen" 
+        class="drawer-backdrop mobile-drawer-backdrop" 
+        data-testid="sidebar-backdrop"
+        aria-hidden="true"
+        @click="closeMobileSidebar"
+      ></div>
+    </transition>
+
     <div class="main-layout">
       <!-- Left Sidebar: Upload, Documents List, Status Tracker -->
       <DocumentSidebar 
+        :is-open="isMobileSidebarOpen"
+        :is-mobile-open="isMobileSidebarOpen"
         :documents="documents"
         :selected-doc-ids="selectedDocIds"
         :is-uploading="isUploading"
         :is-connected="isConnected"
+        @close="closeMobileSidebar"
+        @close-sidebar="closeMobileSidebar"
         @upload-file="handleUpload"
         @toggle-select="handleToggleSelect"
         @toggle-select-all="handleToggleSelectAll"
@@ -35,6 +50,9 @@
         @ask-question="handleAskQuestion"
         @submit-feedback="handleSubmitFeedback"
         @clear-chat="handleClearChat"
+        @toggle-sidebar="toggleMobileSidebar"
+        @open-evolution="handleOpenEvolution"
+        @open-messenger="handleOpenMessenger"
       />
     </div>
 
@@ -43,6 +61,23 @@
       v-if="inspectingDoc"
       :doc="inspectingDoc"
       @close="inspectingDoc = null"
+    />
+
+    <!-- EvoAgentX Evolution Modal (Milestone 3) -->
+    <CustomerEvolutionModal 
+      v-if="isEvolutionModalOpen"
+      :is-open="isEvolutionModalOpen"
+      :evolution-gen="evolutionGen"
+      @close="handleCloseEvolution"
+      @evolved="handleEvolutionUpdated"
+    />
+
+    <!-- Facebook Messenger Integration & Simulator Modal (Milestone 3) -->
+    <MessengerModal 
+      v-if="isMessengerModalOpen"
+      :is-open="isMessengerModalOpen"
+      @close="handleCloseMessenger"
+      @session-updated="syncCustomerBackendConfig"
     />
   </div>
 </template>
@@ -54,6 +89,8 @@ import { initialMockDocuments, sampleQA } from './mockData'
 import DocumentSidebar from './components/DocumentSidebar.vue'
 import ChatArea from './components/ChatArea.vue'
 import DocumentDetailModal from './components/DocumentDetailModal.vue'
+import CustomerEvolutionModal from './components/CustomerEvolutionModal.vue'
+import MessengerModal from './components/MessengerModal.vue'
 
 const documents = ref([])
 const selectedDocIds = ref([])
@@ -68,6 +105,11 @@ const chatAreaRef = ref(null)
 const evolutionGen = ref(0)
 const customerScenarios = ref([])
 const defaultCustomerRole = ref('Khách hàng mua hàng hoặc sử dụng dịch vụ')
+const isMobileSidebarOpen = ref(false)
+
+// Modals State (Milestone 3)
+const isEvolutionModalOpen = ref(false)
+const isMessengerModalOpen = ref(false)
 
 const pollingTimers = new Map()
 
@@ -451,31 +493,117 @@ const handleClearChat = () => {
   messages.value = []
 }
 
+const toggleMobileSidebar = () => {
+  isMobileSidebarOpen.value = !isMobileSidebarOpen.value
+}
+
+const closeMobileSidebar = () => {
+  isMobileSidebarOpen.value = false
+}
+
+// Modal open/close handlers (Milestone 3)
+const handleOpenEvolution = () => {
+  isEvolutionModalOpen.value = true
+}
+
+const handleCloseEvolution = () => {
+  isEvolutionModalOpen.value = false
+}
+
+const handleOpenMessenger = () => {
+  isMessengerModalOpen.value = true
+}
+
+const handleCloseMessenger = () => {
+  isMessengerModalOpen.value = false
+}
+
+const handleEvolutionUpdated = (newGen) => {
+  if (typeof newGen === 'number') {
+    evolutionGen.value = newGen
+  }
+  syncCustomerBackendConfig()
+}
+
+// Global keyboard navigation & Escape key hierarchy
+const handleKeydown = (e) => {
+  if (e.key === 'Escape') {
+    if (isEvolutionModalOpen.value) {
+      handleCloseEvolution()
+    } else if (isMessengerModalOpen.value) {
+      handleCloseMessenger()
+    } else if (inspectingDoc.value) {
+      inspectingDoc.value = null
+    } else if (isMobileSidebarOpen.value) {
+      closeMobileSidebar()
+    }
+  }
+}
+
 onMounted(() => {
   initApp()
+  window.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
   pollingTimers.forEach(timer => clearInterval(timer))
   pollingTimers.clear()
+  window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
 <style scoped>
 .app-shell {
-  width: 100vw;
+  width: 100%;
+  max-width: 100vw;
   height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
   background: var(--bg-primary);
 }
 
 .main-layout {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   display: flex;
+  position: relative;
+  width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+/* Mobile Drawer Backdrop */
+.mobile-drawer-backdrop {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .mobile-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 55;
+    cursor: pointer;
+  }
+}
+
+.drawer-backdrop-fade-enter-active,
+.drawer-backdrop-fade-leave-active {
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.drawer-backdrop-fade-enter-from,
+.drawer-backdrop-fade-leave-to {
+  opacity: 0;
 }
 
 /* Toast Banner */
@@ -483,7 +611,7 @@ onUnmounted(() => {
   position: fixed;
   top: 16px;
   right: 20px;
-  z-index: 999;
+  z-index: 1200;
   padding: 10px 16px;
   border-radius: var(--radius-md);
   font-size: 0.82rem;

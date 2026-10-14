@@ -1,0 +1,330 @@
+{
+  "verdict": "APPROVE",
+  "results": [
+    {
+      "name": "Ultra-compact mobile (iPhone SE 1st)",
+      "width": 320,
+      "height": 568,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (320) <= clientWidth (320)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (320) <= clientWidth (320)",
+          "passed": true
+        },
+        {
+          "name": "Mobile full-screen chat container (left: 0, width: 100%)",
+          "condition": "left=0 (~0), width=320 (~320), sidebar_offcanvas=True",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=455 >= 0, bottom=568 <= 568, left=0 >= 0, right=320 <= 320",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Settings Row Open zero overflow",
+          "condition": "doc: 320 <= 320, header: 320 <= 320",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Mobile Drawer Open zero overflow",
+          "condition": "docScrollWidth (320) <= docClientWidth (320), sidebarWidth (272) <= 320",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Standard mobile (iPhone X/13/Pixel)",
+      "width": 375,
+      "height": 812,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (375) <= clientWidth (375)",
+          "passed": true
+        },
+        {
+          "name": "Mobile full-screen chat container (left: 0, width: 100%)",
+          "condition": "left=0 (~0), width=375 (~375), sidebar_offcanvas=True",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=699 >= 0, bottom=812 <= 812, left=0 >= 0, right=375 <= 375",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Settings Row Open zero overflow",
+          "condition": "doc: 375 <= 375, header: 375 <= 375",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Mobile Drawer Open zero overflow",
+          "condition": "docScrollWidth (375) <= docClientWidth (375), sidebarWidth (318.75) <= 375",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Large mobile (Pixel 7/Galaxy)",
+      "width": 412,
+      "height": 915,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (412) <= clientWidth (412)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (412) <= clientWidth (412)",
+          "passed": true
+        },
+        {
+          "name": "Mobile full-screen chat container (left: 0, width: 100%)",
+          "condition": "left=0 (~0), width=412 (~412), sidebar_offcanvas=True",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=802 >= 0, bottom=915 <= 915, left=0 >= 0, right=412 <= 412",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Settings Row Open zero overflow",
+          "condition": "doc: 412 <= 412, header: 412 <= 412",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Mobile Drawer Open zero overflow",
+          "condition": "docScrollWidth (412) <= docClientWidth (412), sidebarWidth (340) <= 412",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Small tablet portrait",
+      "width": 600,
+      "height": 960,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (600) <= clientWidth (600)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (600) <= clientWidth (600)",
+          "passed": true
+        },
+        {
+          "name": "Mobile full-screen chat container (left: 0, width: 100%)",
+          "condition": "left=0 (~0), width=600 (~600), sidebar_offcanvas=True",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=847 >= 0, bottom=960 <= 960, left=0 >= 0, right=600 <= 600",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Settings Row Open zero overflow",
+          "condition": "doc: 600 <= 600, header: 600 <= 600",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Mobile Drawer Open zero overflow",
+          "condition": "docScrollWidth (600) <= docClientWidth (600), sidebarWidth (340) <= 600",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Mobile boundary (upper edge)",
+      "width": 767,
+      "height": 1024,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (767) <= clientWidth (767)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (767) <= clientWidth (767)",
+          "passed": true
+        },
+        {
+          "name": "Mobile full-screen chat container (left: 0, width: 100%)",
+          "condition": "left=0 (~0), width=767 (~767), sidebar_offcanvas=True",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=911 >= 0, bottom=1024 <= 1024, left=0 >= 0, right=767 <= 767",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Settings Row Open zero overflow",
+          "condition": "doc: 767 <= 767, header: 767 <= 767",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Mobile Drawer Open zero overflow",
+          "condition": "docScrollWidth (767) <= docClientWidth (767), sidebarWidth (340) <= 767",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Tablet portrait (iPad portrait)",
+      "width": 768,
+      "height": 1024,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (768) <= clientWidth (768)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (388) <= clientWidth (388)",
+          "passed": true
+        },
+        {
+          "name": "Desktop/Tablet in-flow side-by-side sidebar",
+          "condition": "sidebar.position=relative",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=903 >= 0, bottom=1024 <= 1024, left=380 >= 0, right=768 <= 768",
+          "passed": true
+        },
+        {
+          "name": "Stress Test: Settings Row Open zero overflow",
+          "condition": "doc: 768 <= 768, header: 388 <= 388",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Tablet landscape (iPad landscape)",
+      "width": 1024,
+      "height": 768,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (1024) <= clientWidth (1024)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (644) <= clientWidth (644)",
+          "passed": true
+        },
+        {
+          "name": "Desktop/Tablet in-flow side-by-side sidebar",
+          "condition": "sidebar.position=relative",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=647 >= 0, bottom=768 <= 768, left=380 >= 0, right=1024 <= 1024",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Desktop WXGA",
+      "width": 1280,
+      "height": 800,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (1280) <= clientWidth (1280)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (900) <= clientWidth (900)",
+          "passed": true
+        },
+        {
+          "name": "Desktop/Tablet in-flow side-by-side sidebar",
+          "condition": "sidebar.position=relative",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=679 >= 0, bottom=800 <= 800, left=380 >= 0, right=1280 <= 1280",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Desktop WXGA+",
+      "width": 1440,
+      "height": 900,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (1440) <= clientWidth (1440)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (1060) <= clientWidth (1060)",
+          "passed": true
+        },
+        {
+          "name": "Desktop/Tablet in-flow side-by-side sidebar",
+          "condition": "sidebar.position=relative",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=779 >= 0, bottom=900 <= 900, left=380 >= 0, right=1440 <= 1440",
+          "passed": true
+        }
+      ]
+    },
+    {
+      "name": "Desktop Full HD",
+      "width": 1920,
+      "height": 1080,
+      "checks": [
+        {
+          "name": "Zero document horizontal overflow",
+          "condition": "scrollWidth (1920) <= clientWidth (1920)",
+          "passed": true
+        },
+        {
+          "name": "Chat header zero horizontal overflow",
+          "condition": "header.scrollWidth (1540) <= clientWidth (1540)",
+          "passed": true
+        },
+        {
+          "name": "Desktop/Tablet in-flow side-by-side sidebar",
+          "condition": "sidebar.position=relative",
+          "passed": true
+        },
+        {
+          "name": "Input wrapper anchored in-bounds",
+          "condition": "top=959 >= 0, bottom=1080 <= 1080, left=380 >= 0, right=1920 <= 1920",
+          "passed": true
+        }
+      ]
+    }
+  ]
+}

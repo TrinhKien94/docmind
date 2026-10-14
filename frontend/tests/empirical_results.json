@@ -1,0 +1,116 @@
+{
+  "scenario_1_rapid_toggle": {
+    "passed": true,
+    "even_clicks_closed": true,
+    "click_history": [
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false
+    ],
+    "settled_after_10": {
+      "is_mobile_open": false,
+      "backdrop_visible": false,
+      "sidebar_rect": {
+        "left": -318.75,
+        "right": 0,
+        "width": 318.75
+      }
+    },
+    "click_11_open": true,
+    "click_12_close": true
+  },
+  "scenario_2_close_triggers": {
+    "passed": true,
+    "trigger_close_btn": true,
+    "trigger_backdrop_click": true,
+    "trigger_escape_key": true,
+    "spurious_escape_safe": true
+  },
+  "scenario_3_viewport_resize": {
+    "passed": true,
+    "desktop_initial": {
+      "sidebarPosition": "relative",
+      "sidebarWidth": 380,
+      "sidebarLeft": 0,
+      "chatWidth": 900,
+      "chatLeft": 380,
+      "toggleDisplay": "none",
+      "scrollWidth": 1280,
+      "clientWidth": 1280,
+      "hasOverflowX": false
+    },
+    "mobile_resized": {
+      "sidebarPosition": "fixed",
+      "sidebarTransform": "matrix(1, 0, 0, 1, -318.75, 0)",
+      "sidebarRight": 0,
+      "chatWidth": 375,
+      "chatLeft": 0,
+      "toggleDisplay": "flex",
+      "scrollWidth": 375,
+      "clientWidth": 375,
+      "hasOverflowX": false
+    },
+    "desktop_restored": {
+      "sidebarPosition": "relative",
+      "sidebarWidth": 380,
+      "sidebarLeft": 0,
+      "chatWidth": 900,
+      "chatLeft": 380,
+      "toggleDisplay": "none",
+      "backdropDisplay": "none",
+      "backdropOpacity": "1",
+      "scrollWidth": 1280,
+      "clientWidth": 1280,
+      "hasOverflowX": false
+    }
+  },
+  "scenario_4_modal_layering": {
+    "passed": true,
+    "required_modal_z_index": 1100,
+    "actual_modal_z_index": 1100,
+    "sidebar_z_index": 1000,
+    "modal_z_equals_1100": true,
+    "modal_on_top_of_drawer": true,
+    "element_at_screen_center": {
+      "tagName": "H4",
+      "className": "section-heading",
+      "inside_modal_card": true,
+      "inside_sidebar": false,
+      "inside_modal_backdrop": true
+    },
+    "raw": {
+      "sidebar_zIndex": "1000",
+      "drawer_backdrop_zIndex": "55",
+      "modal_backdrop_zIndex": "1100",
+      "modal_card_zIndex": "auto",
+      "modal_card_rect": {
+        "x": 20,
+        "y": 129.921875,
+        "width": 335,
+        "height": 552.15625,
+        "top": 129.921875,
+        "right": 355,
+        "bottom": 682.078125,
+        "left": 20
+      },
+      "element_at_screen_center": {
+        "tagName": "H4",
+        "className": "section-heading",
+        "inside_modal_card": true,
+        "inside_sidebar": false,
+        "inside_modal_backdrop": true
+      }
+    }
+  },
+  "console_errors": [
+    "CONSOLE_ERROR: Failed to load resource: the server responded with a status of 500 (Internal Server Error)",
+    "CONSOLE_ERROR: Failed to load resource: the server responded with a status of 500 (Internal Server Error)"
+  ]
+}
