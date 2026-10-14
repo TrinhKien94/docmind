@@ -19,28 +19,28 @@
 - **Miss Dior Blooming Bouquet Eau de Toilette (EDT)**:
   - **Dung tích & Giá niêm yết**:
     - **30ml**: **2.350.000 VNĐ**
-    - **50ml**: **3.350.000 VNĐ**
-    - **100ml**: **4.550.000 VNĐ**
+    - **50ml**: **3.150.000 VNĐ**
+    - **100ml**: **4.350.000 VNĐ**
   - **Cấu trúc 3 tầng hương**:
     - *Hương đầu*: Cam Bergamot Calabria và Đậu ngọt (Sweet Pea) tươi mát.
     - *Hương giữa*: Hoa Mẫu Đơn (Peony) và Hoa Hồng Đan Mạch (Damascus Rose) dịu dàng như bó hoa sớm mai.
     - *Hương cuối*: Xạ hương trắng (White Musk) mềm mại như lụa.
   - **Khuyên dùng**: Mùi hương quốc dân dễ dùng nhất cho mùa xuân - hè, môi trường văn phòng công sở, hoặc làm quà tặng bạn gái/đối tác nữ mà không sợ kén mùi.
 - **Miss Dior Eau de Parfum (EDP — Bản Nơ Thêu Haute Couture)**:
-  - **Dung tích & Giá niêm yết**: **30ml: 2.950.000 VNĐ** | **50ml: 4.150.000 VNĐ** | **100ml: 5.750.000 VNĐ**.
+  - **Dung tích & Giá niêm yết**: **30ml: 2.750.000 VNĐ** | **50ml: 3.750.000 VNĐ** | **100ml: 5.150.000 VNĐ**.
   - **Tầng hương**: Hoa hồng Centifolia vùng Grasse hòa quyện cùng Hoa Linh Lan, Mẫu Đơn, Diên Vĩ và tầng đáy Vani Papua New Guinea, Đậu Tonka, Gỗ Đàn Hương.
   - **Khuyên dùng**: Ngọt ngào, lãng mạn, sang trọng; lưu hương 8–10 giờ, hợp hẹn hò hoặc thời tiết mát mẻ.
 - **Miss Dior Parfum (Phiên bản Tinh dầu Nước hoa Sáng tạo bởi Francis Kurkdjian)**:
-  - **Dung tích & Giá niêm yết**: **35ml: 3.450.000 VNĐ** | **50ml: 4.550.000 VNĐ** | **80ml: 5.950.000 VNĐ**.
+  - **Dung tích & Giá niêm yết**: **35ml: 3.250.000 VNĐ** | **50ml: 4.350.000 VNĐ** | **80ml: 5.650.000 VNĐ**.
   - **Tầng hương**: Hoa Nhài quyến rũ mang sắc thái dâu rừng mọng nước (Fruity Jasmine) trên nền Gỗ Hổ Phách (Amber Wood) và Hoắc Hương. Độ lưu hương vượt trội 12 giờ.
 
 ### 2.2. Dòng J'adore — Vẻ đẹp Nữ thần Vàng Kim Sang trọng
 - **J'adore Eau de Parfum (EDP)**:
-  - **Dung tích & Giá niêm yết**: **30ml: 2.950.000 VNĐ** | **50ml: 4.150.000 VNĐ** | **100ml: 5.750.000 VNĐ**.
+  - **Dung tích & Giá niêm yết**: **30ml: 2.850.000 VNĐ** | **50ml: 3.850.000 VNĐ** | **100ml: 5.250.000 VNĐ**.
   - **Tầng hương**: Hoa Ngọc Lan Tây (Ylang-Ylang), Hoa Hồng Đan Mạch, Hoa Nhài Grandiflorum vùng Grasse và Nhài Sambac Ấn Độ.
   - **Khuyên dùng**: Quý phái, thanh lịch, trưởng thành; món quà tuyệt vời tặng vợ, mẹ, sếp nữ hoặc phụ nữ thành đạt.
 - **J'adore Parfum d'Eau (Nước hoa Không Cồn Công nghệ Nhũ tương Nước độc quyền)**:
-  - **Dung tích & Giá niêm yết**: **50ml: 4.150.000 VNĐ** | **100ml: 5.750.000 VNĐ**.
+  - **Dung tích & Giá niêm yết**: **50ml: 3.850.000 VNĐ** | **100ml: 5.250.000 VNĐ**.
   - **Điểm đặc biệt**: Không chứa cồn (0% Alcohol), tạo làn sương trắng mịn ôm sát làn da với hương Hoa Cam Neroli vùng Vallauris và Hoa Mộc Lan Trung Hoa. An toàn cho làn da nhạy cảm nhất.
 - **J'adore l'Or Essence de Parfum (Tinh hoa Nước hoa Thượng lưu)**:
   - **Dung tích & Giá niêm yết**: **50ml: 5.200.000 VNĐ** | **80ml: 6.950.000 VNĐ**.
@@ -53,9 +53,9 @@
 | Phiên bản | Dung tích & Giá niêm yết | Tầng hương chủ đạo | Phong cách & Độ lưu hương |
 | :--- | :--- | :--- | :--- |
 | **Sauvage EDT** | **60ml: 2.850.000đ**<br/>**100ml: 3.750.000đ** | Cam Bergamot Calabria, Tiêu Tứ Xuyên, Ambroxan biển cả | Tươi mát, năng động, phóng khoáng; hợp dùng hàng ngày mùa hè (**6–8 giờ**) |
-| **Sauvage EDP** | **60ml: 3.350.000đ**<br/>**100ml: 4.350.000đ**<br/>*Refill 300ml: 7.500.000đ* | Cam Bergamot, Hạt Nhục Đậu Khấu, Ambroxan và **Vani Papua New Guinea** | Nam tính, ấm áp, cuốn hút đa dụng cả ngày lẫn đêm (**8–10 giờ**) — *Bán chạy nhất* |
-| **Sauvage Parfum** | **60ml: 3.850.000đ**<br/>**100ml: 4.950.000đ** | Quýt hồng, Đậu Tonka và **Gỗ Đàn Hương Sri Lanka** đậm đặc | Lịch lãm, trầm ổn, trưởng thành, ít góc cạnh cay nồng hơn EDT (**10–12 giờ**) |
-| **Sauvage Elixir** | **60ml: 5.150.000đ**<br/>**100ml: 6.950.000đ** | Quế, Bạch Đậu Khấu, Bưởi, **Oải Hương vùng Nyons** và Gỗ Hổ Phách | Đẳng cấp quý ông quyền lực, độ bám tỏa cực đại chỉ với 2 lần xịt (**12–24+ giờ**) |
+| **Sauvage EDP** | **60ml: 3.150.000đ**<br/>**100ml: 4.150.000đ**<br/>*Refill 300ml: 7.500.000đ* | Cam Bergamot, Hạt Nhục Đậu Khấu, Ambroxan và **Vani Papua New Guinea** | Nam tính, ấm áp, cuốn hút đa dụng cả ngày lẫn đêm (**8–10 giờ**) — *Bán chạy nhất* |
+| **Sauvage Parfum** | **60ml: 3.650.000đ**<br/>**100ml: 4.750.000đ** | Quýt hồng, Đậu Tonka và **Gỗ Đàn Hương Sri Lanka** đậm đặc | Lịch lãm, trầm ổn, trưởng thành, ít góc cạnh cay nồng hơn EDT (**10–12 giờ**) |
+| **Sauvage Elixir** | **60ml: 5.350.000đ**<br/>**100ml: 6.950.000đ** | Quế, Bạch Đậu Khấu, Bưởi, **Oải Hương vùng Nyons** và Gỗ Hổ Phách | Đẳng cấp quý ông quyền lực, độ bám tỏa cực đại chỉ với 2 lần xịt (**12–24+ giờ**) |
 
 ### 3.2. Dòng Bộ sưu tập Độc quyền — La Collection Privée Christian Dior (Unisex Thượng lưu)
 - **Dung tích & Giá niêm yết**: **40ml: 4.300.000 VNĐ** | **125ml: 8.800.000 VNĐ** | **250ml: 12.600.000 VNĐ**.
@@ -76,13 +76,14 @@
 - **Chi phí**: **Hoàn toàn miễn phí (0 VNĐ)** cho khách hàng mua nước hoa (từ 50ml trở lên) hoặc son môi *Rouge Dior / Dior Addict*.
 - **Quy định kỹ thuật**:
   - Tối đa **12 ký tự** (bao gồm chữ cái không dấu, chữ số, dấu cách và các biểu tượng độc quyền của Dior như `♥` Trái tim hoặc `★` Ngôi sao may mắn của Quý ngài Christian Dior).
-  - Thời gian hoàn thiện khắc laser tinh xảo: **Cộng thêm 2–4 giờ làm việc** trước khi bàn giao vận chuyển.
-  - **Lưu ý điều kiện thanh toán**: Đơn hàng có yêu cầu khắc tên cá nhân hóa (*Engraving*) cần được **thanh toán trước 100%** qua VietQR hoặc Thẻ Visa/Mastercard và **không áp dụng đổi trả theo nhu cầu cá nhân** (trừ trường hợp lỗi kỹ thuật/vòi xịt từ nhà sản xuất).
+  - Thời gian hoàn thiện khắc laser tinh xảo tại xưởng Boutique: **Chỉ 30–45 phút** (vẫn đảm bảo giao kịp gói **Hỏa tốc VIP 2 giờ** tại nội thành Hà Nội & TP.HCM).
+  - **Lưu ý điều kiện thanh toán**: Đơn hàng có yêu cầu khắc tên cá nhân hóa (*Engraving*) cần được **thanh toán trước 100%** qua VietQR hoặc Thẻ Visa/Mastercard và **không áp dụng đổi trả theo nhu cầu cá nhân** (trừ trường hợp lỗi kỹ thuật/vòi xịt từ nhà sản xuất hoặc khắc sai nội dung do lỗi của Dior).
 
 ### 4.3. Chính sách Tặng kèm Mẫu thử (Complimentary Samples & Miniatures)
-- **Đơn hàng từ 1.500.000 VNĐ**: Tặng kèm **02 mẫu thử (Samples 1ml–2ml)** tùy chọn thuộc nhóm Nước hoa (*Miss Dior, Sauvage, J'adore*) hoặc Skincare (*Capture Totale, Prestige*).
-- **Đơn hàng từ 3.500.000 VNĐ**: Tặng kèm **02 mẫu thử (Samples)** + **01 sản phẩm thu nhỏ (Deluxe Miniature 5ml–7ml)** đựng trong **Túi vải rút (Dior Couture Pouch)** chính hãng.
-- **Đơn hàng từ 7.000.000 VNĐ**: Tặng kèm **Bộ Gift Set VIP** gồm Túi đựng mỹ phẩm Dior (Beauty Vanity Case) + 02 Deluxe Miniatures + 03 Samples.
+- **Mọi đơn hàng tiêu chuẩn / từ 1.000.000 VNĐ**: Tặng kèm **02 mẫu thử (Samples 1.2ml)** tùy chọn thuộc nhóm Nước hoa (*Miss Dior, Sauvage, J'adore*) hoặc Skincare (*Capture Totale, Prestige*) + Miễn phí vận chuyển toàn quốc.
+- **Đơn hàng từ 2.000.000 VNĐ**: Tặng kèm **03 mẫu thử (Samples 1.2ml)** + **Miễn phí giao Hỏa tốc VIP 2 giờ** tại Hà Nội & TP.HCM.
+- **Đơn hàng từ 5.000.000 VNĐ**: Tặng kèm **03 mẫu thử (Samples 1.2ml)** + **01 Nước hoa Mini 5ml (Deluxe Miniature)** đựng trong **Túi vải nhung/rút (Dior Couture Pouch)** chính hãng.
+- **Đơn hàng từ 10.000.000 VNĐ**: Tặng kèm **Bộ Gift Set VIP** gồm Túi đựng mỹ phẩm Dior (Beauty Vanity Case) + 02 Deluxe Miniatures + 03 Samples.
 
 ### 4.4. Hướng dẫn Cách Xịt & Bảo quản Nước hoa Dior Chuẩn Chuyên gia
 - **Quy tắc xịt giữ mùi lâu**: Dưỡng ẩm vùng da bằng kem dưỡng không mùi (hoặc *Dior Body Milk*) trước khi xịt; xịt cách da **15–20cm** vào các điểm mạch đập (sau tai, hõm cổ, mặt trong cổ tay, khuỷu tay); **tuyệt đối không chà xát hai cổ tay vào nhau** vì ma sát làm vỡ cấu trúc phân tử tầng hương đầu (*Top Notes*).

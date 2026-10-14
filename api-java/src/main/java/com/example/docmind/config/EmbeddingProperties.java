@@ -27,5 +27,11 @@ public class EmbeddingProperties {
 
         /** Đường dẫn endpoint embed trên doc-service-py. */
         private String endpointPath = "/v1/embed";
+
+        /**
+         * Thời gian ngắt mạch (circuit-breaker backoff, ms) khi doc-service-py không phản hồi
+         * để chế độ Standalone rơi về StubEmbeddingClient tức thì mà không lặp lại kết nối lỗi.
+         */
+        private long failureBackoffMs = 60_000L;
     }
 }

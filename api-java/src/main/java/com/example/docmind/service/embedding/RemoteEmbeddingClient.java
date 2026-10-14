@@ -38,6 +38,7 @@ public class RemoteEmbeddingClient implements EmbeddingClient {
     private final RestClient restClient;
     private final StubEmbeddingClient stub;
     private final EmbeddingProperties props;
+    private volatile long remoteUnavailableUntilEpochMs = 0L;
 
     /**
      * Stub fallback được dựng NGAY trong constructor từ {@link EmbeddingProperties}
@@ -71,6 +72,12 @@ public class RemoteEmbeddingClient implements EmbeddingClient {
             return stub.embedBatch(texts);
         }
 
+        long backoffMs = props.getRemote().getFailureBackoffMs();
+        if (backoffMs > 0 && System.currentTimeMillis() < remoteUnavailableUntilEpochMs) {
+            log.debug("remote embedding in circuit-breaker backoff -> stub ({} texts)", texts.size());
+            return stub.embedBatch(texts);
+        }
+
         CorrelationIds.setStage("embed-serve");
         try {
             EmbedResponse resp = restClient.post()
@@ -82,19 +89,26 @@ public class RemoteEmbeddingClient implements EmbeddingClient {
                     .body(EmbedResponse.class);
 
             List<float[]> vectors = mapResponse(resp, texts.size());
+            remoteUnavailableUntilEpochMs = 0L;
             log.info("embed-serve OK provider_model={} batch_size={} dim={}",
                     resp.model(), texts.size(), resp.dim());
             return vectors;
         } catch (RestClientResponseException e) {
             // Lỗi HTTP có response: log cả status + body thật (pattern RestDocServiceClient),
             // rồi fallback stub cho call này (ingest không fail cứng).
+            if (backoffMs > 0 && e.getStatusCode().is5xxServerError()) {
+                remoteUnavailableUntilEpochMs = System.currentTimeMillis() + backoffMs;
+            }
             log.warn("embed-serve FAILED status={} body={} -> fallback stub ({} texts)",
                     e.getStatusCode(), e.getResponseBodyAsString(), texts.size());
             return stub.embedBatch(texts);
         } catch (RestClientException e) {
-            // Không có response (timeout/connect) hoặc lỗi mapping/validate -> stub.
-            log.warn("embed-serve FAILED (no response): {} -> fallback stub ({} texts)",
-                    e.getMessage(), texts.size());
+            // Không có response (timeout/connect) hoặc lỗi mapping/validate -> kích hoạt backoff & rơi về stub.
+            if (backoffMs > 0) {
+                remoteUnavailableUntilEpochMs = System.currentTimeMillis() + backoffMs;
+            }
+            log.warn("embed-serve FAILED (no response): {} -> fallback stub ({} texts, backoff={}ms)",
+                    e.getMessage(), texts.size(), backoffMs);
             return stub.embedBatch(texts);
         } catch (RuntimeException e) {
             // Body rỗng / dim sai / độ dài vector sai (mapResponse ném IllegalState).

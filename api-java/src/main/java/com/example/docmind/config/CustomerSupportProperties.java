@@ -87,6 +87,18 @@ public class CustomerSupportProperties {
     /** Số ký tự tối đa trên mỗi lượt hội thoại trong <CONVERSATION_HISTORY>. */
     private int maxHistoryTurnChars = 1000;
 
+    /**
+     * Bật/tắt cơ chế mở rộng câu truy vấn RAG bằng ngữ cảnh các lượt hỏi gần nhất của khách hàng
+     * trong hội thoại đa lượt (giúp giải quyết đại từ "loại đó", "chai này", "bản 50ml"... ở lượt hỏi tiếp theo).
+     */
+    private boolean historyQueryExpansionEnabled = true;
+
+    /** Số lượt nói gần nhất của khách hàng trong history dùng để bổ sung từ khoá cho truy vấn RAG. */
+    private int historyExpansionMaxUserTurns = 2;
+
+    /** Số ký tự tối đa trích từ mỗi lượt hỏi trước của khách hàng khi mở rộng truy vấn RAG. */
+    private int historyExpansionMaxChars = 240;
+
     /** Mã định danh bộ prompt được huấn luyện trước. */
     private String promptTemplateId = "customer-sales-service-v1";
 
@@ -291,6 +303,21 @@ public class CustomerSupportProperties {
         private List<String> negativeSignalKeywords = new ArrayList<>(List.of(
                 "chua dung", "sai roi", "khong phai", "chua hieu", "chua ro", "y toi la",
                 "y minh la", "hoi lai", "khong dung", "chung chung", "thieu", "te qua"
+        ));
+
+        /** Bật/tắt kiểm tra an toàn chống chỉ định thai kỳ khi đánh giá chất lượng tư vấn mỹ phẩm. */
+        private boolean pregnancySafetyCheckEnabled = true;
+
+        /** Từ khoá nhận diện câu hỏi liên quan đến phụ nữ mang thai hoặc cho con bú. */
+        private List<String> pregnancyTriggerKeywords = new ArrayList<>(List.of(
+                "mang thai", "ba bau", "me bau", "thai ky", "cho con bu", "bau 3 thang",
+                "bau 4 thang", "bau 5 thang", "bau dung duoc khong", "co bau"
+        ));
+
+        /** Từ khoá bắt buộc phải có trong câu trả lời tư vấn skincare cho phụ nữ mang thai. */
+        private List<String> pregnancySafetyRequiredKeywords = new ArrayList<>(List.of(
+                "retishot", "retinol", "chong chi dinh", "khong su dung", "khong dung",
+                "tranh", "an toan", "lanh tinh"
         ));
 
         /**

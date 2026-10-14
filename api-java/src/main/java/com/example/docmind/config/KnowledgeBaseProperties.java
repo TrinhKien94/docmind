@@ -41,7 +41,7 @@ public class KnowledgeBaseProperties {
     ));
 
     /** Số ký tự tối đa trên mỗi chunk khi phân đoạn theo cấu trúc tiêu đề Markdown. */
-    private int maxChunkChars = 1400;
+    private int maxChunkChars = 2200;
 
     /** Số dòng ước tính trên mỗi trang tài liệu (dùng để gán số trang cho Markdown/Text). */
     private int linesPerPageEstimate = 45;
@@ -66,4 +66,110 @@ public class KnowledgeBaseProperties {
      * khi truy vấn trên nhiều tài liệu (giúp câu hỏi đa ý định lấy được ngữ cảnh từ nhiều tài liệu SOP khác nhau).
      */
     private int maxChunksPerDocumentInTopK = 3;
+
+    /**
+     * Thời gian ngắt mạch (circuit-breaker backoff, ms) khi cơ sở dữ liệu PostgreSQL không khả dụng
+     * trong chế độ Standalone, giúp hệ thống chuyển thẳng sang LocalKnowledgeBaseService.
+     */
+    private long dbFailureBackoffMs = 60_000L;
+
+    /** Trọng số điểm RRF cơ sở khi tính điểm đa dạng hoá Query-Coverage MMR. */
+    private double mmrRrfScoreWeight = 100.0;
+
+    /** Điểm cộng cho mỗi từ khoá câu hỏi mới chưa được bao phủ bởi các chunk đã chọn trong MMR. */
+    private double mmrUncoveredTokenBonus = 0.85;
+
+    /** Điểm cộng cho mỗi cụm 2 từ (bigram) mới chưa được bao phủ trong MMR. */
+    private double mmrUncoveredBigramBonus = 1.45;
+
+    /** Mức phạt nhẹ trên mỗi chunk đã lấy từ cùng một tài liệu trong MMR. */
+    private double mmrPerDocSoftPenalty = 0.35;
+
+    /** Mức phạt cứng khi số chunk của một tài liệu đã chạm ngưỡng maxChunksPerDocumentInTopK. */
+    private double mmrMaxDocHardPenalty = 3.5;
+
+    /** Danh sách từ dừng (stopwords) tiếng Việt bỏ dấu khi tách từ khoá tìm kiếm BM25. */
+    private List<String> vietnameseStopwords = new ArrayList<>(List.of(
+            "la", "cua", "va", "co", "cho", "thi", "ma", "nhu", "voi", "cac", "nhung",
+            "duoc", "khong", "trong", "nay", "do", "khi", "hay", "hoac", "neu", "de",
+            "toi", "minh", "em", "anh", "chi", "shop", "ben", "ad", "admin", "hoi",
+            "muon", "can", "giup", "xin", "chao", "da", "a", "nha", "nhe", "vay"
+    ));
+
+    /**
+     * Danh sách quy tắc cộng điểm khớp miền kiến thức (Domain-Specific Intent Alignment Rules)
+     * ngoại hoá hoàn toàn ra cấu hình.
+     */
+    private List<DomainAlignmentRule> domainAlignmentRules = new ArrayList<>(defaultDomainAlignmentRules());
+
+    public static List<DomainAlignmentRule> defaultDomainAlignmentRules() {
+        return List.of(
+                DomainAlignmentRule.of(
+                        "skincare",
+                        List.of("skincare"),
+                        List.of("da dau", "da kho", "da nhay cam", "lao hoa", "nam", "mang thai",
+                                "bau", "capture totale", "prestige", "dior snow", "la mousse", "retishot", "serum", "kem duong"),
+                        2.2
+                ),
+                DomainAlignmentRule.of(
+                        "makeup",
+                        List.of("makeup"),
+                        List.of("kem nen", "undertone", "cushion", "son", "rouge dior", "lip glow",
+                                "maximizer", "moi tham", "che khuyet diem", "phan", "matte", "skin glow", "999", "720", "772", "100"),
+                        2.2
+                ),
+                DomainAlignmentRule.of(
+                        "fragrance_gifting",
+                        List.of("fragrance", "gift"),
+                        List.of("nuoc hoa", "miss dior", "jadore", "sauvage", "elixir", "gris dior",
+                                "khac ten", "engraving", "qua tang", "tang vo", "tang ban gai", "hop qua", "sample", "mau thu"),
+                        2.2
+                ),
+                DomainAlignmentRule.of(
+                        "sales_loyalty",
+                        List.of("sales-closing", "loyalty"),
+                        List.of("hang thanh vien", "loyalty", "tich diem", "white", "silver", "gold",
+                                "platinum", "spa", "facial", "try first", "upsell", "cross sell"),
+                        2.2
+                ),
+                DomainAlignmentRule.of(
+                        "authenticity_warranty_return",
+                        List.of("authenticity", "warranty", "return"),
+                        List.of("chinh hang", "batch code", "tem phu", "doi tra", "bao hanh", "hoan tien",
+                                "di ung", "kich ung", "man do", "ngua", "gay son", "chay dau", "do mo hoi", "voi xit", "cosmetovigilance"),
+                        2.6
+                ),
+                DomainAlignmentRule.of(
+                        "order_payment_delivery",
+                        List.of("order", "payment", "delivery"),
+                        List.of("thanh toan", "tra gop", "dat coc", "cod", "hoa don", "vat",
+                                "van chuyen", "giao hang", "hoa toc", "2h", "2 gio", "freeship", "dong goi", "cach nhiet"),
+                        2.4
+                )
+        );
+    }
+
+    @Getter
+    @Setter
+    public static class DomainAlignmentRule {
+        private String name = "";
+        private List<String> filenameKeywords = new ArrayList<>();
+        private List<String> queryPhrases = new ArrayList<>();
+        private double bonusScore = 2.2;
+
+        public DomainAlignmentRule() {
+        }
+
+        public static DomainAlignmentRule of(String name,
+                                             List<String> filenameKeywords,
+                                             List<String> queryPhrases,
+                                             double bonusScore) {
+            DomainAlignmentRule rule = new DomainAlignmentRule();
+            rule.setName(name);
+            rule.setFilenameKeywords(new ArrayList<>(filenameKeywords));
+            rule.setQueryPhrases(new ArrayList<>(queryPhrases));
+            rule.setBonusScore(bonusScore);
+            return rule;
+        }
+    }
 }

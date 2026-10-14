@@ -46,8 +46,6 @@ public class DocumentService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
 
-    private static final long DB_BACKOFF_MS = 60_000L;
-
     private final DocumentRepository documentRepository;
     private final BlockRepository blockRepository;
     private final ChunkRepository chunkRepository;
@@ -310,7 +308,7 @@ public class DocumentService {
                 }
             } catch (Exception e) {
                 if (localKnowledgeBaseService != null && localKnowledgeBaseService.hasDocuments()) {
-                    dbUnavailableUntilEpochMs = System.currentTimeMillis() + DB_BACKOFF_MS;
+                    dbUnavailableUntilEpochMs = System.currentTimeMillis() + localKnowledgeBaseService.getDbFailureBackoffMs();
                 }
                 log.warn("Database unavailable during listAll ({}); falling back to LocalKnowledgeBaseService", e.getMessage());
             }
@@ -346,7 +344,7 @@ public class DocumentService {
                 }
             } catch (Exception e) {
                 if (localKnowledgeBaseService != null && localKnowledgeBaseService.hasDocuments()) {
-                    dbUnavailableUntilEpochMs = System.currentTimeMillis() + DB_BACKOFF_MS;
+                    dbUnavailableUntilEpochMs = System.currentTimeMillis() + localKnowledgeBaseService.getDbFailureBackoffMs();
                 }
                 log.debug("Database unavailable during getStatus ({}); checking LocalKnowledgeBaseService", e.getMessage());
             }

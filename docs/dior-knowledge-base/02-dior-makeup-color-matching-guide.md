@@ -20,7 +20,7 @@ Khi khách hàng nhờ tư vấn chọn kem nền (*Foundation*), phấn nước
 ## 2. Tư vấn Lớp Nền Hoàn Hảo Suốt 24 Giờ — Dior Forever Complexion
 
 ### 2.1. Phân biệt 2 Dòng Kem Nền Biểu tượng: Dior Forever Matte vs. Dior Forever Skin Glow
-Cả hai dòng đều có dung tích **30ml**, mức giá niêm yết **1.950.000 VNĐ**, chứa **86% nền dưỡng da hoa cỏ (Floral Skincare Base)** từ chiết xuất Hoa Diên Vĩ (Iris), Hoa Păng-xê (Wild Pansy) và Hoa Sen Cạn (Nasturtium), không gây bít tắc lỗ chân lông (Non-comedogenic).
+Cả hai dòng đều có dung tích **30ml**, mức giá niêm yết **1.850.000 VNĐ**, chứa **86% nền dưỡng da hoa cỏ (Floral Skincare Base)** từ chiết xuất Hoa Diên Vĩ (Iris), Hoa Păng-xê (Wild Pansy) và Hoa Sen Cạn (Nasturtium), không gây bít tắc lỗ chân lông (Non-comedogenic).
 
 | Tiêu chí so sánh | **Dior Forever (No-Transfer Matte SPF 15)** | **Dior Forever Skin Glow (Radiant Foundation SPF 20)** |
 | :--- | :--- | :--- |
@@ -32,11 +32,11 @@ Cả hai dòng đều có dung tích **30ml**, mức giá niêm yết **1.950.00
 
 ### 2.2. Phấn Nước Cao Cấp — Dior Forever Cushion & Kem Che Khuyết Điểm
 - **Dior Forever Cushion SPF 35 - PA+++**:
-  - **Giá niêm yết**: **Hộp Cushion hoàn chỉnh: 2.150.000 VNĐ** | **Lõi thay thế (Refill): 1.380.000 VNĐ**.
+  - **Giá niêm yết**: **Hộp Cushion hoàn chỉnh: 1.950.000 VNĐ** | **Lõi thay thế (Refill): 1.350.000 VNĐ** *(Tiết kiệm 600.000 VNĐ)*.
   - **Phiên bản kết cấu**: *Luminous Matte* (Lì mịn kiềm dầu) và *Skin Glow* (Căng bóng cấp ẩm).
   - **Vỏ hộp thời trang Couture (Case)**: Vỏ da họa tiết *Cannage* đính logo CD mạ vàng/bạc, có thể tháo lắp lõi Refill linh hoạt.
 - **Dior Forever Skin Correct Full-Coverage Creamy Concealer (Kem che khuyết điểm đa năng 24h)**:
-  - **Dung tích & Giá bán**: **11ml — 1.380.000 VNĐ**.
+  - **Dung tích & Giá bán**: **11ml — 1.350.000 VNĐ**.
   - **Cách chọn tông**: Chọn lùi 0.5 tông sáng hơn kem nền (ví dụ nền **1N** kết hợp che khuyết điểm **0.5N** hoặc **1N**) để che quầng thâm mắt và làm sáng vùng chữ T mà không đọng rãnh nhăn.
 
 ---
@@ -44,7 +44,7 @@ Cả hai dòng đều có dung tích **30ml**, mức giá niêm yết **1.950.00
 ## 3. Tư vấn Son Môi Biểu Tượng — Iconic Dior Lipsticks & Lip Care
 
 ### 3.1. Son Thỏi Cao Cấp — Rouge Dior Couture Lipstick (Có Lõi Thay Thế Refillable)
-- **Giá niêm yết**: **Thỏi nguyên bản: 1.280.000 VNĐ** | **Lõi thay thế (Rouge Dior Refill): 1.020.000 VNĐ** *(Tiết kiệm 260.000 VNĐ)*.
+- **Giá niêm yết**: **Thỏi nguyên bản: 1.290.000 VNĐ** | **Lõi thay thế (Rouge Dior Refill): 1.030.000 VNĐ** *(Tiết kiệm 260.000 VNĐ - tương đương 20%)*.
 - **Thành phần dưỡng**: Chiết xuất Hoa Mẫu Đơn Đỏ (Red Peony) và Hoa Lựu (Pomegranate Flower) giúp môi mềm mượt suốt 16 giờ.
 - **Hai chất son chủ đạo**:
   - **Velvet (Nhung lì cao cấp)**: Lì mịn như nhung, che vân môi hoàn hảo, bám màu 12–16 giờ mà không gây khô môi.
@@ -76,9 +76,9 @@ Cả hai dòng đều có dung tích **30ml**, mức giá niêm yết **1.950.00
   - **020 Mahogany (Đỏ Nâu Trầm) & 031 Strawberry (Đỏ Dâu Tươi)**: Độ lên màu cao như son màu nhẹ, phù hợp khách thích gương mặt rạng rỡ ngay mà không cần đánh thêm son thỏi.
 
 ### 3.3. Son Bóng Căng Mọng & Son Kem Lì Không Trôi
-- **Dior Addict Lip Maximizer Plumping Gloss (6ml — 1.180.000 VNĐ)**:
-  - Chứa vi cầu Hyaluronic Acid và dầu Anh Đào giúp làm đầy rãnh môi tức thì (+29% độ căng mọng), cảm giác the mát bạc hà dễ chịu. Các màu hot: **001 Pink, 009 Intenseouden/Rosewood, 012 Rosewood, 038 Rose Nude**.
-- **Rouge Dior Forever Liquid (6ml — 1.280.000 VNĐ)**:
+- **Dior Addict Lip Maximizer Plumping Gloss (6ml — 1.150.000 VNĐ)**:
+  - Chứa vi cầu Hyaluronic Acid và dầu Anh Đào giúp làm đầy rãnh môi tức thì (+29% độ căng mọng), cảm giác the mát bạc hà dễ chịu. Các màu hot: **001 Pink, 009 Intense Rosewood, 012 Rosewood, 038 Rose Nude**.
+- **Rouge Dior Forever Liquid (6ml — 1.290.000 VNĐ)**:
   - Son kem lì siêu nhẹ môi, khô tệp vào môi sau 60 giây, cam kết **12 giờ không lem ra cốc uống nước hay khẩu trang**. Các màu hot: **100 Forever Nude, 720 Forever Icone, 999 Forever Dior**.
 
 ### 3.4. Phấn Má & Bảng Bắt Sáng — Dior Backstage & Rosy Glow

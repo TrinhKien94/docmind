@@ -25,6 +25,8 @@ public class UploadProperties {
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             "text/html",
             "text/markdown",
+            "text/x-web-markdown",
+            "text/x-markdown",
             "text/plain",
             "image/png",
             "image/jpeg"

@@ -50,13 +50,6 @@ public class LocalKnowledgeBaseService {
 
     private static final Logger log = LoggerFactory.getLogger(LocalKnowledgeBaseService.class);
 
-    private static final Set<String> VIETNAMESE_STOPWORDS = Set.of(
-            "la", "cua", "va", "co", "cho", "thi", "ma", "nhu", "voi", "cac", "nhung",
-            "duoc", "khong", "trong", "nay", "do", "khi", "hay", "hoac", "neu", "de",
-            "toi", "minh", "em", "anh", "chi", "shop", "ben", "ad", "admin", "hoi",
-            "muon", "can", "giup", "xin", "chao", "da", "a", "nha", "nhe", "vay"
-    );
-
     private final KnowledgeBaseProperties kbProps;
     private final EmbeddingClient embeddingClient;
     private final StubEmbeddingClient fallbackEmbeddingClient;
@@ -450,10 +443,16 @@ public class LocalKnowledgeBaseService {
                     }
                 }
 
-                double docPenalty = docCount >= maxPerDoc ? 3.5 : (docCount * 0.35);
-                double mmrScore = (candidate.score() * 100.0)
-                        + (newUncoveredTokens * 0.85)
-                        + (newUncoveredBigrams * 1.45)
+                double rrfWeight = kbProps.getMmrRrfScoreWeight() > 0 ? kbProps.getMmrRrfScoreWeight() : 100.0;
+                double tokBonus = kbProps.getMmrUncoveredTokenBonus() >= 0 ? kbProps.getMmrUncoveredTokenBonus() : 0.85;
+                double bgBonus = kbProps.getMmrUncoveredBigramBonus() >= 0 ? kbProps.getMmrUncoveredBigramBonus() : 1.45;
+                double softPenalty = kbProps.getMmrPerDocSoftPenalty() >= 0 ? kbProps.getMmrPerDocSoftPenalty() : 0.35;
+                double hardPenalty = kbProps.getMmrMaxDocHardPenalty() >= 0 ? kbProps.getMmrMaxDocHardPenalty() : 3.5;
+
+                double docPenalty = docCount >= maxPerDoc ? hardPenalty : (docCount * softPenalty);
+                double mmrScore = (candidate.score() * rrfWeight)
+                        + (newUncoveredTokens * tokBonus)
+                        + (newUncoveredBigrams * bgBonus)
                         - docPenalty;
 
                 if (mmrScore > bestMmrScore) {
@@ -484,6 +483,10 @@ public class LocalKnowledgeBaseService {
         }
 
         return selected;
+    }
+
+    public long getDbFailureBackoffMs() {
+        return kbProps.getDbFailureBackoffMs() > 0 ? kbProps.getDbFailureBackoffMs() : 60_000L;
     }
 
     public static UUID deterministicDocumentId(String filename) {
@@ -774,10 +777,13 @@ public class LocalKnowledgeBaseService {
         return dot / (Math.sqrt(normA) * Math.sqrt(normB));
     }
 
-    private static List<String> extractContentTokens(String text) {
+    private List<String> extractContentTokens(String text) {
         if (text == null || text.isBlank()) {
             return List.of();
         }
+        Set<String> stopwords = (kbProps.getVietnameseStopwords() != null && !kbProps.getVietnameseStopwords().isEmpty())
+                ? new HashSet<>(kbProps.getVietnameseStopwords())
+                : Set.of();
         String nfd = Normalizer.normalize(text.strip(), Normalizer.Form.NFD);
         String ascii = nfd.replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
                 .replace('đ', 'd')
@@ -785,7 +791,7 @@ public class LocalKnowledgeBaseService {
                 .toLowerCase(Locale.ROOT);
         List<String> out = new ArrayList<>();
         for (String tok : ascii.split("[^a-z0-9]+")) {
-            if (tok.length() >= 2 && !VIETNAMESE_STOPWORDS.contains(tok)) {
+            if (tok.length() >= 2 && !stopwords.contains(tok)) {
                 out.add(tok);
             }
         }
@@ -814,59 +820,46 @@ public class LocalKnowledgeBaseService {
         return trigrams;
     }
 
-    private static double computeDomainAlignmentBonus(String paddedQueryNorm, IndexedChunk chunk) {
+    private double computeDomainAlignmentBonus(String paddedQueryNorm, IndexedChunk chunk) {
+        List<KnowledgeBaseProperties.DomainAlignmentRule> rules =
+                (kbProps.getDomainAlignmentRules() != null && !kbProps.getDomainAlignmentRules().isEmpty())
+                        ? kbProps.getDomainAlignmentRules()
+                        : KnowledgeBaseProperties.defaultDomainAlignmentRules();
+
         double bonus = 0.0;
         String docName = chunk.filename() != null ? chunk.filename().toLowerCase(Locale.ROOT) : "";
 
-        // Skincare & Thai kỳ / Da nhạy cảm / Lão hóa -> SOP 01
-        if (containsAny(paddedQueryNorm, "da dau", "da kho", "da nhay cam", "lao hoa", "nam", "mang thai",
-                "bau", "capture totale", "prestige", "dior snow", "la mousse", "retishot", "serum", "kem duong")) {
-            if (docName.contains("skincare")) {
-                bonus += 2.2;
+        for (KnowledgeBaseProperties.DomainAlignmentRule rule : rules) {
+            if (rule == null || rule.getFilenameKeywords() == null || rule.getQueryPhrases() == null) {
+                continue;
             }
-        }
-        // Makeup, Kem nền, Bảng màu son, Undertone -> SOP 02
-        if (containsAny(paddedQueryNorm, "kem nen", "undertone", "cushion", "son", "rouge dior", "lip glow",
-                "maximizer", "moi tham", "che khuyet diem", "phan", "matte", "skin glow", "999", "720", "772", "100")) {
-            if (docName.contains("makeup")) {
-                bonus += 2.2;
+            boolean docMatches = false;
+            for (String fnKw : rule.getFilenameKeywords()) {
+                if (fnKw != null && !fnKw.isBlank() && docName.contains(fnKw.strip().toLowerCase(Locale.ROOT))) {
+                    docMatches = true;
+                    break;
+                }
             }
-        }
-        // Nước hoa, Quà tặng, Khắc tên Engraving -> SOP 03
-        if (containsAny(paddedQueryNorm, "nuoc hoa", "miss dior", "jadore", "sauvage", "elixir", "gris dior",
-                "khac ten", "engraving", "qua tang", "tang vo", "tang ban gai", "hop qua", "sample", "mau thu")) {
-            if (docName.contains("fragrance") || docName.contains("gift")) {
-                bonus += 2.2;
+            if (!docMatches) {
+                continue;
             }
-        }
-        // Chốt sale, Hạng thành viên VIP Loyalty, Try First -> SOP 04
-        if (containsAny(paddedQueryNorm, "hang thanh vien", "loyalty", "tich diem", "white", "silver", "gold",
-                "platinum", "spa", "facial", "try first", "upsell", "cross sell")) {
-            if (docName.contains("sales-closing") || docName.contains("loyalty")) {
-                bonus += 2.2;
-            }
-        }
-        // Chính hãng, Batch code, Đổi trả, Dị ứng / Kích ứng, Gãy son, Hỏng vòi xịt -> SOP 05
-        if (containsAny(paddedQueryNorm, "chinh hang", "batch code", "tem phu", "doi tra", "bao hanh", "hoan tien",
-                "di ung", "kich ung", "man do", "ngua", "gay son", "chay dau", "do mo hoi", "voi xit", "cosmetovigilance")) {
-            if (docName.contains("authenticity") || docName.contains("warranty") || docName.contains("return")) {
-                bonus += 2.6;
-            }
-        }
-        // Thanh toán, Trả góp, Đặt cọc, Hóa đơn VAT, Vận chuyển Hỏa tốc 2h, Đóng gói cách nhiệt -> SOP 06
-        if (containsAny(paddedQueryNorm, "thanh toan", "tra gop", "dat coc", "cod", "hoa don", "vat",
-                "van chuyen", "giao hang", "hoa toc", "2h", "2 gio", "freeship", "dong goi", "cach nhiet")) {
-            if (docName.contains("order") || docName.contains("payment") || docName.contains("delivery")) {
-                bonus += 2.4;
+            if (containsAnyPhrase(paddedQueryNorm, rule.getQueryPhrases())) {
+                bonus += rule.getBonusScore();
             }
         }
         return bonus;
     }
 
-    private static boolean containsAny(String paddedHaystack, String... phrases) {
+    private static boolean containsAnyPhrase(String paddedHaystack, List<String> phrases) {
+        if (paddedHaystack == null || phrases == null || phrases.isEmpty()) {
+            return false;
+        }
         for (String p : phrases) {
-            if (paddedHaystack.contains(" " + p + " ")) {
-                return true;
+            if (p != null && !p.isBlank()) {
+                String normPhrase = CustomerScenario.normalizeWordsPadded(p).strip();
+                if (!normPhrase.isEmpty() && paddedHaystack.contains(" " + normPhrase + " ")) {
+                    return true;
+                }
             }
         }
         return false;

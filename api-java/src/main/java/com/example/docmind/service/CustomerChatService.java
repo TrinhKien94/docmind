@@ -48,7 +48,6 @@ import java.util.UUID;
 public class CustomerChatService {
 
     private static final Logger log = LoggerFactory.getLogger(CustomerChatService.class);
-    private static final long DB_BACKOFF_MS = 60_000L;
 
     private final RetrievalService retrievalService;
     private final DocumentRepository documentRepository;
@@ -109,9 +108,15 @@ public class CustomerChatService {
         }
 
         String question = request.resolvedQuestion();
+        String retrievalQuery = buildHistoryAwareRetrievalQuery(request);
         CustomerScenario scenario = CustomerScenario.resolve(request.scenario(), question, customerProps);
+        if (scenario == CustomerScenario.GENERAL
+                && (request.scenario() == null || request.scenario().isBlank())
+                && !retrievalQuery.equals(question)) {
+            scenario = CustomerScenario.resolve(null, retrievalQuery, customerProps);
+        }
         List<CustomerScenario> secondaryScenarios =
-                CustomerScenario.detectSecondaryScenarios(question, scenario, customerProps);
+                CustomerScenario.detectSecondaryScenarios(retrievalQuery, scenario, customerProps);
 
         String defaultRole = (customerProps.getDefaultCustomerRole() != null
                 && !customerProps.getDefaultCustomerRole().isBlank())
@@ -127,7 +132,7 @@ public class CustomerChatService {
         int topK = request.topK() != null ? request.topK() : defaultTopK;
 
         // 1) Truy xuất ngữ cảnh tài liệu (nếu khách hàng truyền document_ids hoặc tự động tìm tài liệu READY).
-        List<ReciprocalRankFusion.FusedChunk> fused = retrieveChunksForCustomer(request.documentIds(), question, topK);
+        List<ReciprocalRankFusion.FusedChunk> fused = retrieveChunksForCustomer(request.documentIds(), retrievalQuery, topK);
 
         // 2) Lấy tri thức đã tiến hoá từ EvoAgentX Self-Evolution Engine cho kịch bản chính + kịch bản phụ (multi-intent).
         List<LearnedGuidelineInfo> activeGuidelines =
@@ -336,7 +341,7 @@ public class CustomerChatService {
                             .forEach(readyDocIds::add);
                 } catch (Exception e) {
                     if (localKnowledgeBaseService != null && localKnowledgeBaseService.hasDocuments()) {
-                        dbUnavailableUntilEpochMs = System.currentTimeMillis() + DB_BACKOFF_MS;
+                        dbUnavailableUntilEpochMs = System.currentTimeMillis() + localKnowledgeBaseService.getDbFailureBackoffMs();
                     }
                     log.debug("Database auto-discover skipped ({}); checking LocalKnowledgeBaseService", e.getMessage());
                 }
@@ -364,6 +369,46 @@ public class CustomerChatService {
         }
 
         return List.of();
+    }
+
+    String buildHistoryAwareRetrievalQuery(CustomerChatRequest request) {
+        String currentQuestion = request.resolvedQuestion();
+        if (!customerProps.isHistoryQueryExpansionEnabled()
+                || request.history() == null
+                || request.history().isEmpty()) {
+            return currentQuestion;
+        }
+        int maxTurns = customerProps.getHistoryExpansionMaxUserTurns() > 0
+                ? customerProps.getHistoryExpansionMaxUserTurns()
+                : 2;
+        int maxChars = customerProps.getHistoryExpansionMaxChars() > 0
+                ? customerProps.getHistoryExpansionMaxChars()
+                : 240;
+
+        List<String> recentUserQuestions = new ArrayList<>(maxTurns);
+        for (int i = request.history().size() - 1; i >= 0 && recentUserQuestions.size() < maxTurns; i--) {
+            CustomerChatRequest.ConversationTurn turn = request.history().get(i);
+            if (turn == null || turn.content() == null || turn.content().isBlank()) {
+                continue;
+            }
+            String role = turn.role() != null ? turn.role().strip().toLowerCase(java.util.Locale.ROOT) : "user";
+            boolean isAssistant = customerProps.getAssistantRoleAliases() != null
+                    && customerProps.getAssistantRoleAliases().stream()
+                    .anyMatch(a -> a != null && role.equals(a.strip().toLowerCase(java.util.Locale.ROOT)));
+            if (isAssistant) {
+                continue;
+            }
+            String cleanTurn = turn.content().strip();
+            if (cleanTurn.length() > maxChars) {
+                cleanTurn = cleanTurn.substring(0, maxChars);
+            }
+            recentUserQuestions.add(cleanTurn);
+        }
+
+        if (recentUserQuestions.isEmpty()) {
+            return currentQuestion;
+        }
+        return currentQuestion + " " + String.join(" ", recentUserQuestions);
     }
 
     private String buildPretrainedFallbackAnswer(CustomerChatRequest request,

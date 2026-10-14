@@ -28,6 +28,8 @@ public final class FileValidation {
             "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", // .xlsx
             "text/html",
             "text/markdown",
+            "text/x-web-markdown",
+            "text/x-markdown",
             "text/plain",
             "image/png",
             "image/jpeg"

@@ -698,6 +698,28 @@ public class CustomerSelfEvolutionService {
             }
         }
 
+        // 3b. Kiểm tra an toàn chống chỉ định thai kỳ (Pregnancy & Contraindication Safety Check)
+        if (evo == null || evo.isPregnancySafetyCheckEnabled()) {
+            String normQuestion = CustomerScenario.normalizeWordsPadded(question);
+            List<String> pregTriggers = (evo != null && evo.getPregnancyTriggerKeywords() != null
+                    && !evo.getPregnancyTriggerKeywords().isEmpty())
+                    ? evo.getPregnancyTriggerKeywords()
+                    : List.of("mang thai", "ba bau", "me bau", "thai ky", "cho con bu");
+            List<String> pregSafetyKeywords = (evo != null && evo.getPregnancySafetyRequiredKeywords() != null
+                    && !evo.getPregnancySafetyRequiredKeywords().isEmpty())
+                    ? evo.getPregnancySafetyRequiredKeywords()
+                    : List.of("retishot", "retinol", "chong chi dinh", "khong su dung", "khong dung", "tranh", "an toan", "lanh tinh");
+
+            if (containsAnyNormalizedKeyword(normQuestion, pregTriggers)
+                    && !containsAnyNormalizedKeyword(normAnswer, pregSafetyKeywords)) {
+                toneScore = Math.min(toneScore, 0.45);
+                groundingScore = Math.min(groundingScore, 0.35);
+                completenessScore = Math.max(0.20, completenessScore - 0.50);
+                critiques.add("Khách hàng đang mang thai/thai kỳ nhưng câu trả lời chưa cảnh báo chống chỉ định Retinol (Capture Totale Retishot) và xác nhận độ an toàn.");
+                gradients.add("Khi tư vấn mỹ phẩm cho phụ nữ mang thai (thai kỳ) hoặc cho con bú, bắt buộc cảnh báo tuyệt đối không dùng Capture Totale Retishot (0.1% Retinol) và chỉ gợi ý dòng lành tính (Capture Totale Le Sérum, Dior Prestige, La Mousse OFF/ON).");
+            }
+        }
+
         // 4. Tính hành động & Hướng dẫn tiếp theo (Actionability / Call-to-Action) — đọc từ khoá từ cấu hình
         double actionScore = 0.70;
         List<String> actionKeywords = (evo != null && evo.getActionabilityKeywords() != null

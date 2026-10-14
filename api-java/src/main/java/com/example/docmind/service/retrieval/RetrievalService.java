@@ -22,8 +22,6 @@ public class RetrievalService {
 
     private static final Logger log = LoggerFactory.getLogger(RetrievalService.class);
 
-    private static final long DB_BACKOFF_MS = 60_000L;
-
     private final ChunkRepository chunkRepository;
     private final EmbeddingClient embeddingClient;
     private final ChatProperties chatProps;
@@ -72,7 +70,7 @@ public class RetrievalService {
                 textHits = chunkRepository.searchByFullText(documentIds, question, candidateK);
             } catch (Exception e) {
                 if (localKnowledgeBaseService != null && localKnowledgeBaseService.hasDocuments()) {
-                    dbUnavailableUntilEpochMs = System.currentTimeMillis() + DB_BACKOFF_MS;
+                    dbUnavailableUntilEpochMs = System.currentTimeMillis() + localKnowledgeBaseService.getDbFailureBackoffMs();
                 }
                 log.debug("Database retrieval unavailable ({}); switching to LocalKnowledgeBaseService", e.getMessage());
             }

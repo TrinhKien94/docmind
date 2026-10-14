@@ -38,6 +38,16 @@ export const initialMockDocuments = [
     created_at: new Date(Date.now() - 2400000).toISOString()
   },
   {
+    document_id: "doc-dior-sales-loyalty-04",
+    filename: "04-dior-sales-closing-vip-loyalty-sop.md",
+    status: "READY",
+    pages: 2,
+    engine_breakdown: {
+      dior_sop_kb: 10
+    },
+    created_at: new Date(Date.now() - 2550000).toISOString()
+  },
+  {
     document_id: "doc-dior-warranty-05",
     filename: "05-dior-authenticity-warranty-return-complaints.md",
     status: "READY",
@@ -46,6 +56,16 @@ export const initialMockDocuments = [
       dior_sop_kb: 7
     },
     created_at: new Date(Date.now() - 2700000).toISOString()
+  },
+  {
+    document_id: "doc-dior-order-delivery-06",
+    filename: "06-dior-order-payment-vip-packaging-delivery.md",
+    status: "READY",
+    pages: 2,
+    engine_breakdown: {
+      dior_sop_kb: 8
+    },
+    created_at: new Date(Date.now() - 2850000).toISOString()
   },
   {
     document_id: "doc-sample-ai-arch-01",

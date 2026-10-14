@@ -34,7 +34,7 @@ DocMind is a multi-service intelligent document and customer consultation platfo
 | 1 | M1: Backend Messenger & EvoAgentX Bridge | Implement `MessengerProperties`, DTOs, `FacebookGraphClient`, `MessengerService`, `MessengerWebhookController`, tests in `api-java` | none | DONE |
 | 2 | M2: Responsive Mobile Chat & Sidebar Drawer | Implement `style.css` dynamic viewport tokens, `App.vue` drawer state, `DocumentSidebar.vue` mobile drawer, `ChatArea.vue` responsive header & scrolling | none | DONE |
 | 3 | M3: EvoAgentX Styling & Messenger Frontend UI | Implement `CustomerEvolutionModal.vue`, `MessengerModal.vue`, `ChatArea.vue` trigger buttons, `api.js` & `mockData.js` | M1, M2 | DONE |
-| 4 | M4: Final Milestone (E2E Verification, Hardening & PR Push) | Full test suite execution, Playwright programmatic viewport audits, adversarial stress testing, git commit & PR push to fork | M1, M2, M3 | IN_PROGRESS |
+| 4 | M4: Final Milestone (E2E Verification, Hardening & PR Push) | Full test suite execution, Playwright programmatic viewport audits, adversarial stress testing, git commit & PR push to fork | M1, M2, M3 | DONE |
 
 ## Interface Contracts
 

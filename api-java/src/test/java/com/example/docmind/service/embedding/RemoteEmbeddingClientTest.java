@@ -88,6 +88,30 @@ class RemoteEmbeddingClientTest {
     }
 
     @Test
+    void circuitBreakerBackoffSkipsRepeatedHttpCallsAfterFailure() {
+        props.getRemote().setFailureBackoffMs(60_000L);
+        RestClient restClient = mockRestClientThrowing(
+                new RestClientResponseException(
+                        "500 Internal Server Error",
+                        HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                        "Internal Server Error",
+                        HttpHeaders.EMPTY,
+                        "boom".getBytes(),
+                        null));
+
+        RemoteEmbeddingClient client = new RemoteEmbeddingClient(restClient, props);
+
+        float[] first = client.embed("lần 1");
+        float[] second = client.embed("lần 2");
+        float[] third = client.embed("lần 3");
+
+        assertThat(first).hasSize(384);
+        assertThat(second).hasSize(384);
+        assertThat(third).hasSize(384);
+        org.mockito.Mockito.verify(restClient, org.mockito.Mockito.times(1)).post();
+    }
+
+    @Test
     void disabledRemoteReturnsStubWithoutCallingRestClient() {
         props.getRemote().setEnabled(false);
         RestClient restClient = mock(RestClient.class);
