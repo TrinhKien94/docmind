@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Directory for persisted debug artifacts (relative to the service root).
     artifacts_dir: Path = Path("artifacts")
 
+    # Directory for local SOP / brand knowledge-base documents (e.g. Christian Dior Vietnam SOPs).
+    knowledge_base_dir: Path = Path("../docs/dior-knowledge-base")
+
     # Upload size guard (bytes). 50 MiB default; validation enforces it.
     max_upload_bytes: int = 50 * 1024 * 1024
 

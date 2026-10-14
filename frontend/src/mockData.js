@@ -8,6 +8,46 @@
 
 export const initialMockDocuments = [
   {
+    document_id: "doc-dior-skincare-01",
+    filename: "01-dior-skincare-consultation-sop.md",
+    status: "READY",
+    pages: 4,
+    engine_breakdown: {
+      dior_sop_kb: 11
+    },
+    created_at: new Date(Date.now() - 1800000).toISOString()
+  },
+  {
+    document_id: "doc-dior-makeup-02",
+    filename: "02-dior-makeup-color-matching-guide.md",
+    status: "READY",
+    pages: 4,
+    engine_breakdown: {
+      dior_sop_kb: 10
+    },
+    created_at: new Date(Date.now() - 2100000).toISOString()
+  },
+  {
+    document_id: "doc-dior-fragrance-03",
+    filename: "03-dior-fragrance-gift-personalization.md",
+    status: "READY",
+    pages: 4,
+    engine_breakdown: {
+      dior_sop_kb: 10
+    },
+    created_at: new Date(Date.now() - 2400000).toISOString()
+  },
+  {
+    document_id: "doc-dior-warranty-05",
+    filename: "05-dior-authenticity-warranty-return-complaints.md",
+    status: "READY",
+    pages: 3,
+    engine_breakdown: {
+      dior_sop_kb: 7
+    },
+    created_at: new Date(Date.now() - 2700000).toISOString()
+  },
+  {
     document_id: "doc-sample-ai-arch-01",
     filename: "DocMind-Architecture-Specification.pdf",
     status: "READY",
@@ -49,6 +89,29 @@ export const initialMockDocuments = [
 ]
 
 export const sampleQA = {
+  "dior": {
+    answer: "Dạ Christian Dior Vietnam xin kính chào Quý khách! Dựa trên bộ 6 tài liệu SOP Tư vấn & Chăm sóc Khách hàng chuẩn Parfums Christian Dior:\n\n1. **Skincare & An toàn thai kỳ:** Dòng **Capture Totale Le Sérum (30ml: 3.450.000 VNĐ)** và **Dior Prestige La Micro-Huile de Rose (30ml: 7.400.000 VNĐ)** an toàn cho phụ nữ mang thai; tuyệt đối **không dùng Capture Totale Retishot (0.1% Retinol)** cho mẹ bầu [1].\n2. **Makeup & Chọn tông màu:** Kem nền **Dior Forever Matte / Skin Glow (1.850.000 VNĐ)** chia theo Undertone N (Trung tính), W (Ấm), CR (Lạnh); Son **Rouge Dior (1.290.000 VNĐ)** nổi bật với màu 999, 720, 772, 100 và son dưỡng **Lip Glow 004 Coral (1.150.000 VNĐ)** khử thâm môi [2].\n3. **Chính sách Kích ứng & Giao Hỏa tốc 2h:** Hỗ trợ **Giao thức Cosmetovigilance 14 ngày** đổi trả/hoàn tiền 100% nếu kích ứng da liễu dù đã mở nắp (còn >= 80%), tặng hộp quà Couture + khắc tên 12 ký tự miễn phí và giao Hỏa tốc VIP 2 giờ tại Hà Nội & TP.HCM.",
+    citations: [
+      {
+        chunk_id: "chk-dior-skin-01",
+        document_id: "doc-dior-skincare-01",
+        block_ids: ["blk-dior-01"],
+        page: 2,
+        bbox: [48.0, 170.0, 547.0, 265.0],
+        heading_path: ["QUY TRÌNH TƯ VẤN CHĂM SÓC DA CHUYÊN SÂU", "2.2. Dòng Capture Totale"],
+        snippet: "Capture Totale Le Sérum (30ml: 3.450.000 VNĐ | 50ml: 4.650.000 VNĐ). Capture Totale Retishot (0.1% Pure Retinol) KHÔNG tư vấn cho phụ nữ đang mang thai."
+      },
+      {
+        chunk_id: "chk-dior-makeup-02",
+        document_id: "doc-dior-makeup-02",
+        block_ids: ["blk-dior-02"],
+        page: 1,
+        bbox: [48.0, 280.0, 547.0, 375.0],
+        heading_path: ["CẨM NANG TƯ VẤN TRANG ĐIỂM", "2.1. Dior Forever Matte vs Forever Skin Glow"],
+        snippet: "Dior Forever Matte Foundation SPF 15 (30ml – 1.850.000 VNĐ) kiềm dầu 24h; Rouge Dior (1.290.000 VNĐ) các màu biểu tượng 999, 720, 772, 100."
+      }
+    ]
+  },
   "kiến trúc": {
     answer: "DocMind là hệ thống RAG độc lập dựa trên tài liệu (phong cách NotebookLLM). Kiến trúc bao gồm hai dịch vụ chính và PostgreSQL:\n\n1. **`api-java` (Port 8090)**: Orchestrator viết bằng Spring Boot 4, quản lý vòng đời ingest, chunking, hybrid retrieval (pgvector + BM25 Reciprocal Rank Fusion), gọi LLM và xác thực trích dẫn (citation validation).\n2. **`doc-service-py` (Port 8091)**: FastAPI parser trích xuất các block chuẩn hóa từ PDF, DOCX, PPTX với PyMuPDF, Docling và PaddleOCR.\n3. **`PostgreSQL 16`**: Lưu trữ vector embedding và schema chuẩn hóa qua Flyway.\n\nĐặc biệt, luồng chat hoàn toàn chạy trên Java và **không bao giờ gọi sang Python service** lúc suy luận.",
     citations: [

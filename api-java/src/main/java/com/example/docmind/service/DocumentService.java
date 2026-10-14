@@ -46,6 +46,8 @@ public class DocumentService {
 
     private static final Logger log = LoggerFactory.getLogger(DocumentService.class);
 
+    private static final long DB_BACKOFF_MS = 60_000L;
+
     private final DocumentRepository documentRepository;
     private final BlockRepository blockRepository;
     private final ChunkRepository chunkRepository;
@@ -54,6 +56,8 @@ public class DocumentService {
     private final DocServiceProperties docServiceProps;
     private final ObjectMapper objectMapper;
     private final UploadProperties uploadProps;
+    private final com.example.docmind.service.retrieval.LocalKnowledgeBaseService localKnowledgeBaseService;
+    private volatile long dbUnavailableUntilEpochMs = 0L;
 
     public DocumentService(DocumentRepository documentRepository,
                            BlockRepository blockRepository,
@@ -63,7 +67,19 @@ public class DocumentService {
                            DocServiceProperties docServiceProps,
                            ObjectMapper objectMapper) {
         this(documentRepository, blockRepository, chunkRepository, docServiceClient,
-                embeddingClient, docServiceProps, objectMapper, new UploadProperties());
+                embeddingClient, docServiceProps, objectMapper, new UploadProperties(), null);
+    }
+
+    public DocumentService(DocumentRepository documentRepository,
+                           BlockRepository blockRepository,
+                           ChunkRepository chunkRepository,
+                           DocServiceClient docServiceClient,
+                           EmbeddingClient embeddingClient,
+                           DocServiceProperties docServiceProps,
+                           ObjectMapper objectMapper,
+                           UploadProperties uploadProps) {
+        this(documentRepository, blockRepository, chunkRepository, docServiceClient,
+                embeddingClient, docServiceProps, objectMapper, uploadProps, null);
     }
 
     @Autowired
@@ -74,7 +90,8 @@ public class DocumentService {
                            EmbeddingClient embeddingClient,
                            DocServiceProperties docServiceProps,
                            ObjectMapper objectMapper,
-                           UploadProperties uploadProps) {
+                           UploadProperties uploadProps,
+                           com.example.docmind.service.retrieval.LocalKnowledgeBaseService localKnowledgeBaseService) {
         this.documentRepository = documentRepository;
         this.blockRepository = blockRepository;
         this.chunkRepository = chunkRepository;
@@ -83,10 +100,10 @@ public class DocumentService {
         this.docServiceProps = docServiceProps;
         this.objectMapper = objectMapper;
         this.uploadProps = uploadProps != null ? uploadProps : new UploadProperties();
+        this.localKnowledgeBaseService = localKnowledgeBaseService;
     }
 
     /** Upload: validate + hash + persist + submit parse. Trả về 201 payload. */
-    @Transactional
     public DocumentUploadResponse upload(MultipartFile file) {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("File rỗng");
@@ -113,45 +130,60 @@ public class DocumentService {
         FileValidation.requireSupported(mime, uploadProps.getAllowedMimes());
         CorrelationIds.clearStage();
 
-        // Dedup theo sha256: nếu đã có, trả lại document hiện tại (không parse lại).
-        var existing = documentRepository.findBySha256(sha256);
-        if (existing.isPresent()) {
-            DocumentEntity doc = existing.get();
-            CorrelationIds.putDocumentId(doc.getId().toString());
-            log.info("dedup sha256 hit -> document_id={} status={}", doc.getId(), doc.getStatus());
-            return new DocumentUploadResponse(doc.getId().toString(), doc.getJobId(), doc.getStatus());
+        try {
+            // Dedup theo sha256: nếu đã có, trả lại document hiện tại (không parse lại).
+            var existing = documentRepository.findBySha256(sha256);
+            if (existing.isPresent()) {
+                DocumentEntity doc = existing.get();
+                CorrelationIds.putDocumentId(doc.getId().toString());
+                log.info("dedup sha256 hit -> document_id={} status={}", doc.getId(), doc.getStatus());
+                return new DocumentUploadResponse(doc.getId().toString(), doc.getJobId(), doc.getStatus());
+            }
+
+            String correlationId = CorrelationIds.currentCorrelationId();
+            if (correlationId == null) {
+                correlationId = CorrelationIds.newId();
+                CorrelationIds.putCorrelationId(correlationId);
+            }
+
+            // Gọi parser (propagate X-Correlation-Id).
+            ParseSubmitResponse submit = docServiceClient.submitParse(bytes, originalName, correlationId);
+
+            // document_id ưu tiên theo id parser trả về (ổn định xuyên hệ thống).
+            UUID documentId = safeUuid(submit.documentId());
+            CorrelationIds.putDocumentId(documentId.toString());
+            CorrelationIds.putJobId(submit.jobId());
+
+            DocumentEntity doc = DocumentEntity.builder()
+                    .id(documentId)
+                    .filename(originalName)
+                    .sha256(sha256)
+                    .mime(mime)
+                    .pages(0)
+                    .status("PARSING")
+                    .jobId(submit.jobId())
+                    .build();
+            documentRepository.save(doc);
+            log.info("persist documents row document_id={} job_id={} status=PARSING", documentId, submit.jobId());
+
+            // Nếu parser báo cached => kết quả sẵn, poll ngay (async) để persist.
+            pollAndPersistAsync(documentId, submit.jobId(), correlationId);
+
+            return new DocumentUploadResponse(documentId.toString(), submit.jobId(), "PARSING");
+        } catch (Exception e) {
+            if (localKnowledgeBaseService != null) {
+                log.warn("Primary DB/parser ingest unavailable ({}); indexing upload in LocalKnowledgeBaseService",
+                        e.getMessage());
+                DocumentStatusResponse localStatus =
+                        localKnowledgeBaseService.indexUploadedBytes(null, originalName, sha256, bytes);
+                return new DocumentUploadResponse(
+                        localStatus.documentId(),
+                        "local-kb-" + sha256.substring(0, 12),
+                        localStatus.status()
+                );
+            }
+            throw e;
         }
-
-        String correlationId = CorrelationIds.currentCorrelationId();
-        if (correlationId == null) {
-            correlationId = CorrelationIds.newId();
-            CorrelationIds.putCorrelationId(correlationId);
-        }
-
-        // Gọi parser (propagate X-Correlation-Id).
-        ParseSubmitResponse submit = docServiceClient.submitParse(bytes, originalName, correlationId);
-
-        // document_id ưu tiên theo id parser trả về (ổn định xuyên hệ thống).
-        UUID documentId = safeUuid(submit.documentId());
-        CorrelationIds.putDocumentId(documentId.toString());
-        CorrelationIds.putJobId(submit.jobId());
-
-        DocumentEntity doc = DocumentEntity.builder()
-                .id(documentId)
-                .filename(originalName)
-                .sha256(sha256)
-                .mime(mime)
-                .pages(0)
-                .status("PARSING")
-                .jobId(submit.jobId())
-                .build();
-        documentRepository.save(doc);
-        log.info("persist documents row document_id={} job_id={} status=PARSING", documentId, submit.jobId());
-
-        // Nếu parser báo cached => kết quả sẵn, poll ngay (async) để persist.
-        pollAndPersistAsync(documentId, submit.jobId(), correlationId);
-
-        return new DocumentUploadResponse(documentId.toString(), submit.jobId(), "PARSING");
     }
 
     /**
@@ -256,36 +288,77 @@ public class DocumentService {
     }
 
     public List<DocumentStatusResponse> listAll() {
-        try {
-            return documentRepository.findAllByOrderByCreatedAtDesc().stream().map(doc -> {
-                Map<String, Integer> breakdown = parseBreakdown(doc.getStatsJson());
-                return new DocumentStatusResponse(
-                        doc.getId().toString(),
-                        doc.getFilename(),
-                        doc.getStatus(),
-                        doc.getPages(),
-                        breakdown
-                );
-            }).toList();
-        } catch (Exception e) {
-            log.warn("Database unavailable during listAll ({}); returning empty document list", e.getMessage());
-            return List.of();
+        java.util.LinkedHashMap<String, DocumentStatusResponse> merged = new java.util.LinkedHashMap<>();
+        boolean canSkipDeadDb = localKnowledgeBaseService != null
+                && localKnowledgeBaseService.hasDocuments()
+                && System.currentTimeMillis() < dbUnavailableUntilEpochMs;
+
+        if (!canSkipDeadDb) {
+            try {
+                List<DocumentStatusResponse> dbDocs = documentRepository.findAllByOrderByCreatedAtDesc().stream().map(doc -> {
+                    Map<String, Integer> breakdown = parseBreakdown(doc.getStatsJson());
+                    return new DocumentStatusResponse(
+                            doc.getId().toString(),
+                            doc.getFilename(),
+                            doc.getStatus(),
+                            doc.getPages(),
+                            breakdown
+                    );
+                }).toList();
+                for (DocumentStatusResponse d : dbDocs) {
+                    merged.put(d.documentId(), d);
+                }
+            } catch (Exception e) {
+                if (localKnowledgeBaseService != null && localKnowledgeBaseService.hasDocuments()) {
+                    dbUnavailableUntilEpochMs = System.currentTimeMillis() + DB_BACKOFF_MS;
+                }
+                log.warn("Database unavailable during listAll ({}); falling back to LocalKnowledgeBaseService", e.getMessage());
+            }
         }
+
+        if (localKnowledgeBaseService != null) {
+            for (DocumentStatusResponse kbDoc : localKnowledgeBaseService.listDocuments()) {
+                merged.putIfAbsent(kbDoc.documentId(), kbDoc);
+            }
+        }
+        return List.copyOf(merged.values());
     }
 
-    @Transactional(readOnly = true)
     public DocumentStatusResponse getStatus(String documentIdRaw) {
         UUID documentId = safeUuid(documentIdRaw);
-        DocumentEntity doc = documentRepository.findById(documentId)
-                .orElseThrow(() -> new ResourceNotFoundException("Document không tồn tại: " + documentIdRaw));
-        Map<String, Integer> breakdown = parseBreakdown(doc.getStatsJson());
-        return new DocumentStatusResponse(
-                doc.getId().toString(),
-                doc.getFilename(),
-                doc.getStatus(),
-                doc.getPages(),
-                breakdown
-        );
+        boolean canSkipDeadDb = localKnowledgeBaseService != null
+                && localKnowledgeBaseService.hasDocuments()
+                && System.currentTimeMillis() < dbUnavailableUntilEpochMs;
+
+        if (!canSkipDeadDb) {
+            try {
+                var opt = documentRepository.findById(documentId);
+                if (opt.isPresent()) {
+                    DocumentEntity doc = opt.get();
+                    Map<String, Integer> breakdown = parseBreakdown(doc.getStatsJson());
+                    return new DocumentStatusResponse(
+                            doc.getId().toString(),
+                            doc.getFilename(),
+                            doc.getStatus(),
+                            doc.getPages(),
+                            breakdown
+                    );
+                }
+            } catch (Exception e) {
+                if (localKnowledgeBaseService != null && localKnowledgeBaseService.hasDocuments()) {
+                    dbUnavailableUntilEpochMs = System.currentTimeMillis() + DB_BACKOFF_MS;
+                }
+                log.debug("Database unavailable during getStatus ({}); checking LocalKnowledgeBaseService", e.getMessage());
+            }
+        }
+
+        if (localKnowledgeBaseService != null) {
+            var kbStatus = localKnowledgeBaseService.findDocumentStatus(documentId);
+            if (kbStatus.isPresent()) {
+                return kbStatus.get();
+            }
+        }
+        throw new ResourceNotFoundException("Document không tồn tại: " + documentIdRaw);
     }
 
     // --- helpers ---

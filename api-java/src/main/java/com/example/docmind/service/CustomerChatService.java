@@ -48,12 +48,15 @@ import java.util.UUID;
 public class CustomerChatService {
 
     private static final Logger log = LoggerFactory.getLogger(CustomerChatService.class);
+    private static final long DB_BACKOFF_MS = 60_000L;
 
     private final RetrievalService retrievalService;
     private final DocumentRepository documentRepository;
     private final LlmClient llmClient;
     private final CustomerSupportProperties customerProps;
     private final CustomerSelfEvolutionService evolutionService;
+    private final com.example.docmind.service.retrieval.LocalKnowledgeBaseService localKnowledgeBaseService;
+    private volatile long dbUnavailableUntilEpochMs = 0L;
 
     /**
      * Constructor 4 tham số giữ tương thích ngược cho các unit test hiện hữu.
@@ -63,7 +66,18 @@ public class CustomerChatService {
                                LlmClient llmClient,
                                CustomerSupportProperties customerProps) {
         this(retrievalService, documentRepository, llmClient, customerProps,
-                new CustomerSelfEvolutionService(customerProps, llmClient));
+                new CustomerSelfEvolutionService(customerProps, llmClient), null);
+    }
+
+    /**
+     * Constructor 5 tham số giữ tương thích ngược cho các unit test hiện hữu.
+     */
+    public CustomerChatService(RetrievalService retrievalService,
+                               DocumentRepository documentRepository,
+                               LlmClient llmClient,
+                               CustomerSupportProperties customerProps,
+                               CustomerSelfEvolutionService evolutionService) {
+        this(retrievalService, documentRepository, llmClient, customerProps, evolutionService, null);
     }
 
     @Autowired
@@ -71,7 +85,8 @@ public class CustomerChatService {
                                DocumentRepository documentRepository,
                                LlmClient llmClient,
                                CustomerSupportProperties customerProps,
-                               CustomerSelfEvolutionService evolutionService) {
+                               CustomerSelfEvolutionService evolutionService,
+                               com.example.docmind.service.retrieval.LocalKnowledgeBaseService localKnowledgeBaseService) {
         this.retrievalService = retrievalService;
         this.documentRepository = documentRepository;
         this.llmClient = llmClient;
@@ -79,6 +94,7 @@ public class CustomerChatService {
         this.evolutionService = evolutionService != null
                 ? evolutionService
                 : new CustomerSelfEvolutionService(this.customerProps, llmClient);
+        this.localKnowledgeBaseService = localKnowledgeBaseService;
     }
 
     public CustomerChatResponse chat(CustomerChatRequest request) {
@@ -113,9 +129,9 @@ public class CustomerChatService {
         // 1) Truy xuất ngữ cảnh tài liệu (nếu khách hàng truyền document_ids hoặc tự động tìm tài liệu READY).
         List<ReciprocalRankFusion.FusedChunk> fused = retrieveChunksForCustomer(request.documentIds(), question, topK);
 
-        // 2) Lấy tri thức đã tiến hoá từ EvoAgentX Self-Evolution Engine cho kịch bản hiện tại.
+        // 2) Lấy tri thức đã tiến hoá từ EvoAgentX Self-Evolution Engine cho kịch bản chính + kịch bản phụ (multi-intent).
         List<LearnedGuidelineInfo> activeGuidelines =
-                evolutionService.getActiveGuidelinesForScenario(scenario);
+                mergeActiveGuidelines(scenario, secondaryScenarios);
         List<EvolvedExampleInfo> activeExamples =
                 evolutionService.getActiveExamplesForScenario(scenario);
 
@@ -246,6 +262,31 @@ public class CustomerChatService {
         return evolutionService.resetEvolutionMemory();
     }
 
+    private List<LearnedGuidelineInfo> mergeActiveGuidelines(CustomerScenario primaryScenario,
+                                                             List<CustomerScenario> secondaryScenarios) {
+        List<LearnedGuidelineInfo> primaryList = evolutionService.getActiveGuidelinesForScenario(primaryScenario);
+        if (secondaryScenarios == null || secondaryScenarios.isEmpty()) {
+            return primaryList;
+        }
+        int maxInPrompt = (customerProps.getEvolution() != null
+                && customerProps.getEvolution().getMaxGuidelinesInPrompt() > 0)
+                ? customerProps.getEvolution().getMaxGuidelinesInPrompt()
+                : 5;
+        List<LearnedGuidelineInfo> merged = new ArrayList<>(primaryList);
+        Set<String> seenHashes = new HashSet<>();
+        for (LearnedGuidelineInfo g : primaryList) {
+            seenHashes.add(g.contentHash());
+        }
+        for (CustomerScenario sec : secondaryScenarios) {
+            for (LearnedGuidelineInfo secGuideline : evolutionService.getActiveGuidelinesForScenario(sec)) {
+                if (seenHashes.add(secGuideline.contentHash())) {
+                    merged.add(secGuideline);
+                }
+            }
+        }
+        return merged.size() > maxInPrompt ? merged.subList(0, maxInPrompt) : merged;
+    }
+
     private List<ReciprocalRankFusion.FusedChunk> retrieveChunksForCustomer(
             List<String> rawDocumentIds, String question, int topK) {
         if (retrievalService == null) {
@@ -275,26 +316,50 @@ public class CustomerChatService {
             }
         }
 
-        // Trường hợp 2: Không truyền document_ids -> Tự động lấy các tài liệu READY (nếu bật, có giới hạn số lượng)
-        if (customerProps.isAutoDiscoverDocuments() && documentRepository != null) {
-            try {
-                int maxDocs = customerProps.getMaxAutoDiscoverDocuments() > 0
-                        ? customerProps.getMaxAutoDiscoverDocuments()
-                        : 20;
-                List<UUID> readyDocIds = documentRepository.findAllByOrderByCreatedAtDesc().stream()
-                        .filter(doc -> doc != null && "READY".equalsIgnoreCase(doc.getStatus()) && doc.getId() != null)
-                        .map(DocumentEntity::getId)
-                        .distinct()
-                        .limit(maxDocs)
-                        .toList();
-                if (!readyDocIds.isEmpty()) {
-                    List<ReciprocalRankFusion.FusedChunk> result =
-                            retrievalService.retrieve(readyDocIds, question, topK);
-                    return result != null ? result : List.of();
+        // Trường hợp 2: Không truyền document_ids -> Tự động lấy các tài liệu READY từ DB và LocalKnowledgeBaseService
+        if (customerProps.isAutoDiscoverDocuments()) {
+            int maxDocs = customerProps.getMaxAutoDiscoverDocuments() > 0
+                    ? customerProps.getMaxAutoDiscoverDocuments()
+                    : 20;
+            java.util.LinkedHashSet<UUID> readyDocIds = new java.util.LinkedHashSet<>();
+
+            boolean canSkipDeadDb = localKnowledgeBaseService != null
+                    && localKnowledgeBaseService.hasDocuments()
+                    && System.currentTimeMillis() < dbUnavailableUntilEpochMs;
+
+            if (documentRepository != null && !canSkipDeadDb) {
+                try {
+                    documentRepository.findAllByOrderByCreatedAtDesc().stream()
+                            .filter(doc -> doc != null && "READY".equalsIgnoreCase(doc.getStatus()) && doc.getId() != null)
+                            .map(DocumentEntity::getId)
+                            .limit(maxDocs)
+                            .forEach(readyDocIds::add);
+                } catch (Exception e) {
+                    if (localKnowledgeBaseService != null && localKnowledgeBaseService.hasDocuments()) {
+                        dbUnavailableUntilEpochMs = System.currentTimeMillis() + DB_BACKOFF_MS;
+                    }
+                    log.debug("Database auto-discover skipped ({}); checking LocalKnowledgeBaseService", e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("Auto-discover READY documents skipped ({}); falling back to pre-trained prompt context",
-                        e.getMessage());
+            }
+
+            if (localKnowledgeBaseService != null) {
+                for (UUID kbDocId : localKnowledgeBaseService.listReadyDocumentIds()) {
+                    if (readyDocIds.size() >= maxDocs) {
+                        break;
+                    }
+                    readyDocIds.add(kbDocId);
+                }
+            }
+
+            if (!readyDocIds.isEmpty()) {
+                try {
+                    List<ReciprocalRankFusion.FusedChunk> result =
+                            retrievalService.retrieve(new ArrayList<>(readyDocIds), question, topK);
+                    return result != null ? result : List.of();
+                } catch (Exception e) {
+                    log.warn("Auto-discover READY documents retrieval failed ({}); falling back to pre-trained prompt context",
+                            e.getMessage());
+                }
             }
         }
 

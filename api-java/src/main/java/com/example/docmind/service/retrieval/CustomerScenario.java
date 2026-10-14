@@ -40,10 +40,18 @@ public enum CustomerScenario {
             List.of(
                     "muon mua", "dat mua", "tu van mua", "bao gia", "bang gia", "muc gia",
                     "bao nhieu tien", "gia bao nhieu", "tu van goi", "chon goi",
-                    "goi basic", "goi pro", "goi enterprise", "chot don", "dat hang"
+                    "goi basic", "goi pro", "goi enterprise", "chot don", "dat hang",
+                    "kem nen", "son moi", "son duong", "nuoc hoa", "tinh chat", "kem duong",
+                    "sua rua mat", "phan nuoc", "che khuyet diem", "capture totale", "dior prestige",
+                    "dior forever", "dior snow", "rouge dior", "lip glow", "lip maximizer",
+                    "miss dior", "jadore", "sauvage", "undertone", "chon mau", "hop mau nao",
+                    "da dau", "da kho", "da nhay cam", "moi tham", "qua tang", "set qua",
+                    "tang vo", "tang ban gai", "my exclusive dior"
             ),
             List.of(
-                    "mua", "gia", "khuyen mai", "uu dai", "giam gia", "goi dich vu", "san pham"
+                    "mua", "gia", "khuyen mai", "uu dai", "giam gia", "goi dich vu", "san pham",
+                    "son", "serum", "cushion", "skincare", "makeup", "matte", "skin glow",
+                    "edp", "edt", "parfum", "elixir", "loyalty", "hang thanh vien"
             )
     ),
 
@@ -68,10 +76,15 @@ public enum CustomerScenario {
             ),
             List.of(
                     "cach su dung", "huong dan su dung", "kich hoat", "ho tro ky thuat",
-                    "khong vao duoc", "su dung dich vu", "nang cap goi", "cai dat", "cau hinh"
+                    "khong vao duoc", "su dung dich vu", "nang cap goi", "cai dat", "cau hinh",
+                    "chu trinh", "routine", "thu tu thoa", "cach thoa", "cach dung", "layering",
+                    "thay loi", "loi refill", "kiem tra batch", "batch code", "check batch",
+                    "han su dung", "phu nu mang thai", "mang thai", "ba bau", "bau dung duoc khong",
+                    "khac ten", "engraving", "cach bao quan"
             ),
             List.of(
-                    "huong dan", "tich hop", "su co", "dang dung", "tai khoan", "ky thuat"
+                    "huong dan", "tich hop", "su co", "dang dung", "tai khoan", "ky thuat",
+                    "refill", "bao quan", "tay trang", "chong nang", "retishot", "retinol"
             )
     ),
 
@@ -96,10 +109,13 @@ public enum CustomerScenario {
             ),
             List.of(
                     "bao hanh", "doi tra", "hoan tien", "khieu nai", "bi hong", "bi loi",
-                    "1 doi 1", "boi thuong", "loi san pham", "loi dich vu"
+                    "1 doi 1", "boi thuong", "loi san pham", "loi dich vu",
+                    "di ung", "kich ung", "man do", "ngua rat", "cham chich", "noi mun",
+                    "gay son", "chay dau", "do mo hoi", "hong voi xit", "voi xit",
+                    "hang gia", "chinh hang", "tem phu", "cosmetovigilance"
             ),
             List.of(
-                    "warranty", "refund", "return", "complaint"
+                    "warranty", "refund", "return", "complaint", "doi mau", "doi mui", "vo chai", "ro ri"
             )
     ),
 
@@ -124,10 +140,14 @@ public enum CustomerScenario {
             ),
             List.of(
                     "thanh toan", "chuyen khoan", "hoa don", "xuat vat", "thue vat",
-                    "van chuyen", "giao hang", "phi giao", "ship cod", "tra cuu don"
+                    "van chuyen", "giao hang", "phi giao", "ship cod", "tra cuu don",
+                    "hoa toc", "giao nhanh 2h", "freeship", "mien phi van chuyen", "tra gop",
+                    "dat coc", "hop qua", "goi qua", "thiep chuc", "mau thu", "dong goi",
+                    "cach nhiet", "click and collect"
             ),
             List.of(
-                    "don hang", "cod", "ship", "payment", "invoice", "billing", "shipping"
+                    "don hang", "cod", "ship", "payment", "invoice", "billing", "shipping",
+                    "vietqr", "the tin dung", "sample"
             )
     ),
 

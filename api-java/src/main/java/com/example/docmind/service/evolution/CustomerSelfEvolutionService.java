@@ -641,10 +641,12 @@ public class CustomerSelfEvolutionService {
             gradients.add("Luôn mở đầu bằng lời chào lịch sự ('Dạ em chào Anh/Chị') và giữ giọng điệu tận tâm.");
         }
         if (scenario == CustomerScenario.WARRANTY_RETURN
-                && !(normAnswer.contains(" bao hanh ") || normAnswer.contains(" doi tra ") || normAnswer.contains(" ho tro "))) {
+                && !(normAnswer.contains(" bao hanh ") || normAnswer.contains(" doi tra ")
+                || normAnswer.contains(" hoan tien ") || normAnswer.contains(" 1 doi 1 ")
+                || normAnswer.contains(" ho tro ") || normAnswer.contains(" kich ung "))) {
             toneScore = Math.max(0.4, toneScore - 0.3);
             critiques.add("Kịch bản bảo hành/đổi trả chưa nhấn mạnh cam kết hỗ trợ quyền lợi khách hàng.");
-            gradients.add("Khi khách hỏi bảo hành/đổi trả, cần thể hiện sự đồng cảm và nêu rõ thời hạn bảo hành 12 tháng, đổi trả 7 ngày.");
+            gradients.add("Khi khách hỏi bảo hành/đổi trả/kích ứng, cần thể hiện sự đồng cảm và nêu rõ thời hạn đổi trả 7 ngày, lỗi vận chuyển/kích ứng 14 ngày.");
         }
 
         // 2. Độ chính xác & Trích dẫn tài liệu (Grounding & Citations)
@@ -670,15 +672,28 @@ public class CustomerSelfEvolutionService {
         if (secondaryScenarios != null && !secondaryScenarios.isEmpty()) {
             for (CustomerScenario sec : secondaryScenarios) {
                 if (sec == CustomerScenario.WARRANTY_RETURN
-                        && !(normAnswer.contains(" bao hanh ") || normAnswer.contains(" doi tra "))) {
+                        && !(normAnswer.contains(" bao hanh ") || normAnswer.contains(" doi tra ")
+                        || normAnswer.contains(" hoan tien ") || normAnswer.contains(" 1 doi 1 ")
+                        || normAnswer.contains(" kich ung ") || normAnswer.contains(" chinh hang "))) {
                     completenessScore = Math.max(0.5, completenessScore - 0.25);
-                    critiques.add("Câu hỏi đa ý định có hỏi thêm về Bảo hành/Đổi trả nhưng câu trả lời chưa đề cập đầy đủ.");
-                    gradients.add("Với câu hỏi kết hợp Mua hàng và Bảo hành/Đổi trả, phải trả lời trọn vẹn cả báo giá gói dịch vụ lẫn chính sách đổi trả 7 ngày.");
+                    critiques.add("Câu hỏi đa ý định có hỏi thêm về Bảo hành/Đổi trả/Xác thực nhưng câu trả lời chưa đề cập đầy đủ.");
+                    gradients.add("Với câu hỏi kết hợp Mua hàng và Bảo hành/Đổi trả, phải trả lời trọn vẹn cả báo giá sản phẩm/dịch vụ lẫn chính sách đổi trả 7-14 ngày.");
                 } else if (sec == CustomerScenario.ORDER_BILLING
-                        && !(normAnswer.contains(" thanh toan ") || normAnswer.contains(" hoa don ") || normAnswer.contains(" vat "))) {
+                        && !(normAnswer.contains(" thanh toan ") || normAnswer.contains(" hoa don ")
+                        || normAnswer.contains(" vat ") || normAnswer.contains(" giao hang ")
+                        || normAnswer.contains(" van chuyen ") || normAnswer.contains(" hoa toc ")
+                        || normAnswer.contains(" tra gop ") || normAnswer.contains(" hop qua "))) {
                     completenessScore = Math.max(0.5, completenessScore - 0.25);
-                    critiques.add("Câu hỏi đa ý định có hỏi thêm về Thanh toán/Hóa đơn nhưng chưa giải đáp.");
-                    gradients.add("Khi khách hàng hỏi kèm thủ tục thanh toán hoặc VAT, cần nêu rõ các kênh thanh toán và hỗ trợ xuất hóa đơn VAT điện tử.");
+                    critiques.add("Câu hỏi đa ý định có hỏi thêm về Thanh toán/Hóa đơn/Vận chuyển nhưng chưa giải đáp.");
+                    gradients.add("Khi khách hàng hỏi kèm thủ tục thanh toán, đóng gói quà hoặc vận chuyển/VAT, cần nêu rõ kênh thanh toán, giao hỏa tốc 2h và xuất hóa đơn VAT điện tử.");
+                } else if (sec == CustomerScenario.SERVICE_SUPPORT
+                        && !(normAnswer.contains(" buoc ") || normAnswer.contains(" huong dan ")
+                        || normAnswer.contains(" cach dung ") || normAnswer.contains(" routine ")
+                        || normAnswer.contains(" batch ") || normAnswer.contains(" mang thai ")
+                        || normAnswer.contains(" refill ") || normAnswer.contains(" khac ten "))) {
+                    completenessScore = Math.max(0.5, completenessScore - 0.20);
+                    critiques.add("Câu hỏi đa ý định có hỏi thêm về Hướng dẫn sử dụng/Routine/Kỹ thuật nhưng chưa hướng dẫn chi tiết.");
+                    gradients.add("Khi khách hàng hỏi kèm cách sử dụng, chu trình skincare hoặc kiểm tra mã sản phẩm, cần trình bày hướng dẫn từng bước rõ ràng.");
                 }
             }
         }
