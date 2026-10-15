@@ -8,19 +8,35 @@
       </div>
     </transition>
 
+    <!-- Mobile Sidebar Backdrop Overlay -->
+    <transition name="drawer-backdrop-fade">
+      <div 
+        v-if="isMobileSidebarOpen" 
+        class="drawer-backdrop mobile-drawer-backdrop" 
+        data-testid="sidebar-backdrop"
+        aria-hidden="true"
+        @click="closeMobileSidebar"
+      ></div>
+    </transition>
+
     <div class="main-layout">
       <!-- Left Sidebar: Upload, Documents List, Status Tracker -->
       <DocumentSidebar 
+        :is-open="isMobileSidebarOpen"
+        :is-mobile-open="isMobileSidebarOpen"
         :documents="documents"
         :selected-doc-ids="selectedDocIds"
         :is-uploading="isUploading"
         :is-connected="isConnected"
+        @close="closeMobileSidebar"
+        @close-sidebar="closeMobileSidebar"
         @upload-file="handleUpload"
         @toggle-select="handleToggleSelect"
         @toggle-select-all="handleToggleSelectAll"
         @refresh-documents="fetchDocuments"
         @view-detail="inspectingDoc = $event"
         @toggle-demo="toggleDemoMode"
+        @open-astrbot="handleOpenAstrBot"
       />
 
       <!-- Right Main: Chat Q&A with Citations -->
@@ -30,8 +46,14 @@
         :all-docs="documents"
         :messages="messages"
         :is-asking="isAsking"
+        :evolution-gen="evolutionGen"
+        :customer-scenarios="customerScenarios"
         @ask-question="handleAskQuestion"
+        @submit-feedback="handleSubmitFeedback"
         @clear-chat="handleClearChat"
+        @toggle-sidebar="toggleMobileSidebar"
+        @open-evolution="handleOpenEvolution"
+        @open-astrbot="handleOpenAstrBot"
       />
     </div>
 
@@ -40,6 +62,21 @@
       v-if="inspectingDoc"
       :doc="inspectingDoc"
       @close="inspectingDoc = null"
+    />
+
+    <!-- EvoAgentX Evolution Modal (Milestone 3) -->
+    <CustomerEvolutionModal 
+      v-if="isEvolutionModalOpen"
+      :is-open="isEvolutionModalOpen"
+      :evolution-gen="evolutionGen"
+      @close="handleCloseEvolution"
+      @evolved="handleEvolutionUpdated"
+    />
+
+    <!-- AstrBot Multi-Platform Integration & Management Dashboard Modal -->
+    <AstrBotModal
+      v-if="isAstrBotModalOpen"
+      @close="handleCloseAstrBot"
     />
   </div>
 </template>
@@ -51,6 +88,8 @@ import { initialMockDocuments, sampleQA } from './mockData'
 import DocumentSidebar from './components/DocumentSidebar.vue'
 import ChatArea from './components/ChatArea.vue'
 import DocumentDetailModal from './components/DocumentDetailModal.vue'
+import CustomerEvolutionModal from './components/CustomerEvolutionModal.vue'
+import AstrBotModal from './components/AstrBotModal.vue'
 
 const documents = ref([])
 const selectedDocIds = ref([])
@@ -62,6 +101,14 @@ const inspectingDoc = ref(null)
 const toastMessage = ref('')
 const toastType = ref('info')
 const chatAreaRef = ref(null)
+const evolutionGen = ref(0)
+const customerScenarios = ref([])
+const defaultCustomerRole = ref('Khách hàng mua hàng hoặc sử dụng dịch vụ')
+const isMobileSidebarOpen = ref(false)
+
+// Modals State (EvoAgentX + AstrBot Multi-Platform Hub)
+const isEvolutionModalOpen = ref(false)
+const isAstrBotModalOpen = ref(false)
 
 const pollingTimers = new Map()
 
@@ -79,6 +126,28 @@ const showToast = (msg, type = 'info', timeout = 4000) => {
   }, timeout)
 }
 
+const syncCustomerBackendConfig = async () => {
+  try {
+    const [evo, prompts] = await Promise.allSettled([
+      api.getCustomerEvolution(),
+      api.getCustomerPrompts()
+    ])
+    if (evo.status === 'fulfilled' && evo.value && typeof evo.value.evolution_generation === 'number') {
+      evolutionGen.value = evo.value.evolution_generation
+    }
+    if (prompts.status === 'fulfilled' && prompts.value) {
+      if (Array.isArray(prompts.value.scenarios)) {
+        customerScenarios.value = prompts.value.scenarios
+      }
+      if (prompts.value.default_customer_role) {
+        defaultCustomerRole.value = prompts.value.default_customer_role
+      }
+    }
+  } catch {
+    // ignore
+  }
+}
+
 /**
  * Kiểm tra backend và tải dữ liệu ban đầu
  */
@@ -88,6 +157,7 @@ const initApp = async () => {
     if (online) {
       isConnected.value = true
       await fetchDocuments()
+      await syncCustomerBackendConfig()
       showToast('Đã kết nối thành công tới DocMind Backend (cổng 8090)', 'success')
     } else {
       useDemoData()
@@ -116,6 +186,7 @@ const toggleDemoMode = async () => {
       if (online) {
         isConnected.value = true
         await fetchDocuments()
+        await syncCustomerBackendConfig()
         showToast('Kết nối backend thành công!', 'success')
       } else {
         showToast('Không thể kết nối localhost:8090. Vẫn giữ Chế độ Demo.', 'error')
@@ -292,9 +363,14 @@ const handleToggleSelectAll = () => {
 }
 
 /**
- * Hỏi đáp chat RAG
+ * Hỏi đáp chat RAG hoặc Tư vấn khách hàng (Prompt được huấn luyện trước)
  */
-const handleAskQuestion = async ({ question, documentIds, topK }) => {
+const handleAskQuestion = async ({ question, documentIds, topK, mode = 'customer', scenario = 'AUTO', customerName = 'Quý khách' }) => {
+  const priorHistory = messages.value
+    .filter(m => m && m.content)
+    .slice(-10)
+    .map(m => ({ role: m.role, content: m.content }))
+
   // Thêm tin nhắn câu hỏi của user
   messages.value.push({
     role: 'user',
@@ -307,15 +383,18 @@ const handleAskQuestion = async ({ question, documentIds, topK }) => {
   if (!isConnected.value) {
     // Trả lời trên demo mode
     setTimeout(() => {
-      let matched = sampleQA['default']
-      if (question.toLowerCase().includes('kiến trúc') || question.toLowerCase().includes('thành phần') || question.toLowerCase().includes('cổng')) {
+      let matched = mode === 'customer' ? sampleQA['dior'] : sampleQA['default']
+      if (mode !== 'customer' && (question.toLowerCase().includes('kiến trúc') || question.toLowerCase().includes('thành phần') || question.toLowerCase().includes('cổng'))) {
         matched = sampleQA['kiến trúc']
       }
 
       messages.value.push({
         role: 'assistant',
         content: matched.answer,
-        citations: matched.citations
+        question: mode === 'customer' ? question : undefined,
+        scenario: mode === 'customer' ? (scenario === 'AUTO' ? 'SALES' : scenario) : undefined,
+        citations: mode === 'customer' ? [] : matched.citations,
+        feedbackSubmitted: null
       })
 
       isAsking.value = false
@@ -325,21 +404,49 @@ const handleAskQuestion = async ({ question, documentIds, topK }) => {
   }
 
   try {
-    const res = await api.chat({
-      documentIds,
-      question,
-      topK
-    })
+    if (mode === 'customer') {
+      const res = await api.customerChat({
+        question,
+        customerName,
+        customerRole: defaultCustomerRole.value,
+        scenario: scenario === 'AUTO' ? undefined : scenario,
+        documentIds,
+        topK,
+        history: priorHistory
+      })
 
-    messages.value.push({
-      role: 'assistant',
-      content: res.answer || 'Không tìm thấy câu trả lời phù hợp trong tài liệu.',
-      citations: res.citations || []
-    })
+      messages.value.push({
+        role: 'assistant',
+        content: res.answer || 'Dạ em xin ghi nhận câu hỏi và hỗ trợ Anh/Chị ngay ạ.',
+        question,
+        scenario: res.scenario,
+        interactionId: res.interaction_id,
+        evolutionGeneration: res.evolution_generation,
+        appliedGuidelines: res.applied_learned_guidelines || 0,
+        suggestedQuestions: res.suggested_questions || [],
+        citations: [],
+        feedbackSubmitted: null
+      })
+      if (typeof res.evolution_generation === 'number') {
+        evolutionGen.value = res.evolution_generation
+      }
+    } else {
+      const res = await api.chat({
+        documentIds,
+        question,
+        topK
+      })
+
+      messages.value.push({
+        role: 'assistant',
+        content: res.answer || 'Không tìm thấy câu trả lời phù hợp trong tài liệu.',
+        citations: res.citations || []
+      })
+    }
   } catch (err) {
     messages.value.push({
       role: 'assistant',
-      content: `⚠️ **Lỗi truy vấn RAG:** ${err.message}\n\nHãy đảm bảo tài liệu đã ở trạng thái READY và service backend đang hoạt động.`,
+      content: `⚠️ **Lỗi truy vấn:** ${err.message}\n\nHãy đảm bảo service backend đang hoạt động.`,
       citations: []
     })
   } finally {
@@ -348,35 +455,154 @@ const handleAskQuestion = async ({ question, documentIds, topK }) => {
   }
 }
 
+const handleSubmitFeedback = async ({ index, helpful, rating, feedback }) => {
+  const msg = messages.value[index]
+  if (!msg) return
+  msg.feedbackSubmitted = helpful ? 'positive' : 'negative'
+
+  if (!isConnected.value) {
+    evolutionGen.value += 1
+    showToast('Đã ghi nhận phản hồi và cập nhật quy tắc tự tiến hoá EvoAgentX (Demo)', 'success')
+    return
+  }
+
+  try {
+    const evoStatus = await api.submitCustomerFeedback({
+      interactionId: msg.interactionId,
+      question: msg.question,
+      answer: msg.content,
+      scenario: msg.scenario,
+      rating,
+      helpful,
+      feedback
+    })
+    if (evoStatus && typeof evoStatus.evolution_generation === 'number') {
+      evolutionGen.value = evoStatus.evolution_generation
+    }
+    showToast(
+      `EvoAgentX đã học hỏi từ phản hồi (Thế hệ tiến hoá #${evolutionGen.value})!`,
+      'success'
+    )
+  } catch (e) {
+    showToast(`Gửi phản hồi thất bại: ${e.message}`, 'error')
+  }
+}
+
 const handleClearChat = () => {
   messages.value = []
 }
 
+const toggleMobileSidebar = () => {
+  isMobileSidebarOpen.value = !isMobileSidebarOpen.value
+}
+
+const closeMobileSidebar = () => {
+  isMobileSidebarOpen.value = false
+}
+
+// Modal open/close handlers
+const handleOpenEvolution = () => {
+  isEvolutionModalOpen.value = true
+}
+
+const handleCloseEvolution = () => {
+  isEvolutionModalOpen.value = false
+}
+
+const handleOpenAstrBot = () => {
+  isAstrBotModalOpen.value = true
+}
+
+const handleCloseAstrBot = () => {
+  isAstrBotModalOpen.value = false
+}
+
+const handleEvolutionUpdated = (newGen) => {
+  if (typeof newGen === 'number') {
+    evolutionGen.value = newGen
+  }
+  syncCustomerBackendConfig()
+}
+
+// Global keyboard navigation & Escape key hierarchy
+const handleKeydown = (e) => {
+  if (e.key === 'Escape') {
+    if (isAstrBotModalOpen.value) {
+      handleCloseAstrBot()
+    } else if (isEvolutionModalOpen.value) {
+      handleCloseEvolution()
+    } else if (inspectingDoc.value) {
+      inspectingDoc.value = null
+    } else if (isMobileSidebarOpen.value) {
+      closeMobileSidebar()
+    }
+  }
+}
+
 onMounted(() => {
   initApp()
+  window.addEventListener('keydown', handleKeydown)
 })
 
 onUnmounted(() => {
   pollingTimers.forEach(timer => clearInterval(timer))
   pollingTimers.clear()
+  window.removeEventListener('keydown', handleKeydown)
 })
 </script>
 
 <style scoped>
 .app-shell {
-  width: 100vw;
+  width: 100%;
+  max-width: 100vw;
   height: 100vh;
+  height: 100dvh;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
   background: var(--bg-primary);
 }
 
 .main-layout {
   flex: 1;
+  min-height: 0;
+  min-width: 0;
   display: flex;
+  position: relative;
+  width: 100%;
   height: 100%;
   overflow: hidden;
+}
+
+/* Mobile Drawer Backdrop */
+.mobile-drawer-backdrop {
+  display: none;
+}
+
+@media (max-width: 767px) {
+  .mobile-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(5px);
+    -webkit-backdrop-filter: blur(5px);
+    z-index: 55;
+    cursor: pointer;
+  }
+}
+
+.drawer-backdrop-fade-enter-active,
+.drawer-backdrop-fade-leave-active {
+  transition: opacity 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.drawer-backdrop-fade-enter-from,
+.drawer-backdrop-fade-leave-to {
+  opacity: 0;
 }
 
 /* Toast Banner */
@@ -384,7 +610,7 @@ onUnmounted(() => {
   position: fixed;
   top: 16px;
   right: 20px;
-  z-index: 999;
+  z-index: 1200;
   padding: 10px 16px;
   border-radius: var(--radius-md);
   font-size: 0.82rem;

@@ -1,5 +1,6 @@
 package com.example.docmind.repository;
 
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -13,19 +14,27 @@ import java.util.UUID;
  * Impl native cho pgvector/tsvector (JdbcTemplate).
  *
  * <p>Vector được truyền dưới dạng literal '[a,b,c]'::vector — đây là format text
- * chính thức của pgvector. tsvector dựng bằng to_tsvector('simple', text) để trung
- * lập ngôn ngữ (tài liệu có thể tiếng Việt). plainto_tsquery('simple', ?) cho query.
+ * chính thức của pgvector. tsvector dựng bằng to_tsvector(ftsConfig, text) với
+ * {@code ftsConfig} đọc từ cấu hình {@code docmind.chat.fts-config} (mặc định {@code simple}).
  */
 @Repository
 public class ChunkRepositoryCustomImpl implements ChunkRepositoryCustom {
 
     private final JdbcTemplate jdbc;
     private final int embeddingDim;
+    private final String ftsConfig;
 
+    public ChunkRepositoryCustomImpl(JdbcTemplate jdbc, int embeddingDim) {
+        this(jdbc, embeddingDim, "simple");
+    }
+
+    @Autowired
     public ChunkRepositoryCustomImpl(JdbcTemplate jdbc,
-                                     @Value("${docmind.embedding.dim:384}") int embeddingDim) {
+                                     @Value("${docmind.embedding.dim:384}") int embeddingDim,
+                                     @Value("${docmind.chat.fts-config:simple}") String ftsConfig) {
         this.jdbc = jdbc;
         this.embeddingDim = embeddingDim;
+        this.ftsConfig = (ftsConfig != null && !ftsConfig.isBlank()) ? ftsConfig.strip() : "simple";
     }
 
     @Override
@@ -45,7 +54,7 @@ public class ChunkRepositoryCustomImpl implements ChunkRepositoryCustom {
                     INSERT INTO chunks
                         (id, document_id, heading_path, source_block_ids, page, bbox, text, embedding, tsv)
                     VALUES
-                        (?, ?, ?, ?, ?, ?, ?, CAST(? AS vector), to_tsvector('simple', ?))
+                        (?, ?, ?, ?, ?, ?, ?, CAST(? AS vector), to_tsvector(?::regconfig, ?))
                     """;
             var ps = connection.prepareStatement(sql);
             ps.setObject(1, id);
@@ -59,7 +68,8 @@ public class ChunkRepositoryCustomImpl implements ChunkRepositoryCustom {
             ps.setArray(6, bboxArray);
             ps.setString(7, text);
             ps.setString(8, vectorLiteral); // null => NULL::vector
-            ps.setString(9, text);
+            ps.setString(9, ftsConfig);
+            ps.setString(10, text);
             return ps;
         });
     }
@@ -102,17 +112,19 @@ public class ChunkRepositoryCustomImpl implements ChunkRepositoryCustom {
         String inClause = inPlaceholders(documentIds.size());
         String sql = """
                 SELECT id, document_id, heading_path, source_block_ids, page, bbox, text,
-                       ts_rank(tsv, plainto_tsquery('simple', ?)) AS score
+                       ts_rank(tsv, plainto_tsquery(?::regconfig, ?)) AS score
                 FROM chunks
-                WHERE tsv @@ plainto_tsquery('simple', ?)
+                WHERE tsv @@ plainto_tsquery(?::regconfig, ?)
                   AND document_id IN (%s)
                 ORDER BY score DESC
                 LIMIT ?
                 """.formatted(inClause);
 
-        Object[] args = new Object[2 + documentIds.size() + 1];
+        Object[] args = new Object[4 + documentIds.size() + 1];
         int i = 0;
+        args[i++] = ftsConfig;
         args[i++] = query;
+        args[i++] = ftsConfig;
         args[i++] = query;
         for (UUID d : documentIds) {
             args[i++] = d;
@@ -139,7 +151,7 @@ public class ChunkRepositoryCustomImpl implements ChunkRepositoryCustom {
     private String toVectorLiteral(float[] v) {
         if (v.length != embeddingDim) {
             throw new IllegalArgumentException(
-                    "Embedding dim không khớp: expected " + embeddingDim + " nhưng nhận " + v.length);
+                "Embedding dim không khớp: expected " + embeddingDim + " nhưng nhận " + v.length);
         }
         StringBuilder sb = new StringBuilder("[");
         for (int i = 0; i < v.length; i++) {

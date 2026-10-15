@@ -2,54 +2,153 @@
   <main class="chat-container">
     <!-- Chat Header -->
     <header class="chat-header">
-      <div class="header-left">
-        <div class="context-indicator">
-          <div class="pulse-sparkle">
-            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+      <!-- Primary Bar: compact, single-row on mobile and desktop -->
+      <div class="header-primary-row">
+        <div class="header-left">
+          <!-- Mobile Drawer Toggle Button (< 768px) -->
+          <button
+            class="btn-drawer-toggle"
+            data-testid="drawer-toggle"
+            type="button"
+            aria-label="Mở danh sách tài liệu"
+            title="Mở danh sách tài liệu"
+            @click="emit('toggle-sidebar')"
+          >
+            <svg class="hamburger-icon" xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="3" y1="12" x2="21" y2="12"/>
+              <line x1="3" y1="6" x2="21" y2="6"/>
+              <line x1="3" y1="18" x2="21" y2="18"/>
             </svg>
+            <span class="drawer-toggle-text">Tài liệu</span>
+            <span v-if="selectedDocs.length > 0" class="drawer-badge">{{ selectedDocs.length }}</span>
+          </button>
+
+          <!-- Context Indicator (Brand / Title / Subtitle) -->
+          <div class="context-indicator">
+            <div class="pulse-sparkle">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+              </svg>
+            </div>
+            <div class="header-title-box">
+              <h3 class="header-title">
+                {{ chatMode === 'customer' ? 'Tư vấn Khách hàng' : 'Hỏi đáp tài liệu' }}
+                <span class="header-mode-tag" :class="chatMode">
+                  {{ chatMode === 'customer' ? 'Bán hàng & Dịch vụ' : 'RAG Grounded' }}
+                </span>
+              </h3>
+              <p class="context-subtitle">
+                <span v-if="chatMode === 'customer'">
+                  Prompt huấn luyện sẵn · <strong class="text-accent">EvoAgentX Gen #{{ evolutionGen }}</strong>
+                  <template v-if="selectedDocs.length > 0"> · {{ selectedDocs.length }} tài liệu</template>
+                </span>
+                <span v-else-if="selectedDocs.length > 0">
+                  Phạm vi: <strong>{{ selectedDocs.length }} tài liệu</strong> ({{ selectedDocsNames }})
+                </span>
+                <span v-else class="text-warning">
+                  ⚠️ Chưa chọn tài liệu nào. Vui lòng tick chọn tài liệu bên trái!
+                </span>
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 class="header-title">Hỏi đáp tài liệu (RAG Grounded)</h3>
-            <p class="context-subtitle">
-              <span v-if="selectedDocs.length > 0">
-                Phạm vi: <strong>{{ selectedDocs.length }} tài liệu</strong> ({{ selectedDocsNames }})
-              </span>
-              <span v-else class="text-warning">
-                ⚠️ Chưa chọn tài liệu nào. Vui lòng tick chọn ít nhất 1 tài liệu ở bên trái!
-              </span>
-            </p>
-          </div>
+        </div>
+
+        <!-- Primary Right Action Buttons -->
+        <div class="header-primary-actions">
+          <!-- EvoAgentX Evolution Modal Trigger -->
+          <button
+            class="header-action-btn btn-evo"
+            type="button"
+            title="Xem bảng tri thức tự tiến hoá EvoAgentX (TextGrad & MIPRO)"
+            @click="emit('open-evolution')"
+          >
+            <span class="action-icon">🧬</span>
+            <span class="action-label evo-text">Gen #{{ evolutionGen }}</span>
+          </button>
+
+          <!-- AstrBot Multi-Platform Hub Modal Trigger -->
+          <button
+            class="header-action-btn btn-astrbot"
+            data-testid="open-astrbot-btn"
+            type="button"
+            title="Mở Trung tâm Điều khiển Đa Nền tảng AstrBot (19 Platform Adapters gồm Facebook Messenger, UMO Sessions, Star Commands)"
+            @click="emit('open-astrbot')"
+          >
+            <span class="action-icon">🛰️</span>
+            <span class="action-label astrbot-text">AstrBot Hub</span>
+            <span class="messenger-dot" title="19 Platform Adapters Ready (Messenger, Telegram, Discord...)"></span>
+          </button>
+
+          <!-- Settings Toggle Button (Mobile & Tablet) -->
+          <button
+            class="header-action-btn btn-settings-toggle"
+            type="button"
+            :class="{ 'is-active': isSettingsOpen }"
+            :title="isSettingsOpen ? 'Ẩn bộ lọc & cài đặt' : 'Mở bộ lọc & cài đặt (Chế độ, Kịch bản, Top-K)'"
+            @click="isSettingsOpen = !isSettingsOpen"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+              <circle cx="12" cy="12" r="3"/>
+            </svg>
+            <span class="action-label settings-text">Tuỳ chọn</span>
+          </button>
         </div>
       </div>
 
-      <div class="header-right">
-        <!-- Top-K Setting -->
-        <div class="top-k-control" title="Số lượng chunk ngữ cảnh tối đa gửi vào prompt RAG">
-          <label for="topk-select">Top-K:</label>
-          <select id="topk-select" v-model="topK">
-            <option :value="3">3 chunks</option>
-            <option :value="5">5 chunks (chuẩn)</option>
-            <option :value="10">10 chunks (sâu)</option>
-            <option :value="20">20 chunks</option>
-          </select>
-        </div>
+      <!-- Secondary Row: Collapsible on Mobile/Tablet, Always visible on Desktop -->
+      <transition name="settings-slide">
+        <div v-show="isSettingsOpen" class="header-secondary-row">
+          <div class="secondary-controls-wrap">
+            <!-- Chat Mode Selector -->
+            <div class="control-group" title="Chế độ hội thoại">
+              <label for="mode-select" class="control-label">Chế độ:</label>
+              <select id="mode-select" v-model="chatMode" class="compact-select">
+                <option value="customer">🛍️ Khách hàng (Mua hàng & Dịch vụ)</option>
+                <option value="rag">📄 Hỏi đáp Tài liệu (RAG thuần)</option>
+              </select>
+            </div>
 
-        <!-- Clear Chat Button -->
-        <button 
-          v-if="messages.length > 0" 
-          class="btn btn-secondary btn-sm" 
-          title="Xóa toàn bộ cuộc hội thoại"
-          @click="clearChat"
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 6h18"/>
-            <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
-            <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-          </svg>
-          Xóa chat
-        </button>
-      </div>
+            <!-- Customer Scenario Selector -->
+            <div v-if="chatMode === 'customer'" class="control-group" title="Kịch bản prompt được huấn luyện trước">
+              <label for="scenario-select" class="control-label">Kịch bản:</label>
+              <select id="scenario-select" v-model="selectedScenario" class="compact-select">
+                <option value="AUTO">Tự động nhận diện</option>
+                <option v-for="sc in scenarioOptions" :key="sc.scenario" :value="sc.scenario">
+                  {{ sc.display_name }}
+                </option>
+              </select>
+            </div>
+
+            <!-- Top-K Setting -->
+            <div class="control-group" title="Số lượng chunk ngữ cảnh tối đa gửi vào prompt RAG">
+              <label for="topk-select" class="control-label">Top-K:</label>
+              <select id="topk-select" v-model="topK" class="compact-select compact-select-sm">
+                <option :value="3">3 chunks</option>
+                <option :value="5">5 chunks (chuẩn)</option>
+                <option :value="10">10 chunks (sâu)</option>
+                <option :value="20">20 chunks</option>
+              </select>
+            </div>
+
+            <!-- Clear Chat Button -->
+            <button 
+              v-if="messages.length > 0" 
+              class="btn-clear-chat" 
+              type="button"
+              title="Xóa toàn bộ cuộc hội thoại"
+              @click="clearChat"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 6h18"/>
+                <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/>
+                <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+              </svg>
+              <span>Xóa chat</span>
+            </button>
+          </div>
+        </div>
+      </transition>
     </header>
 
     <!-- Messages Scroll Area -->
@@ -63,7 +162,12 @@
         </div>
         <h2 class="hero-title">Chào mừng đến với DocMind</h2>
         <p class="hero-desc">
-          Hệ thống trả lời câu hỏi <strong>chính xác 100%</strong> dựa trên tài liệu đã upload, kèm số trang và trích dẫn kiểm chứng nguồn.
+          <template v-if="chatMode === 'customer'">
+            Trò chuyện tự nhiên, gần gũi cùng <strong>chuyên viên tư vấn</strong> — giải đáp tận tâm mọi thắc mắc khi bạn <strong>mua hàng hoặc sử dụng dịch vụ</strong>.
+          </template>
+          <template v-else>
+            Hệ thống trả lời câu hỏi <strong>chính xác 100%</strong> dựa trên tài liệu đã upload, kèm số trang và trích dẫn kiểm chứng nguồn.
+          </template>
         </p>
 
         <!-- Starter Suggestions -->
@@ -71,10 +175,10 @@
           <div class="starters-label">Gợi ý câu hỏi bắt đầu:</div>
           <div class="starters-grid">
             <button 
-              v-for="(prompt, idx) in starterPrompts" 
+              v-for="(prompt, idx) in activeStarterPrompts" 
               :key="idx" 
               class="starter-card"
-              :disabled="selectedDocs.length === 0"
+              :disabled="chatMode === 'rag' && selectedDocs.length === 0"
               @click="submitQuestion(prompt)"
             >
               <div class="starter-icon">✨</div>
@@ -111,8 +215,8 @@
               <!-- Answer Body -->
               <div class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
 
-              <!-- Citations Section -->
-              <div v-if="msg.citations && msg.citations.length > 0" class="citations-section">
+              <!-- Citations Section (ẩn hoàn toàn khi ở chế độ Khách hàng mua hàng) -->
+              <div v-if="chatMode !== 'customer' && !msg.scenario && msg.citations && msg.citations.length > 0" class="citations-section">
                 <div class="citations-header-row">
                   <span class="citations-label">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -149,6 +253,25 @@
                   </svg>
                   <span>{{ copiedIndex === index ? 'Đã sao chép' : 'Sao chép' }}</span>
                 </button>
+
+                <template v-if="chatMode === 'customer' && (msg.interactionId || msg.question)">
+                  <button
+                    class="action-btn"
+                    :disabled="!!msg.feedbackSubmitted"
+                    title="Đánh giá hữu ích để EvoAgentX chắt lọc mẫu Few-Shot (MIPRO)"
+                    @click="emit('submit-feedback', { index, helpful: true, rating: 5 })"
+                  >
+                    <span>👍 {{ msg.feedbackSubmitted === 'positive' ? 'Đã ghi nhận hữu ích' : 'Hữu ích' }}</span>
+                  </button>
+                  <button
+                    class="action-btn"
+                    :disabled="!!msg.feedbackSubmitted"
+                    title="Báo cần cải thiện để EvoAgentX sinh quy tắc TextGrad mới"
+                    @click="emit('submit-feedback', { index, helpful: false, rating: 2, feedback: 'Cần trả lời chi tiết, rõ ràng và bám sát nhu cầu khách hàng hơn' })"
+                  >
+                    <span>👎 {{ msg.feedbackSubmitted === 'negative' ? 'Đã gửi phản tư TextGrad' : 'Cần cải thiện' }}</span>
+                  </button>
+                </template>
               </div>
             </div>
           </div>
@@ -168,7 +291,9 @@
                 <span></span>
                 <span></span>
               </div>
-              <span class="loading-label">Đang thực hiện Dense Embedding + BM25 Hybrid Retrieval...</span>
+              <span class="loading-label">
+                {{ chatMode === 'customer' ? 'Chuyên viên đang soạn phản hồi tư vấn cho bạn...' : 'Đang thực hiện Dense Embedding + BM25 Hybrid Retrieval...' }}
+              </span>
             </div>
           </div>
         </div>
@@ -177,13 +302,13 @@
 
     <!-- Chat Input Section -->
     <footer class="chat-input-wrapper">
-      <div class="input-card" :class="{ 'has-focus': isFocused, 'is-disabled': selectedDocs.length === 0 }">
+      <div class="input-card" :class="{ 'has-focus': isFocused, 'is-disabled': chatMode === 'rag' && selectedDocs.length === 0 }">
         <textarea 
           ref="inputRef"
           v-model="questionInput" 
-          placeholder="Đặt câu hỏi về nội dung trong các tài liệu đã chọn..."
+          :placeholder="chatMode === 'customer' ? 'Nhập câu hỏi của bạn trong vai trò khách hàng mua hàng hoặc sử dụng dịch vụ...' : 'Đặt câu hỏi về nội dung trong các tài liệu đã chọn...'"
           rows="1"
-          :disabled="selectedDocs.length === 0 || isAsking"
+          :disabled="(chatMode === 'rag' && selectedDocs.length === 0) || isAsking"
           @focus="isFocused = true"
           @blur="isFocused = false"
           @keydown.enter="handleEnter"
@@ -214,7 +339,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted } from 'vue'
 import { marked } from 'marked'
 import CitationCard from './CitationCard.vue'
 
@@ -234,11 +359,28 @@ const props = defineProps({
   isAsking: {
     type: Boolean,
     default: false
+  },
+  evolutionGen: {
+    type: Number,
+    default: 0
+  },
+  customerScenarios: {
+    type: Array,
+    default: () => []
   }
 })
 
-const emit = defineEmits(['ask-question', 'clear-chat'])
+const emit = defineEmits([
+  'ask-question',
+  'submit-feedback',
+  'clear-chat',
+  'toggle-sidebar',
+  'open-evolution',
+  'open-astrbot'
+])
 
+const chatMode = ref('customer')
+const selectedScenario = ref('AUTO')
 const topK = ref(5)
 const questionInput = ref('')
 const isFocused = ref(false)
@@ -246,12 +388,76 @@ const inputRef = ref(null)
 const messagesScrollRef = ref(null)
 const copiedIndex = ref(-1)
 
-const starterPrompts = [
+// Responsive secondary settings bar state
+// Default to true on desktop (>= 1024px), false on tablet/mobile (< 1024px)
+const isSettingsOpen = ref(typeof window !== 'undefined' ? window.innerWidth >= 1024 : false)
+
+const handleWindowResize = () => {
+  if (typeof window !== 'undefined' && window.innerWidth >= 1024) {
+    isSettingsOpen.value = true
+  }
+}
+
+onMounted(() => {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleWindowResize)
+  }
+})
+
+onUnmounted(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleWindowResize)
+  }
+})
+
+const defaultScenarioOptions = [
+  { scenario: 'SALES', display_name: 'Mua hàng & Báo giá' },
+  { scenario: 'SERVICE_SUPPORT', display_name: 'Sử dụng Dịch vụ & Kỹ thuật' },
+  { scenario: 'WARRANTY_RETURN', display_name: 'Bảo hành & Đổi trả' },
+  { scenario: 'ORDER_BILLING', display_name: 'Đơn hàng & Thanh toán' }
+]
+
+const scenarioOptions = computed(() => {
+  if (Array.isArray(props.customerScenarios) && props.customerScenarios.length > 0) {
+    return props.customerScenarios.filter(s => s.scenario && s.scenario !== 'GENERAL')
+  }
+  return defaultScenarioOptions
+})
+
+const customerStarterPrompts = [
+  'Tư vấn giúp mình gói dịch vụ phù hợp cho nhóm 10 người và báo giá chi tiết?',
+  'Hướng dẫn các bước kích hoạt và sử dụng dịch vụ sau khi thanh toán?',
+  'Chính sách bảo hành 12 tháng và đổi trả hoàn tiền trong 7 ngày đầu như thế nào?',
+  'Cửa hàng hỗ trợ những hình thức thanh toán nào và có xuất hóa đơn VAT không?'
+]
+
+const ragStarterPrompts = [
   'Tóm tắt nội dung chính và các điểm cốt lõi của tài liệu',
   'Kiến trúc hệ thống bao gồm những thành phần và cổng dịch vụ nào?',
   'Quy trình ingest và luồng chat hoạt động như thế nào?',
   'Liệt kê các bảng biểu, công thức hoặc số liệu quan trọng'
 ]
+
+const activeStarterPrompts = computed(() => {
+  if (chatMode.value !== 'customer') {
+    return ragStarterPrompts
+  }
+  if (Array.isArray(props.customerScenarios) && props.customerScenarios.length > 0) {
+    if (selectedScenario.value !== 'AUTO') {
+      const matched = props.customerScenarios.find(s => s.scenario === selectedScenario.value)
+      if (matched && Array.isArray(matched.suggested_questions) && matched.suggested_questions.length > 0) {
+        return matched.suggested_questions
+      }
+    }
+    const collected = props.customerScenarios
+      .filter(s => s.scenario !== 'GENERAL' && Array.isArray(s.suggested_questions) && s.suggested_questions.length > 0)
+      .map(s => s.suggested_questions[0])
+    if (collected.length > 0) {
+      return collected.slice(0, 4)
+    }
+  }
+  return customerStarterPrompts
+})
 
 const selectedDocsNames = computed(() => {
   return props.selectedDocs.map(d => d.filename).slice(0, 2).join(', ') + 
@@ -259,12 +465,16 @@ const selectedDocsNames = computed(() => {
 })
 
 const canSend = computed(() => {
-  return questionInput.value.trim().length > 0 && props.selectedDocs.length > 0 && !props.isAsking
+  const hasDocCondition = chatMode.value === 'customer' || props.selectedDocs.length > 0
+  return questionInput.value.trim().length > 0 && hasDocCondition && !props.isAsking
 })
 
 const renderMarkdown = (text) => {
   if (!text) return ''
-  return marked.parse(text)
+  const cleaned = chatMode.value === 'customer'
+    ? text.replace(/\s*(?:\[\d{1,2}(?:\s*[,;-]\s*\d{1,2})*\])+/g, '')
+    : text
+  return marked.parse(cleaned)
 }
 
 const getDocName = (docId) => {
@@ -276,7 +486,8 @@ const autoResize = () => {
   const el = inputRef.value
   if (!el) return
   el.style.height = 'auto'
-  el.style.height = Math.min(el.scrollHeight, 180) + 'px'
+  const maxH = (typeof window !== 'undefined' && window.innerWidth < 640) ? 120 : 180
+  el.style.height = Math.min(el.scrollHeight, maxH) + 'px'
 }
 
 const handleEnter = (e) => {
@@ -289,12 +500,15 @@ const handleEnter = (e) => {
 
 const submitQuestion = (query) => {
   const q = query.trim()
-  if (!q || props.selectedDocs.length === 0 || props.isAsking) return
+  const hasDocCondition = chatMode.value === 'customer' || props.selectedDocs.length > 0
+  if (!q || !hasDocCondition || props.isAsking) return
 
   emit('ask-question', {
     question: q,
     documentIds: props.selectedDocs.map(d => d.document_id),
-    topK: topK.value
+    topK: topK.value,
+    mode: chatMode.value,
+    scenario: selectedScenario.value
   })
 
   questionInput.value = ''
@@ -336,6 +550,9 @@ defineExpose({ scrollToBottom })
 .chat-container {
   flex: 1;
   height: 100%;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
   display: flex;
   flex-direction: column;
   background: var(--bg-primary);
@@ -345,49 +562,154 @@ defineExpose({ scrollToBottom })
 
 /* Header */
 .chat-header {
-  height: 64px;
-  padding: 0 24px;
+  flex-shrink: 0;
+  width: 100%;
+  border-bottom: 1px solid var(--border-subtle);
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Primary Header Row */
+.header-primary-row {
+  height: 58px;
+  min-height: 58px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid var(--border-subtle);
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(12px);
-  z-index: 10;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .header-left {
   display: flex;
   align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
 }
 
+/* Drawer Toggle Button (< 768px) */
+.btn-drawer-toggle {
+  display: none; /* hidden on desktop & tablet >= 768px */
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 6px 12px;
+  background: rgba(99, 102, 241, 0.14);
+  border: 1px solid rgba(99, 102, 241, 0.35);
+  border-radius: var(--radius-sm);
+  color: #c7d2fe;
+  font-family: var(--font-sans);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  user-select: none;
+  touch-action: manipulation;
+  transition: all 0.2s ease;
+}
+
+.btn-drawer-toggle:hover {
+  background: rgba(99, 102, 241, 0.25);
+  border-color: var(--accent-primary);
+  color: #ffffff;
+}
+
+.drawer-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-full);
+  background: var(--accent-gradient);
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+/* Context Indicator */
 .context-indicator {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .pulse-sparkle {
   width: 32px;
   height: 32px;
+  min-width: 32px;
   border-radius: var(--radius-sm);
   background: rgba(99, 102, 241, 0.15);
   color: #a5b4fc;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+}
+
+.header-title-box {
+  min-width: 0;
+  overflow: hidden;
 }
 
 .header-title {
-  font-size: 0.95rem;
+  font-size: 0.92rem;
   font-weight: 600;
   color: var(--text-main);
-  line-height: 1.2;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-mode-tag {
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+}
+
+.header-mode-tag.customer {
+  background: rgba(168, 85, 247, 0.12);
+  border-color: rgba(168, 85, 247, 0.3);
+  color: #d8b4fe;
+}
+
+.header-mode-tag.rag {
+  background: rgba(99, 102, 241, 0.12);
+  border-color: rgba(99, 102, 241, 0.3);
+  color: #a5b4fc;
 }
 
 .context-subtitle {
-  font-size: 0.76rem;
+  font-size: 0.74rem;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.text-accent {
+  color: #c084fc;
 }
 
 .text-warning {
@@ -395,13 +717,102 @@ defineExpose({ scrollToBottom })
   font-weight: 500;
 }
 
-.header-right {
+/* Primary Right Actions */
+.header-primary-actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
-.top-k-control {
+.header-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border-radius: var(--radius-full);
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+  white-space: nowrap;
+}
+
+.btn-evo {
+  background: rgba(168, 85, 247, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  color: #d8b4fe;
+  box-shadow: 0 0 12px rgba(168, 85, 247, 0.15);
+}
+
+.btn-evo:hover {
+  background: rgba(168, 85, 247, 0.22);
+  border-color: rgba(168, 85, 247, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-astrbot {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(139, 92, 246, 0.14));
+  border: 1px solid rgba(99, 102, 241, 0.42);
+  color: #c7d2fe;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.18);
+}
+
+.btn-astrbot:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.28), rgba(139, 92, 246, 0.24));
+  border-color: rgba(99, 102, 241, 0.7);
+  transform: translateY(-1px);
+}
+
+.messenger-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #34d399;
+  box-shadow: 0 0 6px #34d399;
+}
+
+.btn-settings-toggle {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.btn-settings-toggle:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-main);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-settings-toggle.is-active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: var(--border-active);
+  color: #c7d2fe;
+}
+
+/* Secondary Row */
+.header-secondary-row {
+  width: 100%;
+  padding: 8px 16px;
+  background: rgba(11, 17, 32, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  box-sizing: border-box;
+}
+
+.secondary-controls-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  width: 100%;
+}
+
+.control-group {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -409,30 +820,85 @@ defineExpose({ scrollToBottom })
   color: var(--text-dim);
 }
 
-.top-k-control select {
+.control-label {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.compact-select {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid var(--border-subtle);
   color: var(--text-main);
-  padding: 4px 8px;
+  padding: 6px 10px;
   border-radius: var(--radius-sm);
-  font-size: 0.75rem;
+  font-size: 0.76rem;
   outline: none;
   cursor: pointer;
+  max-width: 100%;
+  transition: border-color 0.15s ease;
 }
 
-.top-k-control select:focus {
+.compact-select:focus {
   border-color: var(--accent-primary);
 }
 
-.btn-sm {
-  padding: 5px 10px;
-  font-size: 0.75rem;
+.compact-select-sm {
+  width: auto;
 }
 
-/* Messages Scroll */
+.btn-clear-chat {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 32px;
+  padding: 4px 10px;
+  background: rgba(244, 63, 94, 0.1);
+  border: 1px solid rgba(244, 63, 94, 0.25);
+  color: #fb7185;
+  border-radius: var(--radius-sm);
+  font-size: 0.74rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  margin-left: auto;
+}
+
+.btn-clear-chat:hover {
+  background: rgba(244, 63, 94, 0.2);
+  border-color: rgba(244, 63, 94, 0.45);
+}
+
+/* Settings Slide Animation */
+.settings-slide-enter-active,
+.settings-slide-leave-active {
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+}
+
+.settings-slide-enter-from,
+.settings-slide-leave-to {
+  opacity: 0;
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  transform: translateY(-6px);
+}
+
+.settings-slide-enter-to,
+.settings-slide-leave-from {
+  opacity: 1;
+  max-height: 200px;
+  transform: translateY(0);
+}
+
+/* Messages Area */
 .messages-area {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   padding: 24px 32px;
   display: flex;
   flex-direction: column;
@@ -506,6 +972,7 @@ defineExpose({ scrollToBottom })
   align-items: flex-start;
   gap: 10px;
   padding: 12px 14px;
+  min-height: 48px;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -578,6 +1045,7 @@ defineExpose({ scrollToBottom })
   border-radius: var(--radius-lg);
   padding: 14px 18px;
   position: relative;
+  word-break: break-word;
 }
 
 .message-bubble.user {
@@ -708,10 +1176,14 @@ defineExpose({ scrollToBottom })
 
 /* Input Area */
 .chat-input-wrapper {
-  padding: 12px 24px 20px;
-  background: rgba(9, 13, 22, 0.8);
+  flex-shrink: 0;
+  padding: 12px 24px max(14px, env(safe-area-inset-bottom));
+  background: rgba(9, 13, 22, 0.85);
   backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border-top: 1px solid var(--border-subtle);
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .input-card {
@@ -791,5 +1263,213 @@ textarea::placeholder {
   border-top-color: #ffffff;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
+}
+
+/* ==================================================== */
+/* Responsive Media Queries                             */
+/* ==================================================== */
+
+/* Desktop (>= 1024px) */
+@media (min-width: 1024px) {
+  .header-secondary-row {
+    display: flex !important;
+  }
+  .btn-settings-toggle {
+    display: none;
+  }
+}
+
+/* Tablet (768px–1023px) */
+@media (max-width: 1023px) {
+  .header-primary-row {
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .pulse-sparkle,
+  .header-mode-tag {
+    display: none;
+  }
+
+  .header-primary-actions {
+    gap: 5px;
+  }
+
+  .header-action-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 6px 8px;
+  }
+
+  .astrbot-text,
+  .messenger-text,
+  .settings-text {
+    display: none;
+  }
+}
+
+/* Mobile (< 768px) */
+@media (max-width: 767px) {
+  .btn-drawer-toggle {
+    display: inline-flex;
+  }
+
+  .header-primary-row {
+    height: 54px;
+    min-height: 54px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .pulse-sparkle {
+    display: none; /* Hide sparkle on mobile to save horizontal space */
+  }
+
+  .header-mode-tag {
+    display: none; /* Hide tag on mobile; shown in title */
+  }
+
+  .context-subtitle {
+    display: none; /* Hide subtitle on mobile primary row */
+  }
+
+  .header-title {
+    font-size: 0.88rem;
+  }
+
+  .header-primary-actions {
+    gap: 5px;
+  }
+
+  .header-action-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 6px 8px;
+  }
+
+  .astrbot-text,
+  .settings-text {
+    display: none; /* Icon-only on mobile for AstrBot and Settings */
+  }
+
+  .header-secondary-row {
+    padding: 8px 10px 10px;
+  }
+
+  .secondary-controls-wrap {
+    gap: 8px;
+  }
+
+  .control-group {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 130px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 3px;
+  }
+
+  .control-group select {
+    width: 100%;
+  }
+
+  .btn-clear-chat {
+    margin-left: 0;
+    width: 100%;
+    justify-content: center;
+    min-height: 38px;
+  }
+
+  .messages-area {
+    padding: 14px 12px;
+  }
+
+  .message-bubble {
+    max-width: 90%;
+    padding: 12px 14px;
+  }
+
+  .message-row {
+    gap: 8px;
+  }
+
+  .avatar-assistant {
+    width: 28px;
+    height: 28px;
+    min-width: 28px;
+  }
+
+  .action-btn {
+    padding: 8px 12px;
+    font-size: 0.76rem;
+    min-height: 38px;
+  }
+
+  .chat-input-wrapper {
+    padding: 8px 12px max(10px, env(safe-area-inset-bottom));
+  }
+
+  .hint-text {
+    display: none; /* Hide hardware keyboard hints on touch mobile */
+  }
+}
+
+/* Very narrow mobile (< 640px) */
+@media (max-width: 640px) {
+  .starters-grid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  textarea {
+    max-height: 120px;
+    font-size: 0.9rem;
+  }
+
+  .hero-title {
+    font-size: 1.25rem;
+  }
+
+  .hero-desc {
+    font-size: 0.85rem;
+    margin-bottom: 20px;
+  }
+
+  .hero-icon-bubble {
+    width: 56px;
+    height: 56px;
+    margin-bottom: 14px;
+  }
+}
+
+/* Compact mobile (< 400px: 320px, 360px, 375px, 390px) */
+@media (max-width: 399px) {
+  .evo-text {
+    display: none;
+  }
+
+  .header-primary-actions {
+    gap: 4px;
+  }
+}
+
+/* Ultra narrow mobile (< 360px, e.g. 320px Galaxy Fold / iPhone SE) */
+@media (max-width: 359px) {
+  .drawer-toggle-text {
+    display: none;
+  }
+
+  .btn-drawer-toggle {
+    min-width: 44px;
+    padding: 6px;
+  }
+
+  .header-primary-row {
+    padding: 0 6px;
+    gap: 4px;
+  }
+
+  .header-title {
+    font-size: 0.82rem;
+  }
 }
 </style>

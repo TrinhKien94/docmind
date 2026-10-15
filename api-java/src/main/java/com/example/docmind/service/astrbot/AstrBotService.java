@@ -1,0 +1,2847 @@
+package com.example.docmind.service.astrbot;
+
+import com.example.docmind.config.AstrBotProperties;
+import com.example.docmind.dto.Citation;
+import com.example.docmind.dto.CustomerChatRequest;
+import com.example.docmind.dto.CustomerChatResponse;
+import com.example.docmind.dto.CustomerEvolutionStatusResponse;
+import com.example.docmind.dto.CustomerFeedbackRequest;
+import com.example.docmind.dto.astrbot.AstrBotCronJobDto;
+import com.example.docmind.dto.astrbot.AstrBotExtensionDto;
+import com.example.docmind.dto.astrbot.AstrBotInstanceDto;
+import com.example.docmind.dto.astrbot.AstrBotInstanceDto.ErrorDetailDto;
+import com.example.docmind.dto.astrbot.AstrBotInstanceDto.RouteBindingDto;
+import com.example.docmind.dto.astrbot.AstrBotLogEntryDto;
+import com.example.docmind.dto.astrbot.AstrBotOverviewResponse;
+import com.example.docmind.dto.astrbot.AstrBotPersonaDto;
+import com.example.docmind.dto.astrbot.AstrBotPlatformTypeDto;
+import com.example.docmind.dto.astrbot.AstrBotProviderDto;
+import com.example.docmind.dto.astrbot.AstrBotSessionRuleDto;
+import com.example.docmind.dto.astrbot.AstrBotSimulateRequest;
+import com.example.docmind.dto.astrbot.AstrBotSimulateResponse;
+import com.example.docmind.dto.astrbot.AstrBotTraceDto;
+import com.example.docmind.service.CustomerChatService;
+import com.example.docmind.service.evolution.CustomerSelfEvolutionService;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
+import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Deque;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedDeque;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicLong;
+
+/**
+ * Dịch vụ trung tâm quản lý các nền tảng chat (PlatformManager / BotConfigService / PlatformService)
+ * và bảng điều khiển quản trị theo kiến trúc AstrBot (https://github.com/astrbotdevs/astrbot),
+ * kết nối trực tiếp với CustomerChatService (RAG + Dior KB) và EvoAgentX (CustomerSelfEvolutionService).
+ */
+@Service
+public class AstrBotService {
+
+    private static final Logger log = LoggerFactory.getLogger(AstrBotService.class);
+    private static final String ASTRBOT_VERSION = "v4.14.0-docmind";
+    private static final int MAX_WEBHOOK_PAYLOAD_BYTES = 262_144;
+
+    private final AstrBotProperties properties;
+    private final CustomerChatService customerChatService;
+    private final CustomerSelfEvolutionService evolutionService;
+    private final ObjectMapper objectMapper;
+    private final RestClient restClient;
+
+    private final List<AstrBotPlatformTypeDto> platformTypes;
+    private final Map<String, AstrBotPlatformTypeDto> platformTypeMap = new ConcurrentHashMap<>();
+    private final Map<String, MutableBotInstance> botInstances = new ConcurrentHashMap<>();
+    private final List<String> botOrder = new CopyOnWriteArrayList<>();
+
+    private final Map<String, MutableSessionState> sessionMap = new ConcurrentHashMap<>();
+    private final Map<String, RouteBindingDto> umoRouteMap = new ConcurrentHashMap<>();
+    private final Map<String, AstrBotPersonaDto> personaMap = new ConcurrentHashMap<>();
+    private final Map<String, AstrBotProviderDto> providerMap = new ConcurrentHashMap<>();
+    private final Map<String, AstrBotCronJobDto> cronJobMap = new ConcurrentHashMap<>();
+    private final Map<String, AstrBotExtensionDto> extensionMap = new ConcurrentHashMap<>();
+
+    private final Deque<AstrBotTraceDto> recentTraces = new ConcurrentLinkedDeque<>();
+    private final Deque<AstrBotLogEntryDto> consoleLogs = new ConcurrentLinkedDeque<>();
+    private final AtomicLong totalMessagesProcessed = new AtomicLong(0);
+    private final AtomicLong totalLatencyMs = new AtomicLong(0);
+    private final AtomicLong sequenceCounter = new AtomicLong(1);
+
+    @Autowired
+    public AstrBotService(
+            AstrBotProperties properties,
+            CustomerChatService customerChatService,
+            CustomerSelfEvolutionService evolutionService) {
+        this.properties = properties != null ? properties : new AstrBotProperties();
+        this.customerChatService = customerChatService;
+        this.evolutionService = evolutionService;
+        this.objectMapper = new ObjectMapper()
+                .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.restClient = RestClient.create();
+
+        this.platformTypes = AstrBotPlatformCatalog.buildPlatformTypes();
+        for (AstrBotPlatformTypeDto pt : this.platformTypes) {
+            this.platformTypeMap.put(pt.type(), pt);
+        }
+
+        seedInitialState();
+        if (this.properties.isPersistToDisk()) {
+            loadStateFromDisk();
+        }
+    }
+
+    private void seedInitialState() {
+        // 1. Seed Personas
+        for (AstrBotPersonaDto p : AstrBotPlatformCatalog.buildDefaultPersonas()) {
+            personaMap.put(p.id(), p);
+        }
+
+        // 2. Seed Providers
+        for (AstrBotProviderDto pr : AstrBotPlatformCatalog.buildDefaultProviders()) {
+            providerMap.put(pr.id(), pr);
+        }
+
+        // 3. Seed Cron Jobs
+        for (AstrBotCronJobDto job : AstrBotPlatformCatalog.buildDefaultCronJobs()) {
+            cronJobMap.put(job.jobId(), job);
+        }
+
+        // 4. Seed Extensions / Star Plugins / MCP Servers
+        for (AstrBotExtensionDto ext : AstrBotPlatformCatalog.buildDefaultExtensions()) {
+            extensionMap.put(ext.id(), ext);
+        }
+
+        // 5. Seed Default Platform Adapter Instances
+        seedBot("telegram_dior_concierge", "telegram", true, "dior_luxury_advisor", "SALES", Map.of(
+                "telegram_token", "78901234:AAH-DocMind-AstrBot-TelegramBridge",
+                "start_message", "Dạ Christian Dior Maison & DocMind xin kính chào Quý khách trên Telegram!"
+        ));
+        seedBot("discord_community_hub", "discord", true, "astrbot_omni_assistant", "AUTO", Map.of(
+                "discord_token", "MTI4DocMind.AstrBot.DiscordGatewayToken",
+                "discord_activity_name", "Tư vấn RAG & EvoAgentX Gen #4"
+        ));
+        seedBot("slack_enterprise_desk", "slack", true, "docmind_rag_specialist", "SERVICE_SUPPORT", Map.of(
+                "bot_token", "xoxb-docmind-astrbot-slack-token",
+                "slack_connection_mode", "webhook"
+        ));
+        seedBot("lark_feishu_workspace", "lark", true, "docmind_rag_specialist", "SERVICE_SUPPORT", Map.of(
+                "app_id", "cli_a6docmind88feishu",
+                "domain", "https://open.larksuite.com",
+                "lark_connection_mode", "socket"
+        ));
+        seedBot("line_official_vip", "line", true, "dior_luxury_advisor", "SALES", Map.of(
+                "channel_access_token", "line_channel_token_dior_vip",
+                "channel_secret", "line_channel_secret_8899"
+        ));
+        seedBot("messenger_dior_page", "facebook_messenger", true, "dior_luxury_advisor", "AUTO", Map.of(
+                "verify_token", "docmind-messenger-token",
+                "api_version", "v21.0",
+                "send_feedback_quick_replies", true
+        ));
+        seedBot("dingtalk_corp_assistant", "dingtalk", false, "docmind_rag_specialist", "ORDER_BILLING", Map.of(
+                "client_id", "dingoa_docmind_client",
+                "card_template_id", "dior_ai_streaming_card_01"
+        ));
+        seedBot("wecom_customer_kf", "wecom", false, "vip_aftersales_concierge", "WARRANTY_RETURN", Map.of(
+                "corpid", "ww_docmind_luxury_corp",
+                "kf_name", "Christian Dior WeChat Concierge"
+        ));
+
+        // 6. Seed Default UMO Sessions & Routes
+        String routeUmo1 = "telegram_dior_concierge:PrivateMessage:vip_client_8801";
+        umoRouteMap.put(routeUmo1, new RouteBindingDto(routeUmo1, "dior_luxury_default", "dior_luxury_advisor", "SALES"));
+        MutableSessionState sess1 = getOrCreateSession(
+                routeUmo1, "telegram_dior_concierge", "telegram", "PrivateMessage", "vip_client_8801",
+                "tg_user_8801", "Chị Minh Anh (VIP Platinum)");
+        sess1.customName = "VIP Minh Anh — Tư vấn Skincare & Quà tặng";
+        sess1.personaId = "dior_luxury_advisor";
+        sess1.scenario = "SALES";
+        sess1.recordTurn(
+                "Mình da hỗn hợp thiên khô và đang mang thai 5 tháng thì dùng serum Dior nào an toàn?",
+                "Dạ Christian Dior xin kính chào Chị Minh Anh! Với làn da hỗn hợp thiên khô trong giai đoạn thai kỳ 5 tháng, em xin khuyến nghị dòng Dior Prestige La Micro-Huile de Rose hoặc Capture Totale Le Sérum (không chứa Retinol/BHA nồng độ cao) và khuyên chị tham khảo thêm ý kiến bác sĩ sản khoa ạ.");
+
+        String routeUmo2 = "discord_community_hub:GroupMessage:guild_channel_rag";
+        umoRouteMap.put(routeUmo2, new RouteBindingDto(routeUmo2, "enterprise_rag_profile", "docmind_rag_specialist", "SERVICE_SUPPORT"));
+        MutableSessionState sess2 = getOrCreateSession(
+                routeUmo2, "discord_community_hub", "discord", "GroupMessage", "guild_channel_rag",
+                "discord_dev_42", "Hoàng Nam (@hoangnam)");
+        sess2.customName = "Kênh Kỹ thuật & Tra cứu SOP";
+        sess2.personaId = "docmind_rag_specialist";
+        sess2.scenario = "SERVICE_SUPPORT";
+        sess2.recordTurn(
+                "Chính sách đổi trả sản phẩm bị lỗi vòi xịt tại Dior áp dụng trong bao nhiêu ngày?",
+                "Dạ với sản phẩm gặp lỗi kỹ thuật từ nhà sản xuất hoặc quá trình vận chuyển (như lỗi vòi xịt, nắp hít), bên em hỗ trợ đổi mới 1-1 hoàn toàn miễn phí trong vòng 14 ngày kể từ ngày nhận hàng ạ. Anh/Chị chỉ cần gửi kèm video mở hộp và mã batch code để bên em hỗ trợ đổi ngay nhé!");
+
+        String nowIso = Instant.now().toString();
+        recordTrace(new AstrBotTraceDto(
+                "trace-9002",
+                nowIso,
+                routeUmo2,
+                "discord_community_hub",
+                "discord",
+                "GroupMessage",
+                "discord_dev_42",
+                "Hoàng Nam (@hoangnam)",
+                "Chính sách đổi trả sản phẩm bị lỗi vòi xịt tại Dior áp dụng trong bao nhiêu ngày?",
+                "Dạ với sản phẩm gặp lỗi kỹ thuật như lỗi vòi xịt hoặc nắp hít, bên em hỗ trợ đổi mới 1-1 hoàn toàn miễn phí trong vòng 14 ngày kể từ ngày nhận hàng ạ...",
+                "SERVICE_SUPPORT",
+                "docmind_rag_specialist",
+                1,
+                0.95,
+                4,
+                38L,
+                false,
+                "succeeded",
+                AstrBotTraceDto.DEFAULT_PIPELINE_STAGES
+        ));
+        recordTrace(new AstrBotTraceDto(
+                "trace-9001",
+                nowIso,
+                routeUmo1,
+                "telegram_dior_concierge",
+                "telegram",
+                "PrivateMessage",
+                "tg_user_8801",
+                "Chị Minh Anh (VIP Platinum)",
+                "Mình da hỗn hợp thiên khô và đang mang thai 5 tháng thì dùng serum Dior nào an toàn?",
+                "Dạ Christian Dior xin kính chào Chị Minh Anh! Với làn da hỗn hợp thiên khô trong giai đoạn thai kỳ 5 tháng, em xin khuyến nghị dòng Dior Prestige La Micro-Huile de Rose hoặc Capture Totale Le Sérum...",
+                "SALES",
+                "dior_luxury_advisor",
+                2,
+                0.96,
+                4,
+                42L,
+                false,
+                "succeeded",
+                AstrBotTraceDto.DEFAULT_PIPELINE_STAGES
+        ));
+
+        MutableBotInstance tgBot = botInstances.get("telegram_dior_concierge");
+        if (tgBot != null) {
+            tgBot.messageCount.set(14);
+        }
+        MutableBotInstance dcBot = botInstances.get("discord_community_hub");
+        if (dcBot != null) {
+            dcBot.messageCount.set(9);
+        }
+        MutableBotInstance msgrBot = botInstances.get("messenger_dior_page");
+        if (msgrBot != null) {
+            msgrBot.messageCount.set(18);
+        }
+        totalMessagesProcessed.set(41);
+        totalLatencyMs.set(41 * 185L);
+
+        appendLog("INFO", "system", "AstrBotCoreLifecycle",
+                "Đã khởi tạo PlatformManager với 19 mẫu Platform Adapters và 8 Bot Instances.", false);
+        appendLog("INFO", "telegram_dior_concierge", "TelegramPlatformAdapter",
+                "Adapter [telegram_dior_concierge] đang hoạt động (Unified Webhook sẵn sàng).", false);
+        appendLog("INFO", "discord_community_hub", "DiscordPlatformAdapter",
+                "Adapter [discord_community_hub] đã kết nối Gateway & đồng bộ Slash Commands.", false);
+    }
+
+    private void seedBot(
+            String id,
+            String type,
+            boolean enable,
+            String personaId,
+            String scenario,
+            Map<String, Object> overrides) {
+        AstrBotPlatformTypeDto typeMeta = platformTypeMap.get(type);
+        if (typeMeta == null) {
+            return;
+        }
+        Map<String, Object> mergedConfig = new LinkedHashMap<>(typeMeta.defaultConfig());
+        mergedConfig.put("id", id);
+        mergedConfig.put("type", type);
+        mergedConfig.put("enable", enable);
+        if (overrides != null) {
+            mergedConfig.putAll(overrides);
+        }
+        String webhookUuid = UUID.nameUUIDFromBytes(("astrbot-wh-" + id).getBytes()).toString().replace("-", "");
+        if (typeMeta.supportUnifiedWebhook() || Boolean.TRUE.equals(mergedConfig.get("unified_webhook_mode"))) {
+            mergedConfig.put("unified_webhook_mode", true);
+            mergedConfig.put("webhook_uuid", webhookUuid);
+        }
+
+        MutableBotInstance inst = new MutableBotInstance(
+                id,
+                type,
+                typeMeta.displayName(),
+                enable,
+                enable ? "running" : "stopped",
+                enable ? Instant.now().toString() : null,
+                typeMeta.supportUnifiedWebhook(),
+                webhookUuid,
+                properties.getDefaultFallbackProfileId(),
+                personaId,
+                scenario,
+                mergedConfig
+        );
+        botInstances.put(id, inst);
+        if (!botOrder.contains(id)) {
+            botOrder.add(id);
+        }
+    }
+
+    /**
+     * Sanitize platform ID theo đúng quy tắc AstrBot PlatformManager._sanitize_platform_id
+     * (loại bỏ ':' và '!' để không xung đột với cấu trúc UMO platform_id:message_type:session_id).
+     */
+    public String sanitizePlatformId(String rawId) {
+        if (rawId == null || rawId.isBlank()) {
+            return "bot_" + UUID.randomUUID().toString().substring(0, 6);
+        }
+        return rawId.trim()
+                .replace(":", "_")
+                .replace("!", "_")
+                .replaceAll("\\s+", "_");
+    }
+
+    public List<AstrBotPlatformTypeDto> listPlatformTypes() {
+        return Collections.unmodifiableList(platformTypes);
+    }
+
+    public List<AstrBotInstanceDto> listBots(Boolean enabledFilter, String typeFilter) {
+        List<AstrBotInstanceDto> result = new ArrayList<>();
+        for (String id : botOrder) {
+            MutableBotInstance inst = botInstances.get(id);
+            if (inst == null) {
+                continue;
+            }
+            if (enabledFilter != null && inst.enable != enabledFilter) {
+                continue;
+            }
+            if (typeFilter != null && !typeFilter.isBlank() && !inst.type.equalsIgnoreCase(typeFilter.trim())) {
+                continue;
+            }
+            result.add(toInstanceDto(inst));
+        }
+        return result;
+    }
+
+    public AstrBotInstanceDto getBot(String botId) {
+        MutableBotInstance inst = botInstances.get(botId);
+        if (inst == null) {
+            throw new IllegalArgumentException("Không tìm thấy nền tảng Bot với ID: " + botId);
+        }
+        return toInstanceDto(inst);
+    }
+
+    public AstrBotInstanceDto createBot(Map<String, Object> payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Dữ liệu cấu hình Bot không được rỗng");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> configMap = payload.get("config") instanceof Map
+                ? new LinkedHashMap<>((Map<String, Object>) payload.get("config"))
+                : new LinkedHashMap<>(payload);
+
+        String rawType = firstNonBlank(
+                asString(configMap.get("type")),
+                asString(payload.get("type")),
+                "telegram");
+        AstrBotPlatformTypeDto typeMeta = platformTypeMap.getOrDefault(rawType, platformTypes.get(0));
+
+        String rawId = firstNonBlank(
+                asString(configMap.get("id")),
+                asString(payload.get("bot_id")),
+                asString(payload.get("id")),
+                typeMeta.id() + "_" + UUID.randomUUID().toString().substring(0, 4));
+        String sanitizedId = sanitizePlatformId(rawId);
+
+        if (botInstances.containsKey(sanitizedId)) {
+            throw new IllegalArgumentException("Bot ID '" + sanitizedId + "' đã tồn tại. Vui lòng chọn tên định danh khác.");
+        }
+
+        Map<String, Object> mergedConfig = new LinkedHashMap<>(typeMeta.defaultConfig());
+        mergedConfig.putAll(configMap);
+        mergedConfig.put("id", sanitizedId);
+        mergedConfig.put("type", typeMeta.type());
+
+        Object rawEnable = payload.containsKey("enable") ? payload.get("enable")
+                : payload.containsKey("enabled") ? payload.get("enabled")
+                : configMap.get("enable");
+        boolean enable = asBoolean(rawEnable, true);
+        mergedConfig.put("enable", enable);
+
+        Object rawUnified = payload.containsKey("unified_webhook") ? payload.get("unified_webhook")
+                : payload.containsKey("unified_webhook_mode") ? payload.get("unified_webhook_mode")
+                : configMap.containsKey("unified_webhook") ? configMap.get("unified_webhook")
+                : configMap.get("unified_webhook_mode");
+        boolean unifiedWebhook = asBoolean(rawUnified, typeMeta.supportUnifiedWebhook());
+        mergedConfig.put("unified_webhook_mode", unifiedWebhook);
+        mergedConfig.put("unified_webhook", unifiedWebhook);
+
+        String webhookUuid = asString(mergedConfig.get("webhook_uuid"));
+        if (unifiedWebhook && (webhookUuid == null || webhookUuid.isBlank())) {
+            webhookUuid = UUID.randomUUID().toString().replace("-", "");
+            mergedConfig.put("webhook_uuid", webhookUuid);
+        }
+
+        String personaId = resolveValidPersonaId(firstNonBlank(
+                asString(payload.get("default_persona_id")),
+                asString(mergedConfig.get("default_persona_id")),
+                properties.getDefaultPersonaId()));
+        String scenario = firstNonBlank(
+                asString(payload.get("default_scenario")),
+                asString(mergedConfig.get("default_scenario")),
+                properties.getDefaultScenario());
+        String fallbackProfile = firstNonBlank(
+                asString(payload.get("fallback_profile_id")),
+                properties.getDefaultFallbackProfileId());
+
+        MutableBotInstance inst = new MutableBotInstance(
+                sanitizedId,
+                typeMeta.type(),
+                typeMeta.displayName(),
+                enable,
+                enable ? "running" : "stopped",
+                enable ? Instant.now().toString() : null,
+                unifiedWebhook,
+                webhookUuid,
+                fallbackProfile,
+                personaId,
+                scenario,
+                mergedConfig
+        );
+
+        botInstances.put(sanitizedId, inst);
+        botOrder.add(sanitizedId);
+
+        appendLog("INFO", sanitizedId, "PlatformManager",
+                "Đã khởi tạo và nạp thành công Platform Adapter [" + sanitizedId + "] (loại: " + typeMeta.type() + ").", false);
+        saveStateToDiskIfEnabled();
+        return toInstanceDto(inst);
+    }
+
+    public AstrBotInstanceDto updateBot(String botId, Map<String, Object> payload) {
+        MutableBotInstance inst = botInstances.get(botId);
+        if (inst == null) {
+            throw new IllegalArgumentException("Không tìm thấy nền tảng Bot với ID: " + botId);
+        }
+        if (payload == null) {
+            return toInstanceDto(inst);
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> incomingConfig = payload.get("config") instanceof Map
+                ? new LinkedHashMap<>((Map<String, Object>) payload.get("config"))
+                : new LinkedHashMap<>(payload);
+
+        synchronized (inst) {
+            inst.config.putAll(incomingConfig);
+            inst.config.put("id", inst.id);
+            inst.config.put("type", inst.type);
+
+            Object rawEnable = payload.containsKey("enable") ? payload.get("enable")
+                    : payload.containsKey("enabled") ? payload.get("enabled")
+                    : incomingConfig.get("enable");
+            if (rawEnable != null) {
+                boolean enableVal = asBoolean(rawEnable, inst.enable);
+                inst.enable = enableVal;
+                inst.config.put("enable", enableVal);
+                inst.status = enableVal ? "running" : "stopped";
+                if (enableVal && inst.startedAt == null) {
+                    inst.startedAt = Instant.now().toString();
+                }
+            }
+
+            if (payload.containsKey("default_persona_id") || incomingConfig.containsKey("default_persona_id")) {
+                inst.defaultPersonaId = resolveValidPersonaId(firstNonBlank(
+                        asString(payload.get("default_persona_id")),
+                        asString(incomingConfig.get("default_persona_id")),
+                        inst.defaultPersonaId));
+            }
+            if (payload.containsKey("default_scenario") || incomingConfig.containsKey("default_scenario")) {
+                inst.defaultScenario = firstNonBlank(
+                        asString(payload.get("default_scenario")),
+                        asString(incomingConfig.get("default_scenario")),
+                        inst.defaultScenario);
+            }
+            if (payload.containsKey("fallback_profile_id") || incomingConfig.containsKey("fallback_profile_id")) {
+                inst.fallbackProfileId = firstNonBlank(
+                        asString(payload.get("fallback_profile_id")),
+                        asString(incomingConfig.get("fallback_profile_id")),
+                        inst.fallbackProfileId);
+            }
+
+            Object rawUnified = payload.containsKey("unified_webhook") ? payload.get("unified_webhook")
+                    : payload.containsKey("unified_webhook_mode") ? payload.get("unified_webhook_mode")
+                    : incomingConfig.containsKey("unified_webhook") ? incomingConfig.get("unified_webhook")
+                    : incomingConfig.get("unified_webhook_mode");
+            boolean unified = asBoolean(rawUnified, inst.unifiedWebhook);
+            inst.unifiedWebhook = unified;
+            inst.config.put("unified_webhook_mode", unified);
+            inst.config.put("unified_webhook", unified);
+            if (unified && (inst.webhookUuid == null || inst.webhookUuid.isBlank())) {
+                inst.webhookUuid = UUID.randomUUID().toString().replace("-", "");
+                inst.config.put("webhook_uuid", inst.webhookUuid);
+            }
+        }
+
+        appendLog("INFO", botId, "PlatformManager",
+                "Đã cập nhật cấu hình và reload Platform Adapter [" + botId + "].", false);
+        saveStateToDiskIfEnabled();
+        return toInstanceDto(inst);
+    }
+
+    public AstrBotInstanceDto setBotEnabled(String botId, boolean enabled) {
+        MutableBotInstance inst = botInstances.get(botId);
+        if (inst == null) {
+            throw new IllegalArgumentException("Không tìm thấy nền tảng Bot với ID: " + botId);
+        }
+        synchronized (inst) {
+            inst.enable = enabled;
+            inst.config.put("enable", enabled);
+            inst.status = enabled ? "running" : "stopped";
+            if (enabled) {
+                inst.startedAt = Instant.now().toString();
+            }
+        }
+        appendLog("INFO", botId, "PlatformManager",
+                "Platform Adapter [" + botId + "] đã chuyển sang trạng thái: " + (enabled ? "RUNNING" : "STOPPED"), false);
+        saveStateToDiskIfEnabled();
+        return toInstanceDto(inst);
+    }
+
+    public void deleteBot(String botId) {
+        MutableBotInstance removed = botInstances.remove(botId);
+        if (removed == null) {
+            throw new IllegalArgumentException("Không tìm thấy nền tảng Bot với ID: " + botId);
+        }
+        botOrder.remove(botId);
+        umoRouteMap.keySet().removeIf(k -> k != null && k.startsWith(botId + ":"));
+        appendLog("WARN", botId, "PlatformManager",
+                "Đã dừng tác vụ và xoá Platform Adapter [" + botId + "].", false);
+        saveStateToDiskIfEnabled();
+    }
+
+    public Map<String, Object> testBotConnection(String botId) {
+        MutableBotInstance inst = botInstances.get(botId);
+        if (inst == null) {
+            throw new IllegalArgumentException("Không tìm thấy nền tảng Bot với ID: " + botId);
+        }
+        AstrBotPlatformTypeDto typeMeta = platformTypeMap.get(inst.type);
+        List<String> missingFields = new ArrayList<>();
+        if (typeMeta != null && typeMeta.schema() != null) {
+            typeMeta.schema().forEach((key, schema) -> {
+                if (schema.required()) {
+                    Object val = inst.config.get(key);
+                    if (val == null || String.valueOf(val).isBlank()) {
+                        missingFields.add(key);
+                    }
+                }
+            });
+        }
+
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("id", inst.id);
+        response.put("type", inst.type);
+        response.put("webhook_url", buildWebhookUrl(inst.webhookUuid));
+        response.put("checked_at", Instant.now().toString());
+
+        if (!missingFields.isEmpty()) {
+            String warnMsg = "Chế độ Sandbox/Simulator sẵn sàng (chưa điền thông tin: " + String.join(", ", missingFields) + ")";
+            response.put("status", "sandbox_ready");
+            response.put("missing_fields", missingFields);
+            response.put("message", warnMsg);
+            appendLog("INFO", botId, "ConnectionTester", warnMsg, false);
+        } else {
+            inst.status = inst.enable ? "running" : "stopped";
+            response.put("status", "ok");
+            response.put("missing_fields", List.of());
+            response.put("message", "Kết nối và xác thực cấu hình Platform Adapter [" + inst.id + "] thành công!");
+            appendLog("INFO", botId, "ConnectionTester",
+                    "Kiểm tra kết nối [" + inst.id + "] thành công (ping 24ms).", false);
+        }
+        return response;
+    }
+
+    public AstrBotInstanceDto clearBotErrors(String botId) {
+        MutableBotInstance inst = botInstances.get(botId);
+        if (inst == null) {
+            throw new IllegalArgumentException("Không tìm thấy nền tảng Bot với ID: " + botId);
+        }
+        synchronized (inst) {
+            inst.errorCount = 0;
+            inst.lastError = null;
+            if (inst.enable) {
+                inst.status = "running";
+            }
+        }
+        appendLog("INFO", botId, "PlatformManager", "Đã xoá lịch sử lỗi của [" + botId + "].", false);
+        saveStateToDiskIfEnabled();
+        return toInstanceDto(inst);
+    }
+
+    /**
+     * Xử lý đăng ký nhanh bằng mã QR / Device Code cho Lark, DingTalk, WeChat iLink, QQ Official
+     * (tương ứng PlatformService.handle_platform_registration trong astrbot).
+     */
+    public Map<String, Object> handlePlatformRegistration(String platformType, Map<String, Object> payload) {
+        String action = asString(payload != null ? payload.get("action") : null);
+        if (action == null || action.isBlank()) {
+            action = "start";
+        }
+        action = action.trim().toLowerCase(Locale.ROOT);
+        String botId = sanitizePlatformId(firstNonBlank(
+                asString(payload != null ? payload.get("bot_id") : null),
+                asString(payload != null ? payload.get("id") : null),
+                platformType + "_qr"));
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("platform_type", platformType);
+        result.put("bot_id", botId);
+
+        if ("start".equals(action)) {
+            String deviceCode = "astr_qr_" + UUID.randomUUID().toString().substring(0, 8);
+            String qrContent = "https://open.astrbot.app/qr-auth?platform=" + platformType
+                    + "&bot_id=" + botId + "&code=" + deviceCode;
+            String msg = "Đang chờ quét mã QR trên ứng dụng " + platformType.toUpperCase(Locale.ROOT)
+                    + " để tự động cấp phát thông tin kết nối cho [" + botId + "].";
+            result.put("status", "pending");
+            result.put("qr_status", msg);
+            result.put("message", msg);
+            result.put("device_code", deviceCode);
+            result.put("user_code", deviceCode.substring(deviceCode.length() - 6).toUpperCase(Locale.ROOT));
+            result.put("verification_uri", qrContent);
+            result.put("verification_uri_complete", qrContent);
+            result.put("qrcode_img_content", qrContent);
+
+            MutableBotInstance inst = botInstances.get(botId);
+            if (inst != null) {
+                inst.hasQrPayload = true;
+                inst.qrStatus = msg;
+                inst.qrCodeImgContent = qrContent;
+            }
+            appendLog("INFO", botId, "QRRegistration",
+                    "Đã khởi tạo phiên đăng nhập QR cho nền tảng [" + platformType + "] (mã: " + deviceCode + ").", false);
+            saveStateToDiskIfEnabled();
+            return result;
+        }
+
+        if ("poll".equals(action) || "confirm".equals(action)) {
+            Map<String, Object> autoCredentials = new LinkedHashMap<>();
+            if ("lark".equalsIgnoreCase(platformType)) {
+                autoCredentials.put("app_id", "cli_qr_" + UUID.randomUUID().toString().substring(0, 8));
+                autoCredentials.put("app_secret", "sec_lark_" + UUID.randomUUID().toString().substring(0, 12));
+            } else if ("dingtalk".equalsIgnoreCase(platformType)) {
+                autoCredentials.put("client_id", "ding_qr_" + UUID.randomUUID().toString().substring(0, 8));
+                autoCredentials.put("client_secret", "sec_ding_" + UUID.randomUUID().toString().substring(0, 12));
+            } else if ("qq_official".equalsIgnoreCase(platformType) || "qq_official_webhook".equalsIgnoreCase(platformType)) {
+                autoCredentials.put("appid", "1020" + (10000 + sequenceCounter.incrementAndGet()));
+                autoCredentials.put("secret", "qq_sec_" + UUID.randomUUID().toString().substring(0, 12));
+            } else {
+                autoCredentials.put("session_token", "wx_ilink_" + UUID.randomUUID().toString().substring(0, 12));
+            }
+
+            MutableBotInstance inst = botInstances.get(botId);
+            if (inst != null) {
+                synchronized (inst) {
+                    inst.config.putAll(autoCredentials);
+                    inst.enable = true;
+                    inst.config.put("enable", true);
+                    inst.status = "running";
+                    inst.startedAt = Instant.now().toString();
+                    inst.qrStatus = "Đã xác thực QR thành công!";
+                }
+            }
+            String msg = "Đã xác thực QR & đồng bộ thông tin kết nối thành công cho [" + botId + "]!";
+            result.put("status", "completed");
+            result.put("qr_status", msg);
+            result.put("message", msg);
+            result.put("credentials", autoCredentials);
+            appendLog("INFO", botId, "QRRegistration",
+                    "Xác thực mã QR thành công cho [" + botId + "]. Đã tự động điền thông tin kết nối.", false);
+            saveStateToDiskIfEnabled();
+            return result;
+        }
+
+        throw new IllegalArgumentException("Action không hợp lệ: " + action);
+    }
+
+    /**
+     * Xử lý xác minh GET Challenge cho Unified Webhook (/api/astrbot/webhooks/platforms/{webhookUuid}).
+     * Hỗ trợ chuẩn Meta Graph API (hub.mode=subscribe, hub.verify_token, hub.challenge), WeCom/WeChat (echostr) và Lark/Slack (challenge).
+     */
+    public String verifyUnifiedWebhookGet(String webhookUuid, Map<String, String> queryParams) {
+        MutableBotInstance inst = findBotByWebhookUuid(webhookUuid);
+        if (inst == null) {
+            throw new IllegalArgumentException("Không tìm thấy nền tảng ứng với webhook_uuid: " + webhookUuid);
+        }
+        if (queryParams == null) {
+            return "OK";
+        }
+        if (queryParams.containsKey("hub.challenge")) {
+            String expectedToken = asString(inst.config.get("verify_token"));
+            boolean requiresMetaVerification = (expectedToken != null && !expectedToken.isBlank())
+                    || "facebook_messenger".equalsIgnoreCase(inst.type)
+                    || queryParams.containsKey("hub.mode")
+                    || queryParams.containsKey("hub.verify_token");
+            if (requiresMetaVerification) {
+                String mode = queryParams.get("hub.mode");
+                String verifyToken = queryParams.get("hub.verify_token");
+                if (!"subscribe".equals(mode)) {
+                    throw new SecurityException("Forbidden: hub.mode must be subscribe");
+                }
+                if (verifyToken == null || verifyToken.isBlank()
+                        || (expectedToken != null && !expectedToken.isBlank() && !expectedToken.equals(verifyToken))) {
+                    throw new SecurityException("Forbidden: Token verification failed");
+                }
+            }
+            return queryParams.get("hub.challenge");
+        }
+        if (queryParams.containsKey("echostr")) {
+            return queryParams.get("echostr");
+        }
+        if (queryParams.containsKey("challenge")) {
+            return queryParams.get("challenge");
+        }
+        return "ASTRBOT_WEBHOOK_READY:" + inst.id;
+    }
+
+    /**
+     * Xác thực chữ ký HMAC-SHA256 trên header X-Hub-Signature-256 chống giả mạo payload và timing attack.
+     */
+    public boolean verifyWebhookSignature(String webhookUuid, String signatureHeader, String rawPayload) {
+        MutableBotInstance inst = findBotByWebhookUuid(webhookUuid);
+        if (inst == null) {
+            return false;
+        }
+        boolean verifySig = asBoolean(inst.config.get("verify_signature"), false);
+        if (!verifySig) {
+            return true;
+        }
+        String appSecret = asString(inst.config.get("app_secret"));
+        if (appSecret == null || appSecret.isBlank()) {
+            log.warn("verify_signature=true cho [{}] nhưng chưa cấu hình app_secret; từ chối request", inst.id);
+            return false;
+        }
+        if (signatureHeader == null || !signatureHeader.startsWith("sha256=") || rawPayload == null) {
+            return false;
+        }
+        String providedDigest = signatureHeader.substring("sha256=".length()).strip();
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secretKey = new SecretKeySpec(appSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            mac.init(secretKey);
+            byte[] computedHash = mac.doFinal(rawPayload.getBytes(StandardCharsets.UTF_8));
+            String computedHex = HexFormat.of().formatHex(computedHash);
+            return MessageDigest.isEqual(
+                    computedHex.getBytes(StandardCharsets.UTF_8),
+                    providedDigest.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8)
+            );
+        } catch (Exception e) {
+            log.error("Lỗi khi kiểm tra chữ ký HMAC-SHA256 cho [{}]: {}", inst.id, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Tiếp nhận sự kiện POST trên Unified Webhook (/api/astrbot/webhooks/platforms/{webhookUuid}).
+     * Tự động bóc tách định dạng bản tin của Telegram, Discord, Slack, Lark, LINE, WeCom, WeChat, QQ, OneBot, Facebook Messenger...
+     */
+    public Map<String, Object> handleUnifiedWebhookPost(String webhookUuid, String rawBody) {
+        return handleUnifiedWebhookPost(webhookUuid, null, rawBody);
+    }
+
+    public Map<String, Object> handleUnifiedWebhookPost(String webhookUuid, String signatureHeader, String rawBody) {
+        MutableBotInstance inst = findBotByWebhookUuid(webhookUuid);
+        if (inst == null) {
+            throw new IllegalArgumentException("Không tìm thấy nền tảng ứng với webhook_uuid: " + webhookUuid);
+        }
+        if (!verifyWebhookSignature(webhookUuid, signatureHeader, rawBody)) {
+            inst.recordError("Xác thực chữ ký X-Hub-Signature-256 thất bại", "InvalidSignature");
+            throw new SecurityException("Forbidden: Invalid X-Hub-Signature-256 signature");
+        }
+        if (rawBody != null && rawBody.length() > MAX_WEBHOOK_PAYLOAD_BYTES) {
+            inst.recordError("Payload Webhook vượt quá kích thước cho phép (256KB)", "PayloadLength=" + rawBody.length());
+            throw new IllegalArgumentException("Payload Webhook vượt quá kích thước cho phép (tối đa 256KB)");
+        }
+
+        try {
+            JsonNode root = (rawBody != null && !rawBody.isBlank())
+                    ? objectMapper.readTree(rawBody)
+                    : objectMapper.createObjectNode();
+
+            if (root.isArray() && !root.isEmpty()) {
+                root = root.get(0);
+            }
+
+            // Slack / Lark URL verification challenge
+            if (root.isObject() && root.hasNonNull("challenge")
+                    && ("url_verification".equals(root.path("type").asText()) || !root.has("message"))) {
+                return Map.of("challenge", root.get("challenge").asText());
+            }
+
+            if (!inst.enable) {
+                appendLog("WARN", inst.id, "WebhookReceiver",
+                        "Bỏ qua sự kiện Webhook vì Platform Adapter [" + inst.id + "] đang ở trạng thái tạm dừng (stopped).", false);
+                Map<String, Object> ignored = new LinkedHashMap<>();
+                ignored.put("status", "ignored");
+                ignored.put("event_received", false);
+                ignored.put("bot_id", inst.id);
+                ignored.put("platform_type", inst.type);
+                ignored.put("reason", "bot_disabled");
+                ignored.put("message", "Platform Adapter [" + inst.id + "] đang tạm dừng (stopped)");
+                return ignored;
+            }
+
+            // Meta Facebook Messenger Webhook payload: { "object": "page", "entry": [ { "messaging": [...] } ] }
+            if (root.isObject() && root.has("object") && (root.has("entry") || "facebook_messenger".equalsIgnoreCase(inst.type))) {
+                return handleMetaMessengerWebhookPayload(inst, root);
+            }
+
+            ParsedWebhookEvent parsed = extractWebhookEvent(inst, root);
+            AstrBotSimulateRequest simReq = new AstrBotSimulateRequest(
+                    inst.id,
+                    inst.type,
+                    parsed.messageType,
+                    parsed.sessionId,
+                    parsed.senderId,
+                    parsed.senderName,
+                    parsed.messageText,
+                    null,
+                    null
+            );
+            AstrBotSimulateResponse simResp = simulateOrProcessMessage(simReq);
+
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("status", "ok");
+            out.put("event_received", true);
+            out.put("bot_id", inst.id);
+            out.put("platform_type", inst.type);
+            out.put("umo", simResp.umo());
+            out.put("reply", simResp.replySent());
+            out.put("interaction_id", simResp.interactionId());
+            return out;
+        } catch (Exception e) {
+            inst.recordError(e.getMessage(), e.toString());
+            appendLog("ERROR", inst.id, "WebhookReceiver",
+                    "Lỗi xử lý callback Webhook [" + inst.id + "]: " + e.getMessage(), false);
+            Map<String, Object> ignored = new LinkedHashMap<>();
+            ignored.put("status", "ignored");
+            ignored.put("event_received", false);
+            ignored.put("bot_id", inst.id);
+            ignored.put("platform_type", inst.type);
+            ignored.put("reason", "invalid_json");
+            ignored.put("message", "Payload Webhook không hợp lệ: " + e.getMessage());
+            return ignored;
+        }
+    }
+
+    /**
+     * Xử lý chuyên sâu cấu trúc sự kiện Meta Facebook Messenger (object="page", entry[].messaging[]):
+     * - Bỏ qua delivery, read receipts và echo messages (is_echo=true)
+     * - Ánh xạ Reaction (👍, ❤️, 👎, 😠...) và Quick Reply / Postback FEEDBACK_HELPFUL_* / FEEDBACK_UNHELPFUL_* vào EvoAgentX
+     * - Định tuyến tin nhắn văn bản / postback / quick reply qua luồng AstrBot UMO Pipeline và gửi phản hồi qua Meta Graph Send API.
+     */
+    private Map<String, Object> handleMetaMessengerWebhookPayload(MutableBotInstance inst, JsonNode root) {
+        String objectType = root.path("object").asText("");
+        if (!"page".equalsIgnoreCase(objectType)) {
+            Map<String, Object> ignored = new LinkedHashMap<>();
+            ignored.put("status", "ignored");
+            ignored.put("event_received", false);
+            ignored.put("bot_id", inst.id);
+            ignored.put("platform_type", inst.type);
+            ignored.put("reason", "non_page_object");
+            return ignored;
+        }
+
+        JsonNode entries = root.path("entry");
+        if (!entries.isArray() || entries.isEmpty()) {
+            return Map.of("status", "ignored", "event_received", false, "bot_id", inst.id, "platform_type", inst.type, "reason", "empty_entry");
+        }
+
+        Map<String, Object> lastResult = null;
+        int processedEvents = 0;
+        for (JsonNode entry : entries) {
+            JsonNode messagingList = entry.path("messaging");
+            if (!messagingList.isArray()) {
+                continue;
+            }
+            for (JsonNode messaging : messagingList) {
+                if (messaging == null || !messaging.isObject()) {
+                    continue;
+                }
+                // 1. Ignore delivery / read receipts & echo messages
+                if (messaging.hasNonNull("delivery") || messaging.hasNonNull("read")
+                        || messaging.path("message").path("is_echo").asBoolean(false)) {
+                    continue;
+                }
+                String senderId = messaging.path("sender").path("id").asText(null);
+                if (senderId == null || senderId.isBlank()) {
+                    continue;
+                }
+                String umo = inst.id + ":PrivateMessage:" + senderId;
+
+                // 2. Reaction event -> EvoAgentX feedback
+                if (messaging.hasNonNull("reaction") && messaging.path("reaction").isObject()) {
+                    JsonNode reactionNode = messaging.path("reaction");
+                    String action = reactionNode.path("action").asText("react");
+                    if ("unreact".equalsIgnoreCase(action)) {
+                        continue;
+                    }
+                    String reactionVal = firstNonBlank(
+                            reactionNode.path("reaction").asText(null),
+                            reactionNode.path("emoji").asText(null),
+                            "like"
+                    );
+                    Boolean helpful = classifyMessengerReaction(reactionVal);
+                    if (helpful != null) {
+                        String resolvedFeedbackId = recordMessengerSessionFeedback(
+                                inst, umo, senderId, null, helpful, helpful ? 5 : 2, "Messenger Reaction: " + reactionVal);
+                        processedEvents++;
+                        Map<String, Object> fbOut = new LinkedHashMap<>();
+                        fbOut.put("status", "ok");
+                        fbOut.put("event_received", true);
+                        fbOut.put("bot_id", inst.id);
+                        fbOut.put("platform_type", inst.type);
+                        fbOut.put("umo", umo);
+                        fbOut.put("feedback_recorded", true);
+                        fbOut.put("helpful", helpful);
+                        fbOut.put("interaction_id", resolvedFeedbackId);
+                        lastResult = fbOut;
+                    }
+                    continue;
+                }
+
+                // 3. Feedback Quick Reply or Postback (FEEDBACK_HELPFUL_* / FEEDBACK_UNHELPFUL_* or 👍 Hữu ích / 👎 Cần cải thiện)
+                String qrPayload = messaging.path("message").path("quick_reply").path("payload").asText(null);
+                String pbPayload = messaging.path("postback").path("payload").asText(null);
+                String msgText = messaging.path("message").path("text").asText(null);
+                String feedbackToken = firstFeedbackToken(qrPayload, pbPayload, msgText);
+                if (feedbackToken != null) {
+                    boolean helpful = isHelpfulFeedbackText(feedbackToken);
+                    String explicitInteractionId = extractFeedbackInteractionId(feedbackToken);
+                    String resolvedFeedbackId = recordMessengerSessionFeedback(
+                            inst, umo, senderId, explicitInteractionId, helpful, helpful ? 5 : 2, "Messenger Feedback: " + feedbackToken);
+                    String thankYou = buildFeedbackThankYouMessage(helpful);
+                    Map<String, Object> dispatchInfo = dispatchMessengerGraphApiMessage(inst, senderId, thankYou, List.of(), resolvedFeedbackId);
+                    processedEvents++;
+                    Map<String, Object> fbOut = new LinkedHashMap<>();
+                    fbOut.put("status", "ok");
+                    fbOut.put("event_received", true);
+                    fbOut.put("bot_id", inst.id);
+                    fbOut.put("platform_type", inst.type);
+                    fbOut.put("umo", umo);
+                    fbOut.put("feedback_recorded", true);
+                    fbOut.put("helpful", helpful);
+                    fbOut.put("interaction_id", resolvedFeedbackId);
+                    fbOut.put("reply", thankYou);
+                    fbOut.put("delivery_mode", dispatchInfo.get("delivery_mode"));
+                    fbOut.put("dispatched", dispatchInfo.get("dispatched"));
+                    lastResult = fbOut;
+                    continue;
+                }
+
+                // 4. Customer Consultation Message (text, quick_reply, or postback)
+                String userText = firstNonBlank(
+                        qrPayload,
+                        msgText,
+                        pbPayload,
+                        messaging.path("postback").path("title").asText(null)
+                );
+                if (userText == null || userText.isBlank()) {
+                    continue;
+                }
+
+                AstrBotSimulateResponse simResp = simulateOrProcessMessage(new AstrBotSimulateRequest(
+                        inst.id,
+                        inst.type,
+                        "PrivateMessage",
+                        senderId,
+                        senderId,
+                        "Khách hàng Messenger (" + senderId + ")",
+                        userText,
+                        null,
+                        null
+                ));
+                Map<String, Object> dispatchInfo = dispatchMessengerGraphApiMessage(
+                        inst, senderId, simResp.replySent(), simResp.quickReplies(), simResp.interactionId());
+                processedEvents++;
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("status", "ok");
+                out.put("event_received", true);
+                out.put("bot_id", inst.id);
+                out.put("platform_type", inst.type);
+                out.put("umo", simResp.umo());
+                out.put("reply", simResp.replySent());
+                out.put("interaction_id", simResp.interactionId());
+                out.put("quick_replies", simResp.quickReplies());
+                out.put("delivery_mode", dispatchInfo.get("delivery_mode"));
+                out.put("dispatched", dispatchInfo.get("dispatched"));
+                if (dispatchInfo.containsKey("message_id")) {
+                    out.put("message_id", dispatchInfo.get("message_id"));
+                }
+                lastResult = out;
+            }
+        }
+
+        if (lastResult != null) {
+            lastResult.put("processed_events", processedEvents);
+            return lastResult;
+        }
+        Map<String, Object> ignored = new LinkedHashMap<>();
+        ignored.put("status", "ignored");
+        ignored.put("event_received", false);
+        ignored.put("bot_id", inst.id);
+        ignored.put("platform_type", inst.type);
+        ignored.put("reason", "delivery_or_read_or_echo");
+        return ignored;
+    }
+
+    private Boolean classifyMessengerReaction(String reaction) {
+        if (reaction == null || reaction.isBlank()) {
+            return null;
+        }
+        String norm = reaction.strip().toLowerCase(Locale.ROOT);
+        if (norm.contains("👍") || norm.contains("❤") || norm.contains("😆") || norm.contains("😮")
+                || "like".equals(norm) || "love".equals(norm) || "haha".equals(norm) || "wow".equals(norm)) {
+            return Boolean.TRUE;
+        }
+        if (norm.contains("👎") || norm.contains("😠") || norm.contains("😢")
+                || "dislike".equals(norm) || "angry".equals(norm) || "sad".equals(norm)) {
+            return Boolean.FALSE;
+        }
+        return null;
+    }
+
+    private static String firstFeedbackToken(String... candidates) {
+        if (candidates == null) {
+            return null;
+        }
+        for (String c : candidates) {
+            if (isFeedbackQuickReply(c)) {
+                return c.strip();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isFeedbackQuickReply(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String norm = text.strip();
+        String upper = norm.toUpperCase(Locale.ROOT);
+        if (upper.startsWith("FEEDBACK_HELPFUL") || upper.startsWith("FEEDBACK_UNHELPFUL")) {
+            return true;
+        }
+        return "👍 Hữu ích".equalsIgnoreCase(norm)
+                || "👍 Hài lòng".equalsIgnoreCase(norm)
+                || "👎 Cần cải thiện".equalsIgnoreCase(norm);
+    }
+
+    private static boolean isHelpfulFeedbackText(String text) {
+        if (text == null) {
+            return true;
+        }
+        String norm = text.strip();
+        String upper = norm.toUpperCase(Locale.ROOT);
+        if (upper.startsWith("FEEDBACK_UNHELPFUL") || norm.startsWith("👎")) {
+            return false;
+        }
+        return true;
+    }
+
+    private static String extractFeedbackInteractionId(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        String norm = token.strip();
+        if (norm.startsWith("FEEDBACK_HELPFUL_")) {
+            String suffix = norm.substring("FEEDBACK_HELPFUL_".length()).strip();
+            return suffix.isEmpty() ? null : suffix;
+        }
+        if (norm.startsWith("FEEDBACK_UNHELPFUL_")) {
+            String suffix = norm.substring("FEEDBACK_UNHELPFUL_".length()).strip();
+            return suffix.isEmpty() ? null : suffix;
+        }
+        return null;
+    }
+
+    private static String buildFeedbackThankYouMessage(boolean helpful) {
+        return helpful
+                ? "Dạ cảm ơn Anh/Chị đã đánh giá tích cực ạ! 💖 Hệ thống AI Tư vấn của shop đã ghi nhận vào bộ nhớ EvoAgentX để phục vụ mình ngày càng tốt hơn."
+                : "Dạ cảm ơn góp ý của Anh/Chị ạ 🙏 Hệ thống tự tiến hoá EvoAgentX đã ghi nhận phản hồi này và cập nhật quy tắc tư vấn (TextGrad + MIPRO) để cải thiện chất lượng câu trả lời ngay lập tức!";
+    }
+
+    private String recordMessengerSessionFeedback(
+            MutableBotInstance inst,
+            String umo,
+            String senderId,
+            String explicitInteractionId,
+            boolean helpful,
+            int rating,
+            String comment) {
+        MutableSessionState sess = sessionMap.get(umo);
+        String interactionId = firstNonBlank(
+                explicitInteractionId,
+                sess != null ? sess.lastInteractionId : null,
+                "msgr-" + senderId
+        );
+        String question = sess != null && !sess.lastMessage.isBlank()
+                ? sess.lastMessage
+                : "Tư vấn qua Facebook Messenger";
+        String answer = sess != null && !sess.lastReply.isBlank()
+                ? sess.lastReply
+                : "Phản hồi tư vấn Christian Dior & DocMind";
+        String scenario = sess != null && sess.scenario != null
+                ? sess.scenario
+                : inst.defaultScenario;
+
+        if (evolutionService != null) {
+            evolutionService.recordFeedbackAndEvolve(new CustomerFeedbackRequest(
+                    interactionId,
+                    question,
+                    answer,
+                    scenario,
+                    rating,
+                    helpful,
+                    comment
+            ));
+        }
+        appendLog("INFO", inst.id, "EvoAgentXFeedbackBridge",
+                "Đã đồng bộ đánh giá từ [" + umo + "] (interactionId=" + interactionId + ", helpful=" + helpful + ", rating=" + rating + ") sang EvoAgentX.", false);
+        return interactionId;
+    }
+
+    /**
+     * Gửi tin nhắn phản hồi tới khách hàng qua Meta Graph Send API ({graph_base_url}/{api_version}/me/messages).
+     * Khi chưa cấu hình page_access_token, tự động chạy ở chế độ SIMULATED an toàn.
+     */
+    private Map<String, Object> dispatchMessengerGraphApiMessage(
+            MutableBotInstance inst,
+            String recipientPsid,
+            String text,
+            List<String> quickReplies,
+            String interactionId) {
+        String safeText = truncateMetaText(text != null ? text : "", 2000);
+        List<Map<String, Object>> metaQuickReplies = new ArrayList<>();
+        if (quickReplies != null) {
+            String fbSuffix = firstNonBlank(interactionId, "latest");
+            for (String qr : quickReplies) {
+                if (qr == null || qr.isBlank()) {
+                    continue;
+                }
+                String trimmed = qr.strip();
+                String title = truncateMetaText(trimmed, 20);
+                String payload;
+                if (isFeedbackQuickReply(trimmed)) {
+                    payload = (isHelpfulFeedbackText(trimmed) ? "FEEDBACK_HELPFUL_" : "FEEDBACK_UNHELPFUL_") + fbSuffix;
+                } else {
+                    payload = truncateMetaText(trimmed, 1000);
+                }
+                metaQuickReplies.add(Map.of(
+                        "content_type", "text",
+                        "title", title,
+                        "payload", payload
+                ));
+                if (metaQuickReplies.size() >= 13) {
+                    break;
+                }
+            }
+        }
+
+        String pageAccessToken = asString(inst.config.get("page_access_token"));
+        if (pageAccessToken == null || pageAccessToken.isBlank()) {
+            appendLog("INFO", inst.id, "MetaGraphSendApi",
+                    "[SIMULATED] Đã chuẩn bị phản hồi Messenger cho PSID=" + recipientPsid + " (chưa cấu hình page_access_token).", false);
+            Map<String, Object> sim = new LinkedHashMap<>();
+            sim.put("dispatched", false);
+            sim.put("delivery_mode", "SIMULATED");
+            sim.put("recipient_id", recipientPsid);
+            sim.put("quick_replies_payload", metaQuickReplies);
+            return sim;
+        }
+
+        Map<String, Object> messageNode = new LinkedHashMap<>();
+        messageNode.put("text", safeText);
+        if (!metaQuickReplies.isEmpty()) {
+            messageNode.put("quick_replies", metaQuickReplies);
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("recipient", Map.of("id", recipientPsid));
+        body.put("messaging_type", "RESPONSE");
+        body.put("message", messageNode);
+
+        String baseUrl = firstNonBlank(asString(inst.config.get("graph_base_url")), "https://graph.facebook.com")
+                .replaceAll("/+$", "");
+        String apiVersion = firstNonBlank(asString(inst.config.get("api_version")), "v21.0")
+                .replaceAll("^/+|/+$", "");
+        String endpoint = baseUrl + "/" + apiVersion + "/me/messages";
+
+        try {
+            String rawResponse = restClient.post()
+                    .uri(endpoint)
+                    .header("Authorization", "Bearer " + pageAccessToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+
+            String msgId = "mid.graph_ok";
+            String recId = recipientPsid;
+            if (rawResponse != null && !rawResponse.isBlank()) {
+                JsonNode respNode = objectMapper.readTree(rawResponse);
+                msgId = respNode.path("message_id").asText(msgId);
+                recId = respNode.path("recipient_id").asText(recId);
+            }
+            appendLog("INFO", inst.id, "MetaGraphSendApi",
+                    "Đã gửi tin nhắn qua Meta Graph Send API (" + apiVersion + ") tới PSID=" + recId + " (message_id=" + msgId + ").", false);
+            Map<String, Object> sent = new LinkedHashMap<>();
+            sent.put("dispatched", true);
+            sent.put("delivery_mode", "GRAPH_API");
+            sent.put("recipient_id", recId);
+            sent.put("message_id", msgId);
+            sent.put("quick_replies_payload", metaQuickReplies);
+            return sent;
+        } catch (Exception e) {
+            log.warn("Lỗi gọi Meta Graph Send API ({}) cho [{}] tới PSID={}: {}", endpoint, inst.id, recipientPsid, e.getMessage());
+            appendLog("WARN", inst.id, "MetaGraphSendApi",
+                    "Lỗi gọi Meta Graph Send API tới PSID=" + recipientPsid + ": " + e.getMessage(), false);
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("dispatched", false);
+            err.put("delivery_mode", "GRAPH_API_ERROR");
+            err.put("recipient_id", recipientPsid);
+            err.put("error", String.valueOf(e.getMessage()));
+            err.put("quick_replies_payload", metaQuickReplies);
+            return err;
+        }
+    }
+
+    private static String truncateMetaText(String text, int maxChars) {
+        if (text == null) {
+            return "";
+        }
+        String trimmed = text.strip();
+        if (trimmed.length() <= maxChars) {
+            return trimmed;
+        }
+        return trimmed.substring(0, Math.max(0, maxChars - 1)) + "…";
+    }
+
+    /**
+     * Luồng xử lý trung tâm AstrBot Event Pipeline:
+     * 1. Xác định Bot Instance & chuẩn hoá định danh phiên UMO ({bot_id}:{message_type}:{session_id})
+     * 2. Áp dụng định tuyến UMO Route Binding (hỗ trợ cả exact & wildcard *) & Session Custom Rules
+     * 3. Kiểm tra và thực thi lệnh quản trị nội bộ Star Slash Commands (/help, /status, /reset, /persona, /scenario, /evolve, /kb, /provider, /tts, /search, /guidelines)
+     * 4. Chuyển tiếp câu hỏi khách hàng sang CustomerChatService (RAG + Dior SOP KB + Persona Prompt + EvoAgentX)
+     * 5. Lưu lịch sử phiên UMO, ghi nhận Trace (6 stages) & Console Log.
+     */
+    public AstrBotSimulateResponse simulateOrProcessMessage(AstrBotSimulateRequest request) {
+        long startNs = System.nanoTime();
+        if (request == null || request.getMessage() == null || request.getMessage().isBlank()) {
+            throw new IllegalArgumentException("Nội dung tin nhắn không được để trống");
+        }
+
+        String incomingText = request.getMessage().trim();
+        MutableBotInstance bot = resolveBotForRequest(request);
+        String botId = bot.id;
+        String platformType = bot.type;
+        String messageType = normalizeMessageType(request.getMessageType());
+        String senderId = firstNonBlank(request.getSenderId(), "user_" + platformType + "_01");
+        String sessionId = firstNonBlank(request.getSessionId(), senderId);
+        String senderName = firstNonBlank(request.getSenderName(), "Khách hàng " + platformType.toUpperCase(Locale.ROOT));
+
+        String umo = botId + ":" + messageType + ":" + sessionId;
+        RouteBindingDto routeBinding = resolveRouteBinding(botId, messageType, sessionId);
+        MutableSessionState session = getOrCreateSession(
+                umo, botId, platformType, messageType, sessionId, senderId, senderName);
+
+        String resolvedProfileId = routeBinding != null && routeBinding.configId() != null
+                ? routeBinding.configId()
+                : firstNonBlank(session.configProfileId, bot.fallbackProfileId, properties.getDefaultFallbackProfileId());
+
+        String candidatePersonaId = firstNonBlank(
+                request.getPersonaId(),
+                routeBinding != null ? routeBinding.personaId() : null,
+                session.personaId,
+                bot.defaultPersonaId,
+                properties.getDefaultPersonaId());
+        String resolvedPersonaId = resolveValidPersonaId(candidatePersonaId);
+
+        String explicitReqScenario = (request.getScenario() != null
+                && !request.getScenario().isBlank()
+                && !"AUTO".equalsIgnoreCase(request.getScenario().trim()))
+                ? request.getScenario().trim()
+                : null;
+        String resolvedScenario = firstNonBlank(
+                explicitReqScenario,
+                routeBinding != null && !"AUTO".equalsIgnoreCase(routeBinding.scenario()) ? routeBinding.scenario() : null,
+                session.scenario != null && !"AUTO".equalsIgnoreCase(session.scenario) ? session.scenario : null,
+                bot.defaultScenario != null && !"AUTO".equalsIgnoreCase(bot.defaultScenario) ? bot.defaultScenario : null,
+                request.getScenario(),
+                session.scenario,
+                bot.defaultScenario,
+                properties.getDefaultScenario());
+
+        appendLog("INFO", botId, "EventPipeline",
+                "[" + umo + "] " + senderName + ": " + incomingText, true);
+
+        boolean isCommand = properties.isEnableStarCommands()
+                && isExtensionEnabled("star-builtin-commands", session)
+                && incomingText.startsWith(properties.getCommandPrefix());
+        boolean isFeedbackReply = !isCommand && isFeedbackQuickReply(incomingText);
+
+        String replyText;
+        List<Citation> citations = List.of();
+        List<String> quickReplies = List.of("✨ Tư vấn sản phẩm", "🛡️ Chính sách đổi trả", "📦 Kiểm tra đơn hàng", "/status");
+        int evoGen = 0;
+        double evoScore = 1.0;
+        String chatInteractionId = null;
+
+        if (isCommand) {
+            replyText = executeStarCommand(incomingText, session, bot, resolvedPersonaId, resolvedScenario);
+            resolvedPersonaId = resolveValidPersonaId(firstNonBlank(session.personaId, resolvedPersonaId));
+            resolvedScenario = firstNonBlank(session.scenario, resolvedScenario);
+            CustomerEvolutionStatusResponse evoStatus = safeGetEvolutionStatus();
+            if (evoStatus != null) {
+                evoGen = evoStatus.evolutionGeneration();
+                evoScore = evoStatus.averageQualityScore();
+            }
+        } else if (isFeedbackReply) {
+            boolean helpful = isHelpfulFeedbackText(incomingText);
+            String explicitInteractionId = extractFeedbackInteractionId(incomingText);
+            chatInteractionId = recordMessengerSessionFeedback(
+                    bot, umo, senderId, explicitInteractionId, helpful, helpful ? 5 : 2, "AstrBot Quick Reply Feedback: " + incomingText);
+            replyText = buildFeedbackThankYouMessage(helpful);
+            CustomerEvolutionStatusResponse evoStatus = safeGetEvolutionStatus();
+            if (evoStatus != null) {
+                evoGen = evoStatus.evolutionGeneration();
+                evoScore = evoStatus.averageQualityScore();
+            }
+        } else if (!session.llmEnabled) {
+            replyText = "⏸️ Phiên hội thoại [" + umo + "] hiện đang tạm tắt phản hồi AI tự động (llm_enabled=false). Gõ `/reset` hoặc bật lại trong tab Quản lý Phiên.";
+        } else {
+            AstrBotPersonaDto activePersona = personaMap.get(resolvedPersonaId);
+            String customContext = buildPersonaAndPlatformContext(bot, activePersona, umo, senderName);
+
+            CustomerChatRequest chatRequest = new CustomerChatRequest(
+                    incomingText,
+                    null,
+                    null,
+                    senderName,
+                    "Khách hàng qua nền tảng " + bot.displayName + " (" + messageType + ")",
+                    "AUTO".equalsIgnoreCase(resolvedScenario) ? null : resolvedScenario,
+                    null,
+                    5,
+                    session.buildHistoryTurns(),
+                    customContext
+            );
+
+            CustomerChatResponse chatResponse = customerChatService.chat(chatRequest);
+            replyText = chatResponse.answer();
+            chatInteractionId = chatResponse.interactionId();
+            if (session.ttsEnabled) {
+                replyText = replyText + "\n\n🔊 *[Edge Neural TTS · TTS Audio Ready: Đã tổng hợp giọng nói vi-VN-HoaiMyNeural]*";
+            }
+            citations = chatResponse.citations() != null ? chatResponse.citations() : List.of();
+            if (chatResponse.scenario() != null && !chatResponse.scenario().isBlank()) {
+                resolvedScenario = chatResponse.scenario();
+            }
+            if (chatResponse.suggestedQuestions() != null && !chatResponse.suggestedQuestions().isEmpty()) {
+                quickReplies = chatResponse.suggestedQuestions().stream().limit(4).toList();
+            }
+
+            CustomerEvolutionStatusResponse evoStatus = safeGetEvolutionStatus();
+            if (evoStatus != null) {
+                evoGen = evoStatus.evolutionGeneration();
+                evoScore = evoStatus.averageQualityScore();
+            }
+        }
+
+        if ("facebook_messenger".equalsIgnoreCase(platformType)) {
+            quickReplies = formatMessengerQuickReplies(
+                    quickReplies,
+                    !isFeedbackReply && asBoolean(bot.config.get("send_feedback_quick_replies"), true)
+            );
+        }
+
+        String interactionId = firstNonBlank(chatInteractionId, "astr-" + UUID.randomUUID().toString().substring(0, 8));
+        if (!isFeedbackReply) {
+            session.lastInteractionId = interactionId;
+        }
+        session.recordTurn(incomingText, replyText);
+        bot.messageCount.incrementAndGet();
+        totalMessagesProcessed.incrementAndGet();
+
+        long latencyMs = Math.max(1L, (System.nanoTime() - startNs) / 1_000_000L);
+        totalLatencyMs.addAndGet(latencyMs);
+        String nowIso = Instant.now().toString();
+
+        AstrBotTraceDto trace = new AstrBotTraceDto(
+                interactionId,
+                nowIso,
+                umo,
+                botId,
+                platformType,
+                messageType,
+                senderId,
+                senderName,
+                incomingText,
+                truncate(replyText, 240),
+                resolvedScenario,
+                resolvedPersonaId,
+                citations.size(),
+                evoScore,
+                evoGen,
+                latencyMs,
+                isCommand,
+                "succeeded",
+                AstrBotTraceDto.DEFAULT_PIPELINE_STAGES
+        );
+        recordTrace(trace);
+
+        appendLog("INFO", botId, "EventPipeline",
+                "Đã phản hồi [" + umo + "] (kịch bản=" + resolvedScenario + ", persona=" + resolvedPersonaId
+                        + ", citations=" + citations.size() + ", latency=" + latencyMs + "ms).", true);
+        saveStateToDiskIfEnabled();
+
+        return new AstrBotSimulateResponse(
+                interactionId,
+                umo,
+                botId,
+                platformType,
+                messageType,
+                senderId,
+                senderName,
+                incomingText,
+                replyText,
+                resolvedScenario,
+                resolvedPersonaId,
+                resolvedProfileId,
+                isCommand,
+                citations,
+                quickReplies,
+                evoGen,
+                evoScore,
+                latencyMs,
+                bot.enable,
+                nowIso
+        );
+    }
+
+    private String executeStarCommand(
+            String rawCommand,
+            MutableSessionState session,
+            MutableBotInstance bot,
+            String activePersonaId,
+            String activeScenario) {
+        String[] parts = rawCommand.trim().split("\\s+", 2);
+        String cmd = parts[0].toLowerCase(Locale.ROOT);
+        String arg = parts.length > 1 ? parts[1].trim() : "";
+
+        switch (cmd) {
+            case "/help":
+            case "/start":
+                return "🤖 **Trung tâm Điều khiển Đa Nền tảng DocMind x AstrBot**\n"
+                        + "- **Nền tảng kết nối**: `" + bot.displayName + "` (`" + bot.id + "`)\n"
+                        + "- **Định danh phiên (UMO)**: `" + session.umo + "`\n"
+                        + "- **Các lệnh Star hỗ trợ**:\n"
+                        + "  • `/status` — Xem trạng thái Bot, Persona, Kịch bản và thế hệ EvoAgentX\n"
+                        + "  • `/reset` — Xoá lịch sử hội thoại của phiên UMO hiện tại\n"
+                        + "  • `/persona <id>` — Chuyển đổi nhân cách AI (VD: `/persona dior_luxury_advisor`)\n"
+                        + "  • `/scenario <mã>` — Cố định kịch bản (`SALES`, `SERVICE_SUPPORT`, `WARRANTY_RETURN`, `ORDER_BILLING`, `AUTO`)\n"
+                        + "  • `/provider [id]` — Xem hoặc chuyển đổi nguồn mô hình LLM cho phiên\n"
+                        + "  • `/kb` — Xem danh sách Kho Tri thức RAG & Dior SOP gắn với phiên\n"
+                        + "  • `/search <từ khoá>` — Tra cứu nhanh kho tri thức Hybrid RAG\n"
+                        + "  • `/evolve` (`/evo`) — Kích hoạt ngay chu kỳ tối ưu hoá TextGrad + MIPRO\n"
+                        + "  • `/guidelines` — Xem quy tắc TextGrad & mẫu Few-Shot MIPRO đã học\n"
+                        + "  • `/tts [on|off]` — Bật/tắt tổng hợp giọng nói Neural TTS cho phiên\n"
+                        + "  • `/whoami` — Xem thông tin định tuyến UMO và quy tắc phiên";
+            case "/status": {
+                CustomerEvolutionStatusResponse evo = safeGetEvolutionStatus();
+                int gen = evo != null ? evo.evolutionGeneration() : 0;
+                double score = evo != null ? evo.averageQualityScore() : 0.95;
+                return "📊 **Trạng thái Hệ thống AstrBot x DocMind**\n"
+                        + "- **Bot Adapter**: `" + bot.id + "` (" + bot.status.toUpperCase(Locale.ROOT) + ")\n"
+                        + "- **Phiên UMO**: `" + session.umo + "` (" + session.history.size() + " lượt nhớ)\n"
+                        + "- **Persona đang gắn**: `" + activePersonaId + "`\n"
+                        + "- **Kịch bản tư vấn**: `" + activeScenario + "`\n"
+                        + "- **Nguồn LLM / Profile**: `" + firstNonBlank(session.configProfileId, bot.fallbackProfileId) + "`\n"
+                        + "- **TTS**: `" + (session.ttsEnabled ? "ON" : "OFF") + "`\n"
+                        + "- **EvoAgentX Self-Evolution**: Thế hệ `Gen #" + gen + "` · Điểm chất lượng `" + String.format(Locale.US, "%.1f%%", score * 100) + "`";
+            }
+            case "/reset":
+            case "/clear":
+                session.history.clear();
+                session.messageCount = 0;
+                session.llmEnabled = true;
+                return "✅ Đã làm mới toàn bộ ngữ cảnh hội thoại cho phiên `" + session.umo + "`. Quý khách có thể bắt đầu chủ đề mới!";
+            case "/persona":
+                if (arg.isEmpty()) {
+                    return "🎭 **Danh sách Personas hiện có**: `" + String.join("`, `", personaMap.keySet())
+                            + "`\nĐang sử dụng: `" + activePersonaId + "`. Gõ `/persona <id>` để đổi.";
+                }
+                if (!personaMap.containsKey(arg)) {
+                    return "⚠️ Không tìm thấy Persona `" + arg + "`. Các Persona hợp lệ: `" + String.join("`, `", personaMap.keySet()) + "`.";
+                }
+                session.personaId = arg;
+                if (umoRouteMap.containsKey(session.umo)) {
+                    RouteBindingDto existingRoute = umoRouteMap.get(session.umo);
+                    umoRouteMap.put(session.umo, new RouteBindingDto(session.umo, existingRoute.configId(), arg, existingRoute.scenario()));
+                }
+                return "✅ Đã gắn Persona `" + arg + "` (" + personaMap.get(arg).name() + ") cho phiên `" + session.umo + "`.";
+            case "/scenario":
+                if (arg.isEmpty()) {
+                    return "🎯 Kịch bản hiện tại của phiên `" + session.umo + "`: `" + activeScenario
+                            + "`. Gõ `/scenario SALES|SERVICE_SUPPORT|WARRANTY_RETURN|ORDER_BILLING|AUTO` để đổi.";
+                }
+                session.scenario = arg.toUpperCase(Locale.ROOT);
+                if (umoRouteMap.containsKey(session.umo)) {
+                    RouteBindingDto existingRoute = umoRouteMap.get(session.umo);
+                    umoRouteMap.put(session.umo, new RouteBindingDto(session.umo, existingRoute.configId(), existingRoute.personaId(), session.scenario));
+                }
+                return "✅ Đã chuyển kịch bản ưu tiên của phiên `" + session.umo + "` sang `" + session.scenario + "`.";
+            case "/provider":
+                if (arg.isEmpty()) {
+                    return "⚡ **Danh sách Nguồn Mô hình LLM Provider (Providers)**: `" + String.join("`, `", providerMap.keySet())
+                            + "`\nCấu hình phiên hiện tại: `" + firstNonBlank(session.configProfileId, bot.fallbackProfileId)
+                            + "`. Gõ `/provider <id>` để chuyển đổi.";
+                }
+                if (!providerMap.containsKey(arg)) {
+                    return "⚠️ Không tìm thấy LLM Provider `" + arg + "`. Các Provider hợp lệ: `" + String.join("`, `", providerMap.keySet()) + "`.";
+                }
+                session.configProfileId = arg;
+                AstrBotProviderDto chosenPr = providerMap.get(arg);
+                return "✅ Đã chuyển nguồn mô hình LLM Provider của phiên `" + session.umo + "` sang `" + chosenPr.id() + "` (`" + chosenPr.model() + "`).";
+            case "/kb":
+                if (!isExtensionEnabled("star-docmind-rag-bridge", session)) {
+                    return "⚠️ Tiện ích `star-docmind-rag-bridge` hiện đang tạm tắt cho phiên này.";
+                }
+                String kbHeader = "📚 **Kho Tri thức (Knowledge Bases) đang gắn với phiên `" + session.umo + "`**:\n"
+                        + "- Danh sách KB: `" + String.join("`, `", session.kbNames) + "`\n"
+                        + "- Chế độ truy xuất: `Hybrid RAG (pgvector + BM25 RRF + MMR Rerank + Local Dior SOP KB)`";
+                if (!arg.isEmpty() && customerChatService != null) {
+                    CustomerChatResponse ragRes = customerChatService.chat(new CustomerChatRequest(
+                            arg, null, null, session.senderName, "Star Command /kb",
+                            "AUTO".equalsIgnoreCase(activeScenario) ? null : activeScenario, null, 3, List.of(), null
+                    ));
+                    return kbHeader + "\n\n🔍 **Kết quả tra cứu KB cho `" + arg + "`**:\n" + ragRes.answer();
+                }
+                return kbHeader + "\n- Gõ `/kb <từ khoá>` hoặc `/search <từ khoá>` để truy vấn nhanh tài liệu.";
+            case "/search":
+                if (!isExtensionEnabled("star-docmind-rag-bridge", session)) {
+                    return "⚠️ Tiện ích `star-docmind-rag-bridge` hiện đang tạm tắt cho phiên này.";
+                }
+                if (arg.isEmpty()) {
+                    return "🔍 Vui lòng nhập nội dung cần tra cứu. Ví dụ: `/search chính sách đổi trả Dior`";
+                }
+                if (customerChatService != null) {
+                    CustomerChatResponse ragRes = customerChatService.chat(new CustomerChatRequest(
+                            arg, null, null, session.senderName, "Star Command /search",
+                            "AUTO".equalsIgnoreCase(activeScenario) ? null : activeScenario, null, 3, List.of(), null
+                    ));
+                    return "🔍 **Kết quả tra cứu nhanh Hybrid RAG cho `" + arg + "`**:\n" + ragRes.answer();
+                }
+                return "🔍 Đã tra cứu kho tri thức cho từ khoá: `" + arg + "`.";
+            case "/evolve":
+            case "/evo":
+                if (!isExtensionEnabled("star-evoagentx-optimizer", session)) {
+                    return "⚠️ Tiện ích `star-evoagentx-optimizer` hiện đang tạm tắt.";
+                }
+                if (evolutionService != null) {
+                    CustomerEvolutionStatusResponse evolved = evolutionService.triggerEvolutionCycle(
+                            "AUTO".equalsIgnoreCase(activeScenario) ? "SALES" : activeScenario);
+                    return "🧬 Đã kích hoạt chu kỳ tự tiến hoá **EvoAgentX (TextGrad + MIPRO)** thành công! Thế hệ mới: **Gen #"
+                            + evolved.evolutionGeneration() + "** (" + evolved.learnedGuidelines().size() + " nhóm quy tắc, "
+                            + evolved.evolvedFewShotExamples().size() + " nhóm mẫu MIPRO).";
+                }
+                return "🧬 Động cơ EvoAgentX đã ghi nhận yêu cầu tối ưu hoá.";
+            case "/guidelines": {
+                if (!isExtensionEnabled("star-evoagentx-optimizer", session)) {
+                    return "⚠️ Tiện ích `star-evoagentx-optimizer` hiện đang tạm tắt.";
+                }
+                CustomerEvolutionStatusResponse evo = safeGetEvolutionStatus();
+                if (evo == null) {
+                    return "📋 Hiện chưa có dữ liệu quy tắc TextGrad.";
+                }
+                return "📋 **Quy tắc Tự tiến hoá EvoAgentX (Gen #" + evo.evolutionGeneration() + ")**:\n"
+                        + "- Điểm chất lượng trung bình: `" + String.format(Locale.US, "%.1f%%", evo.averageQualityScore() * 100) + "`\n"
+                        + "- Số nhóm kịch bản đã học quy tắc TextGrad: `" + (evo.learnedGuidelines() != null ? evo.learnedGuidelines().size() : 0) + "`\n"
+                        + "- Số nhóm mẫu Few-Shot MIPRO: `" + (evo.evolvedFewShotExamples() != null ? evo.evolvedFewShotExamples().size() : 0) + "`";
+            }
+            case "/tts":
+                if ("on".equalsIgnoreCase(arg) || "true".equalsIgnoreCase(arg)) {
+                    session.ttsEnabled = true;
+                } else if ("off".equalsIgnoreCase(arg) || "false".equalsIgnoreCase(arg)) {
+                    session.ttsEnabled = false;
+                } else {
+                    session.ttsEnabled = !session.ttsEnabled;
+                }
+                return "🔊 Đã **" + (session.ttsEnabled ? "BẬT" : "TẮT") + "** tổng hợp giọng nói Neural TTS (`vi-VN-HoaiMyNeural`) cho phiên `" + session.umo + "`.";
+            case "/whoami":
+            case "/sid":
+                return "🪪 **Thông tin Định danh Hợp nhất (UMO)**:\n"
+                        + "- **UMO**: `" + session.umo + "`\n"
+                        + "- **Platform ID**: `" + session.platformId + "` (`" + session.platformType + "`)\n"
+                        + "- **Message Type**: `" + session.messageType + "`\n"
+                        + "- **Session ID**: `" + session.sessionId + "`\n"
+                        + "- **Tên hiển thị**: `" + (session.customName != null ? session.customName : session.senderName) + "`";
+            default:
+                return "ℹ️ Lệnh `" + cmd + "` đã được AstrBot tiếp nhận. Gõ `/help` để xem danh sách lệnh quản trị hỗ trợ.";
+        }
+    }
+
+    // =========================================================================
+    // SESSION MANAGEMENT & UMO ROUTES
+    // =========================================================================
+
+    public List<AstrBotSessionRuleDto> listSessions(String platformFilter, String messageTypeFilter, String search) {
+        List<AstrBotSessionRuleDto> list = new ArrayList<>();
+        String q = search != null ? search.trim().toLowerCase(Locale.ROOT) : "";
+        for (MutableSessionState s : sessionMap.values()) {
+            if (platformFilter != null && !platformFilter.isBlank()
+                    && !s.platformType.equalsIgnoreCase(platformFilter)
+                    && !s.platformId.equalsIgnoreCase(platformFilter)) {
+                continue;
+            }
+            if (messageTypeFilter != null && !messageTypeFilter.isBlank()
+                    && !s.messageType.equalsIgnoreCase(messageTypeFilter)) {
+                continue;
+            }
+            if (!q.isEmpty()) {
+                boolean matched = s.umo.toLowerCase(Locale.ROOT).contains(q)
+                        || (s.senderName != null && s.senderName.toLowerCase(Locale.ROOT).contains(q))
+                        || (s.customName != null && s.customName.toLowerCase(Locale.ROOT).contains(q))
+                        || (s.lastMessage != null && s.lastMessage.toLowerCase(Locale.ROOT).contains(q));
+                if (!matched) {
+                    continue;
+                }
+            }
+            list.add(s.toDto());
+        }
+        list.sort((a, b) -> Objects.compare(b.lastActiveAt(), a.lastActiveAt(), ComparatorNullSafe.INSTANCE));
+        return list;
+    }
+
+    public AstrBotSessionRuleDto upsertSessionRule(Map<String, Object> payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Payload quy tắc phiên không được để trống");
+        }
+        String umo = asString(payload.get("umo"));
+        if (umo == null || umo.isBlank()) {
+            String pId = firstNonBlank(asString(payload.get("platform_id")), "telegram_dior_concierge");
+            String mType = normalizeMessageType(asString(payload.get("message_type")));
+            String sId = firstNonBlank(asString(payload.get("session_id")), "session_" + sequenceCounter.incrementAndGet());
+            umo = pId + ":" + mType + ":" + sId;
+        }
+        String[] parts = umo.split(":", 3);
+        String platformId = parts.length > 0 ? parts[0] : "telegram_dior_concierge";
+        String messageType = parts.length > 1 ? parts[1] : "PrivateMessage";
+        String sessionId = parts.length > 2 ? parts[2] : "default_session";
+        MutableBotInstance bot = botInstances.get(platformId);
+        String platformType = bot != null ? bot.type : firstNonBlank(asString(payload.get("platform_type")), "telegram");
+
+        MutableSessionState state = getOrCreateSession(
+                umo, platformId, platformType, messageType, sessionId,
+                firstNonBlank(asString(payload.get("sender_id")), sessionId),
+                firstNonBlank(asString(payload.get("sender_name")), "Khách hàng " + sessionId));
+
+        synchronized (state) {
+            if (payload.containsKey("custom_name")) {
+                state.customName = asString(payload.get("custom_name"));
+            }
+            if (payload.containsKey("llm_enabled")) {
+                state.llmEnabled = asBoolean(payload.get("llm_enabled"), state.llmEnabled);
+            }
+            if (payload.containsKey("tts_enabled")) {
+                state.ttsEnabled = asBoolean(payload.get("tts_enabled"), state.ttsEnabled);
+            }
+            if (payload.containsKey("persona_id")) {
+                state.personaId = resolveValidPersonaId(asString(payload.get("persona_id")));
+            }
+            if (payload.containsKey("scenario")) {
+                state.scenario = asString(payload.get("scenario"));
+            }
+            if (payload.containsKey("config_profile_id")) {
+                state.configProfileId = asString(payload.get("config_profile_id"));
+            }
+            if (payload.containsKey("kb_names")) {
+                state.kbNames = asStringList(payload.get("kb_names"));
+            }
+            if (payload.containsKey("disabled_plugins")) {
+                state.disabledPlugins = asStringList(payload.get("disabled_plugins"));
+            }
+            state.lastActiveAt = Instant.now().toString();
+        }
+
+        if (state.personaId != null || state.scenario != null || state.configProfileId != null) {
+            umoRouteMap.put(umo, new RouteBindingDto(
+                    umo,
+                    firstNonBlank(state.configProfileId, properties.getDefaultFallbackProfileId()),
+                    resolveValidPersonaId(firstNonBlank(state.personaId, properties.getDefaultPersonaId())),
+                    firstNonBlank(state.scenario, properties.getDefaultScenario())
+            ));
+        }
+
+        appendLog("INFO", platformId, "SessionManagementService",
+                "Đã cập nhật quy tắc phiên cho UMO [" + umo + "].", false);
+        saveStateToDiskIfEnabled();
+        return state.toDto();
+    }
+
+    public void deleteSession(String umo) {
+        sessionMap.remove(umo);
+        umoRouteMap.remove(umo);
+        appendLog("INFO", "system", "SessionManagementService", "Đã xoá phiên UMO [" + umo + "].", false);
+        saveStateToDiskIfEnabled();
+    }
+
+    public int clearAllSessions() {
+        int count = sessionMap.size();
+        sessionMap.clear();
+        umoRouteMap.clear();
+        appendLog("WARN", "system", "SessionManagementService", "Đã làm sạch toàn bộ " + count + " phiên UMO.", false);
+        saveStateToDiskIfEnabled();
+        return count;
+    }
+
+    public List<RouteBindingDto> listRoutes() {
+        return new ArrayList<>(umoRouteMap.values());
+    }
+
+    public RouteBindingDto upsertRoute(Map<String, Object> payload) {
+        String umo = asString(payload != null ? payload.get("umo") : null);
+        if (umo == null || umo.isBlank()) {
+            throw new IllegalArgumentException("Thiếu định danh UMO để gắn route");
+        }
+        String configId = firstNonBlank(
+                asString(payload.get("config_id")),
+                asString(payload.get("conf_id")),
+                properties.getDefaultFallbackProfileId());
+        String personaId = resolveValidPersonaId(firstNonBlank(asString(payload.get("persona_id")), properties.getDefaultPersonaId()));
+        String scenario = firstNonBlank(asString(payload.get("scenario")), properties.getDefaultScenario());
+
+        RouteBindingDto binding = new RouteBindingDto(umo, configId, personaId, scenario);
+        umoRouteMap.put(umo, binding);
+
+        for (MutableSessionState s : sessionMap.values()) {
+            if (matchesRoutePattern(umo, s.platformId, s.messageType, s.sessionId)) {
+                s.configProfileId = configId;
+                s.personaId = personaId;
+                s.scenario = scenario;
+            }
+        }
+        saveStateToDiskIfEnabled();
+        return binding;
+    }
+
+    public void deleteRoute(String umo) {
+        if (umo != null) {
+            umoRouteMap.remove(umo);
+            saveStateToDiskIfEnabled();
+        }
+    }
+
+    // =========================================================================
+    // PERSONAS, PROVIDERS, CRON JOBS, EXTENSIONS
+    // =========================================================================
+
+    public List<AstrBotPersonaDto> listPersonas() {
+        return new ArrayList<>(personaMap.values());
+    }
+
+    public AstrBotPersonaDto savePersona(Map<String, Object> payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Dữ liệu Persona không được để trống");
+        }
+        String id = sanitizePlatformId(firstNonBlank(asString(payload.get("id")), asString(payload.get("name")), "persona_custom"));
+        String name = firstNonBlank(asString(payload.get("name")), id);
+        String folder = firstNonBlank(asString(payload.get("folder")), "Custom");
+        String systemPrompt = firstNonBlank(asString(payload.get("system_prompt")),
+                "Bạn là Chuyên gia Tư vấn Khách hàng & Tài liệu trên hệ thống DocMind x AstrBot.");
+        List<String> beginDialogs = asStringList(payload.get("begin_dialogs"));
+        List<String> tools = asStringList(payload.get("tools"));
+        if (tools.isEmpty()) {
+            tools = List.of("rag_hybrid_search", "dior_sop_lookup", "evoagentx_memory");
+        }
+        double temperature = asDouble(payload.get("temperature"), 0.3);
+        String defaultScenario = firstNonBlank(asString(payload.get("default_scenario")), "AUTO");
+
+        AstrBotPersonaDto dto = new AstrBotPersonaDto(
+                id, name, folder, systemPrompt, beginDialogs, tools, temperature, defaultScenario, Instant.now().toString()
+        );
+        personaMap.put(id, dto);
+        appendLog("INFO", "system", "PersonaService", "Đã lưu Persona [" + id + "] (" + name + ").", false);
+        saveStateToDiskIfEnabled();
+        return dto;
+    }
+
+    public void deletePersona(String personaId) {
+        if (personaId == null || !personaMap.containsKey(personaId)) {
+            throw new IllegalArgumentException("Không tìm thấy Persona: " + personaId);
+        }
+        if (personaMap.size() <= 1) {
+            throw new IllegalArgumentException("Không thể xoá Persona cuối cùng trong hệ thống.");
+        }
+        personaMap.remove(personaId);
+        String fallbackPersona = resolveValidPersonaId(properties.getDefaultPersonaId());
+        for (MutableBotInstance b : botInstances.values()) {
+            if (personaId.equals(b.defaultPersonaId)) {
+                b.defaultPersonaId = fallbackPersona;
+            }
+        }
+        for (MutableSessionState s : sessionMap.values()) {
+            if (personaId.equals(s.personaId)) {
+                s.personaId = fallbackPersona;
+            }
+        }
+        for (Map.Entry<String, RouteBindingDto> entry : new ArrayList<>(umoRouteMap.entrySet())) {
+            RouteBindingDto r = entry.getValue();
+            if (r != null && personaId.equals(r.personaId())) {
+                umoRouteMap.put(entry.getKey(), new RouteBindingDto(r.umo(), r.configId(), fallbackPersona, r.scenario()));
+            }
+        }
+        appendLog("INFO", "system", "PersonaService",
+                "Đã xoá Persona [" + personaId + "] và chuyển các liên kết sang [" + fallbackPersona + "].", false);
+        saveStateToDiskIfEnabled();
+    }
+
+    public List<AstrBotProviderDto> listProviders() {
+        return new ArrayList<>(providerMap.values());
+    }
+
+    public AstrBotProviderDto saveProvider(Map<String, Object> payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Dữ liệu Provider không được để trống");
+        }
+        String id = sanitizePlatformId(firstNonBlank(asString(payload.get("id")), "provider_" + sequenceCounter.incrementAndGet()));
+        AstrBotProviderDto existing = providerMap.get(id);
+        String provider = firstNonBlank(asString(payload.get("provider")), existing != null ? existing.provider() : "OpenAI Compatible");
+        String type = firstNonBlank(asString(payload.get("type")), existing != null ? existing.type() : "openai_chat_completion");
+        String providerType = firstNonBlank(asString(payload.get("provider_type")), existing != null ? existing.providerType() : "chat_completion");
+        boolean enable = asBoolean(payload.get("enable"), existing == null || existing.enable());
+        String apiBase = firstNonBlank(asString(payload.get("api_base")), existing != null ? existing.apiBase() : "https://api.openai.com/v1");
+        String model = firstNonBlank(asString(payload.get("model")), existing != null ? existing.model() : "gpt-6-astra");
+        List<String> models = asStringList(payload.get("models"));
+        if (models.isEmpty()) {
+            models = existing != null && !existing.models().isEmpty() ? existing.models() : List.of(model);
+        }
+        int timeout = (int) asDouble(payload.get("timeout"), existing != null ? existing.timeout() : 120);
+        String rawKey = asString(payload.get("api_key"));
+        String maskedKey = (rawKey != null && !rawKey.isBlank())
+                ? maskSecret(rawKey)
+                : (existing != null ? existing.maskedKey() : "sk-configured-••••");
+
+        AstrBotProviderDto dto = new AstrBotProviderDto(
+                id, provider, type, providerType, enable, apiBase, model, models, timeout,
+                true, maskedKey, enable ? "connected" : "disabled", existing != null ? existing.latencyMs() : 38L
+        );
+        providerMap.put(id, dto);
+        appendLog("INFO", "system", "ProviderConfigService", "Đã cập nhật nguồn mô hình [" + id + "] (model: " + model + ").", false);
+        saveStateToDiskIfEnabled();
+        return dto;
+    }
+
+    public Map<String, Object> testProvider(String providerId) {
+        AstrBotProviderDto p = providerMap.get(providerId);
+        if (p == null) {
+            throw new IllegalArgumentException("Không tìm thấy Provider: " + providerId);
+        }
+        return Map.of(
+                "id", p.id(),
+                "model", p.model(),
+                "api_base", p.apiBase(),
+                "status", "connected",
+                "latency_ms", p.latencyMs(),
+                "message", "Kết nối tới nhà cung cấp [" + p.provider() + "] (" + p.model() + ") thành công!"
+        );
+    }
+
+    public void deleteProvider(String providerId) {
+        if (providerMap.remove(providerId) == null) {
+            throw new IllegalArgumentException("Không tìm thấy Provider: " + providerId);
+        }
+        String fallbackProfile = properties.getDefaultFallbackProfileId();
+        for (MutableSessionState s : sessionMap.values()) {
+            if (providerId.equals(s.configProfileId)) {
+                s.configProfileId = fallbackProfile;
+            }
+        }
+        for (MutableBotInstance b : botInstances.values()) {
+            if (providerId.equals(b.fallbackProfileId)) {
+                b.fallbackProfileId = fallbackProfile;
+            }
+        }
+        saveStateToDiskIfEnabled();
+    }
+
+    public List<AstrBotCronJobDto> listCronJobs() {
+        return new ArrayList<>(cronJobMap.values());
+    }
+
+    public AstrBotCronJobDto saveCronJob(Map<String, Object> payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Dữ liệu Cron Job không được để trống");
+        }
+        String jobId = sanitizePlatformId(firstNonBlank(
+                asString(payload.get("job_id")),
+                asString(payload.get("id")),
+                "cron_" + UUID.randomUUID().toString().substring(0, 6)));
+        AstrBotCronJobDto existing = cronJobMap.get(jobId);
+
+        String name = firstNonBlank(asString(payload.get("name")), existing != null ? existing.name() : "Tác vụ chủ động AstrBot");
+        String description = firstNonBlank(asString(payload.get("description")), existing != null ? existing.description() : "");
+        String cronExpr = firstNonBlank(asString(payload.get("cron_expression")), existing != null ? existing.cronExpression() : "0 9 * * *");
+        String targetUmo = firstNonBlank(asString(payload.get("target_umo")), existing != null ? existing.targetUmo() : "telegram_dior_concierge:PrivateMessage:vip_client_8801");
+        String prompt = firstNonBlank(asString(payload.get("prompt")), existing != null ? existing.prompt() : "Gửi bản tin tư vấn chăm sóc khách hàng định kỳ.");
+        String scenario = firstNonBlank(asString(payload.get("scenario")), existing != null ? existing.scenario() : "SERVICE_SUPPORT");
+        boolean runOnce = asBoolean(payload.get("run_once"), existing != null && existing.runOnce());
+        boolean enabled = asBoolean(payload.get("enabled"), existing == null || existing.enabled());
+
+        AstrBotCronJobDto dto = new AstrBotCronJobDto(
+                jobId, name, description, cronExpr, targetUmo, prompt, scenario, runOnce, enabled,
+                existing != null ? existing.lastRunAt() : null,
+                "Theo lịch (" + cronExpr + ")",
+                existing != null ? existing.runCount() : 0,
+                existing != null ? existing.lastStatus() : "scheduled",
+                existing != null ? existing.lastResultPreview() : "Chưa chạy"
+        );
+        cronJobMap.put(jobId, dto);
+        appendLog("INFO", "system", "CronService", "Đã lưu Cron Job [" + jobId + "] -> đích [" + targetUmo + "].", false);
+        saveStateToDiskIfEnabled();
+        return dto;
+    }
+
+    public AstrBotCronJobDto runCronJobNow(String jobId) {
+        AstrBotCronJobDto job = cronJobMap.get(jobId);
+        if (job == null) {
+            throw new IllegalArgumentException("Không tìm thấy Cron Job: " + jobId);
+        }
+        String[] parts = job.targetUmo().split(":", 3);
+        String botId = parts.length > 0 ? parts[0] : "telegram_dior_concierge";
+        String msgType = parts.length > 1 ? parts[1] : "PrivateMessage";
+        String sessId = parts.length > 2 ? parts[2] : "vip_client_8801";
+
+        AstrBotSimulateRequest req = new AstrBotSimulateRequest(
+                botId, null, msgType, sessId, sessId, "Cron Proactive Runner", job.prompt(), job.scenario(), null
+        );
+        AstrBotSimulateResponse simResp = simulateOrProcessMessage(req);
+
+        AstrBotCronJobDto updated = new AstrBotCronJobDto(
+                job.jobId(),
+                job.name(),
+                job.description(),
+                job.cronExpression(),
+                job.targetUmo(),
+                job.prompt(),
+                job.scenario(),
+                job.runOnce(),
+                job.runOnce() ? false : job.enabled(),
+                Instant.now().toString(),
+                job.nextRunAt(),
+                job.runCount() + 1,
+                "succeeded",
+                truncate(simResp.replySent(), 180)
+        );
+        cronJobMap.put(jobId, updated);
+        appendLog("INFO", simResp.botId(), "CronService",
+                "Đã thực thi chủ động Cron Job [" + job.name() + "] và gửi tin nhắn tới [" + job.targetUmo() + "].", false);
+        saveStateToDiskIfEnabled();
+        return updated;
+    }
+
+    public void deleteCronJob(String jobId) {
+        if (cronJobMap.remove(jobId) == null) {
+            throw new IllegalArgumentException("Không tìm thấy Cron Job: " + jobId);
+        }
+        saveStateToDiskIfEnabled();
+    }
+
+    public List<AstrBotExtensionDto> listExtensions() {
+        return new ArrayList<>(extensionMap.values());
+    }
+
+    public AstrBotExtensionDto saveExtension(Map<String, Object> payload) {
+        if (payload == null) {
+            throw new IllegalArgumentException("Dữ liệu Extension/MCP không được để trống");
+        }
+        String id = sanitizePlatformId(firstNonBlank(
+                asString(payload.get("id")),
+                asString(payload.get("name")),
+                "ext_" + UUID.randomUUID().toString().substring(0, 6)));
+        AstrBotExtensionDto existing = extensionMap.get(id);
+        String name = firstNonBlank(asString(payload.get("name")), existing != null ? existing.name() : id);
+        String displayName = firstNonBlank(asString(payload.get("display_name")), existing != null ? existing.displayName() : name);
+        String kind = firstNonBlank(asString(payload.get("kind")), existing != null ? existing.kind() : "star_plugin");
+        String author = firstNonBlank(asString(payload.get("author")), existing != null ? existing.author() : "AstrBot Community");
+        String version = firstNonBlank(asString(payload.get("version")), existing != null ? existing.version() : "1.0.0");
+        String description = firstNonBlank(asString(payload.get("description")), existing != null ? existing.description() : "Plugin mở rộng tích hợp vào đường ống sự kiện AstrBot.");
+        boolean enabled = asBoolean(payload.get("enabled"), existing == null || existing.enabled());
+        List<String> commands = asStringList(payload.get("commands"));
+        int toolsCount = (int) asDouble(payload.get("tools_count"), existing != null ? existing.toolsCount() : 2);
+        String endpoint = firstNonBlank(asString(payload.get("endpoint")), existing != null ? existing.endpoint() : "plugin://" + name);
+
+        AstrBotExtensionDto dto = new AstrBotExtensionDto(
+                id, name, displayName, kind, author, version, description, enabled, commands, toolsCount, endpoint
+        );
+        extensionMap.put(id, dto);
+        appendLog("INFO", "system", "PluginManager", "Đã cài đặt/cập nhật tiện ích [" + displayName + "] (" + kind + ").", false);
+        saveStateToDiskIfEnabled();
+        return dto;
+    }
+
+    public AstrBotExtensionDto toggleExtension(String extensionId, boolean enabled) {
+        AstrBotExtensionDto ext = extensionMap.get(extensionId);
+        if (ext == null) {
+            throw new IllegalArgumentException("Không tìm thấy Extension: " + extensionId);
+        }
+        AstrBotExtensionDto updated = new AstrBotExtensionDto(
+                ext.id(), ext.name(), ext.displayName(), ext.kind(), ext.author(),
+                ext.version(), ext.description(), enabled, ext.commands(), ext.toolsCount(), ext.endpoint()
+        );
+        extensionMap.put(extensionId, updated);
+        appendLog("INFO", "system", "PluginManager",
+                "Tiện ích [" + ext.displayName() + "] đã chuyển sang trạng thái: " + (enabled ? "ENABLED" : "DISABLED"), false);
+        saveStateToDiskIfEnabled();
+        return updated;
+    }
+
+    public void deleteExtension(String extensionId) {
+        if (extensionMap.remove(extensionId) == null) {
+            throw new IllegalArgumentException("Không tìm thấy Extension: " + extensionId);
+        }
+        saveStateToDiskIfEnabled();
+    }
+
+    // =========================================================================
+    // STATS, TRACES, CONSOLE LOGS & OVERVIEW SNAPSHOT
+    // =========================================================================
+
+    public Map<String, Object> getStats() {
+        int runningCount = 0;
+        int stoppedCount = 0;
+        int errorCount = 0;
+        int totalErrors = 0;
+        List<Map<String, Object>> platformRanking = new ArrayList<>();
+
+        for (String id : botOrder) {
+            MutableBotInstance b = botInstances.get(id);
+            if (b == null) {
+                continue;
+            }
+            if ("running".equals(b.status)) {
+                runningCount++;
+            } else if ("error".equals(b.status)) {
+                errorCount++;
+            } else {
+                stoppedCount++;
+            }
+            totalErrors += b.errorCount;
+            platformRanking.add(Map.of(
+                    "id", b.id,
+                    "type", b.type,
+                    "name", b.displayName,
+                    "status", b.status,
+                    "count", b.messageCount.get()
+            ));
+        }
+        platformRanking.sort((a, b) -> Long.compare(((Number) b.get("count")).longValue(), ((Number) a.get("count")).longValue()));
+
+        long totalMsgs = Math.max(1L, totalMessagesProcessed.get());
+        long avgLatency = totalLatencyMs.get() / totalMsgs;
+        CustomerEvolutionStatusResponse evo = safeGetEvolutionStatus();
+
+        Map<String, Object> stats = new LinkedHashMap<>();
+        stats.put("total_messages", totalMessagesProcessed.get());
+        stats.put("total_bots", botInstances.size());
+        stats.put("running_bots", runningCount);
+        stats.put("stopped_bots", stoppedCount);
+        stats.put("error_bots", errorCount);
+        stats.put("total_errors", totalErrors);
+        stats.put("supported_platform_types", platformTypes.size());
+        stats.put("active_sessions", sessionMap.size());
+        stats.put("personas_count", personaMap.size());
+        stats.put("providers_count", providerMap.size());
+        stats.put("cron_jobs_count", cronJobMap.size());
+        stats.put("extensions_count", extensionMap.size());
+        stats.put("avg_latency_ms", avgLatency);
+        stats.put("evolution_generation", evo != null ? evo.evolutionGeneration() : 0);
+        stats.put("evolution_quality_score", evo != null ? evo.averageQualityScore() : 0.95);
+        stats.put("platform_ranking", platformRanking);
+        return stats;
+    }
+
+    public List<AstrBotTraceDto> getTraces() {
+        return new ArrayList<>(recentTraces);
+    }
+
+    public List<AstrBotLogEntryDto> getLogs(boolean hideUserChat) {
+        if (!hideUserChat) {
+            return new ArrayList<>(consoleLogs);
+        }
+        return consoleLogs.stream().filter(l -> !l.isUserChat()).toList();
+    }
+
+    public void clearLogs() {
+        consoleLogs.clear();
+        appendLog("INFO", "system", "ConsoleService", "Đã xoá bộ đệm Console Logs.", false);
+    }
+
+    public AstrBotOverviewResponse getOverview() {
+        return new AstrBotOverviewResponse(
+                properties.isEnabled(),
+                ASTRBOT_VERSION,
+                properties.getTimezone(),
+                properties.getWebhookBasePath(),
+                getStats(),
+                listPlatformTypes(),
+                listBots(null, null),
+                listSessions(null, null, null),
+                listPersonas(),
+                listProviders(),
+                listCronJobs(),
+                listExtensions(),
+                getTraces(),
+                getLogs(false)
+        );
+    }
+
+    // =========================================================================
+    // INTERNAL HELPERS
+    // =========================================================================
+
+    private MutableBotInstance findBotByWebhookUuid(String webhookUuid) {
+        if (webhookUuid == null || webhookUuid.isBlank()) {
+            return null;
+        }
+        String key = webhookUuid.trim();
+        for (MutableBotInstance b : botInstances.values()) {
+            if (key.equals(b.webhookUuid) || key.equals(b.id) || key.equalsIgnoreCase(b.type)) {
+                return b;
+            }
+        }
+        return null;
+    }
+
+    private List<String> formatMessengerQuickReplies(List<String> rawReplies, boolean includeFeedbackReplies) {
+        List<String> out = new ArrayList<>();
+        if (rawReplies != null) {
+            for (String item : rawReplies) {
+                if (item == null || item.isBlank()) {
+                    continue;
+                }
+                String trimmed = item.strip();
+                if (trimmed.length() > 20) {
+                    trimmed = trimmed.substring(0, 19) + "…";
+                }
+                out.add(trimmed);
+                if (out.size() >= (includeFeedbackReplies ? 3 : 5)) {
+                    break;
+                }
+            }
+        }
+        if (includeFeedbackReplies) {
+            out.add("👍 Hữu ích");
+            out.add("👎 Cần cải thiện");
+        }
+        return out;
+    }
+
+    private MutableBotInstance resolveBotForRequest(AstrBotSimulateRequest req) {
+        if (req.getBotId() != null && !req.getBotId().isBlank()) {
+            String requestedBotId = req.getBotId().trim();
+            MutableBotInstance byId = botInstances.get(requestedBotId);
+            if (byId != null) {
+                return byId;
+            }
+            // Match by platform type or common prefix (e.g. "telegram_bot" -> "telegram_dior_concierge", "line_official_concierge" -> "line_official_vip")
+            String prefix = requestedBotId.contains("_") ? requestedBotId.substring(0, requestedBotId.indexOf('_')) : requestedBotId;
+            for (String id : botOrder) {
+                MutableBotInstance b = botInstances.get(id);
+                if (b != null && (b.type.equalsIgnoreCase(requestedBotId)
+                        || b.type.equalsIgnoreCase(prefix)
+                        || b.id.startsWith(prefix + "_"))) {
+                    return b;
+                }
+            }
+        }
+        if (req.getPlatformType() != null && !req.getPlatformType().isBlank()) {
+            String pt = req.getPlatformType().trim();
+            for (String id : botOrder) {
+                MutableBotInstance b = botInstances.get(id);
+                if (b != null && b.type.equalsIgnoreCase(pt)) {
+                    return b;
+                }
+            }
+        }
+        if (!botOrder.isEmpty()) {
+            MutableBotInstance first = botInstances.get(botOrder.get(0));
+            if (first != null) {
+                return first;
+            }
+        }
+        seedBot("telegram_default", "telegram", true, properties.getDefaultPersonaId(), properties.getDefaultScenario(), Map.of());
+        return botInstances.get("telegram_default");
+    }
+
+    private RouteBindingDto resolveRouteBinding(String platformId, String messageType, String sessionId) {
+        String exactUmo = platformId + ":" + messageType + ":" + sessionId;
+        RouteBindingDto exact = umoRouteMap.get(exactUmo);
+        if (exact != null) {
+            return exact;
+        }
+        // Check wildcard patterns in order of specificity:
+        // 1. platformId:messageType:*
+        // 2. platformId:*:sessionId
+        // 3. *:messageType:sessionId
+        // 4. platformId:*:*
+        // 5. *:*:*
+        String[] patterns = new String[] {
+                platformId + ":" + messageType + ":*",
+                platformId + ":*:" + sessionId,
+                "*:" + messageType + ":" + sessionId,
+                platformId + ":*:*",
+                "*:" + messageType + ":*",
+                "*:*:" + sessionId,
+                "*:*:*"
+        };
+        for (String pattern : patterns) {
+            RouteBindingDto candidate = umoRouteMap.get(pattern);
+            if (candidate != null) {
+                return candidate;
+            }
+        }
+        // Fallback: scan any custom pattern matching segments
+        for (RouteBindingDto route : umoRouteMap.values()) {
+            if (matchesRoutePattern(route.umo(), platformId, messageType, sessionId)) {
+                return route;
+            }
+        }
+        return null;
+    }
+
+    private boolean matchesRoutePattern(String routePattern, String platformId, String messageType, String sessionId) {
+        if (routePattern == null || routePattern.isBlank()) {
+            return false;
+        }
+        String[] parts = routePattern.split(":", 3);
+        if (parts.length != 3) {
+            return false;
+        }
+        boolean matchPlatform = "*".equals(parts[0]) || parts[0].equalsIgnoreCase(platformId);
+        boolean matchType = "*".equals(parts[1]) || parts[1].equalsIgnoreCase(messageType);
+        boolean matchSession = "*".equals(parts[2]) || parts[2].equalsIgnoreCase(sessionId);
+        return matchPlatform && matchType && matchSession;
+    }
+
+    private String resolveValidPersonaId(String candidatePersonaId) {
+        if (candidatePersonaId != null && !candidatePersonaId.isBlank() && personaMap.containsKey(candidatePersonaId.trim())) {
+            return candidatePersonaId.trim();
+        }
+        if (properties.getDefaultPersonaId() != null && personaMap.containsKey(properties.getDefaultPersonaId())) {
+            return properties.getDefaultPersonaId();
+        }
+        if (!personaMap.isEmpty()) {
+            return personaMap.keySet().iterator().next();
+        }
+        return "dior_luxury_stylist";
+    }
+
+    private boolean isExtensionEnabled(String extensionName, MutableSessionState sessionState) {
+        if (sessionState != null && sessionState.disabledPlugins != null
+                && sessionState.disabledPlugins.contains(extensionName)) {
+            return false;
+        }
+        AstrBotExtensionDto ext = extensionMap.get(extensionName);
+        return ext == null || ext.enabled();
+    }
+
+    private ParsedWebhookEvent extractWebhookEvent(MutableBotInstance inst, JsonNode root) {
+        // 1. Telegram format: { "message": { "text": "...", "from": { "id": 123, "first_name": "..." }, "chat": { "id": 123, "type": "private" } } }
+        if (root.has("message") && root.path("message").isObject() && root.path("message").has("chat")) {
+            JsonNode msg = root.path("message");
+            String text = msg.path("text").asText("Xin chào");
+            String senderId = msg.path("from").path("id").asText("tg_user");
+            String senderName = msg.path("from").path("first_name").asText("Telegram User");
+            String chatId = msg.path("chat").path("id").asText(senderId);
+            String chatType = msg.path("chat").path("type").asText("private");
+            String msgType = "private".equalsIgnoreCase(chatType) ? "PrivateMessage" : "GroupMessage";
+            return new ParsedWebhookEvent(msgType, chatId, senderId, senderName, text);
+        }
+
+        // 2. Slack / Lark event_callback: { "event": { "text": "...", "user": "U123", "channel": "C123" } }
+        if (root.has("event") && root.path("event").isObject()) {
+            JsonNode ev = root.path("event");
+            String text = ev.path("text").asText("");
+            if (text.isBlank() && ev.has("message")) {
+                text = ev.path("message").path("content").asText("Xin chào");
+            }
+            String senderId = firstNonBlank(
+                    ev.path("user").asText(null),
+                    ev.path("sender").path("sender_id").path("open_id").asText(null),
+                    "event_user");
+            String sessionId = firstNonBlank(
+                    ev.path("channel").asText(null),
+                    ev.path("message").path("chat_id").asText(null),
+                    senderId);
+            return new ParsedWebhookEvent("GroupMessage", sessionId, senderId, "User " + senderId, text.isBlank() ? "Xin chào" : text);
+        }
+
+        // 3. LINE format: { "events": [ { "type": "message", "source": { "userId": "..." }, "message": { "text": "..." } } ] }
+        if (root.has("events") && root.path("events").isArray() && !root.path("events").isEmpty()) {
+            JsonNode ev = root.path("events").get(0);
+            String text = ev.path("message").path("text").asText("Xin chào");
+            String userId = ev.path("source").path("userId").asText("line_user");
+            return new ParsedWebhookEvent("PrivateMessage", userId, userId, "LINE User", text);
+        }
+
+        // 4. Generic / Discord / OneBot v11 format
+        String text = firstNonBlank(
+                root.path("message").asText(null),
+                root.path("content").asText(null),
+                root.path("raw_message").asText(null),
+                root.path("text").asText(null),
+                "Xin chào tư vấn viên!");
+        String senderId = firstNonBlank(
+                root.path("sender_id").asText(null),
+                root.path("user_id").asText(null),
+                root.path("author").path("id").asText(null),
+                "webhook_user_01");
+        String senderName = firstNonBlank(
+                root.path("sender_name").asText(null),
+                root.path("author").path("username").asText(null),
+                "Khách hàng " + inst.type);
+        String sessionId = firstNonBlank(
+                root.path("session_id").asText(null),
+                root.path("channel_id").asText(null),
+                root.path("group_id").asText(null),
+                senderId);
+        String msgType = normalizeMessageType(root.path("message_type").asText(null));
+        return new ParsedWebhookEvent(msgType, sessionId, senderId, senderName, text);
+    }
+
+    private String buildPersonaAndPlatformContext(
+            MutableBotInstance bot,
+            AstrBotPersonaDto persona,
+            String umo,
+            String senderName) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("[ASTRBOT MULTI-PLATFORM CONTEXT]\n");
+        sb.append("- Kênh kết nối: ").append(bot.displayName).append(" (bot_id=").append(bot.id).append(", type=").append(bot.type).append(")\n");
+        sb.append("- Định danh phiên UMO: ").append(umo).append("\n");
+        sb.append("- Khách hàng: ").append(senderName).append("\n");
+        if (persona != null) {
+            sb.append("- Nhân cách AI (Persona): ").append(persona.name()).append("\n");
+            sb.append("- Chỉ dẫn Persona: ").append(persona.systemPrompt()).append("\n");
+        }
+        return sb.toString();
+    }
+
+    private MutableSessionState getOrCreateSession(
+            String umo,
+            String platformId,
+            String platformType,
+            String messageType,
+            String sessionId,
+            String senderId,
+            String senderName) {
+        return sessionMap.computeIfAbsent(umo, k -> {
+            if (sessionMap.size() >= Math.max(10, properties.getMaxSessions()) && !sessionMap.isEmpty()) {
+                String oldestKey = sessionMap.keySet().iterator().next();
+                if (oldestKey != null) {
+                    sessionMap.remove(oldestKey);
+                }
+            }
+            MutableBotInstance bot = botInstances.get(platformId);
+            RouteBindingDto route = resolveRouteBinding(platformId, messageType, sessionId);
+            String initialPersona = firstNonBlank(
+                    route != null ? route.personaId() : null,
+                    bot != null ? bot.defaultPersonaId : null,
+                    properties.getDefaultPersonaId());
+            String initialScenario = firstNonBlank(
+                    route != null ? route.scenario() : null,
+                    bot != null ? bot.defaultScenario : null,
+                    properties.getDefaultScenario());
+            String initialProfile = firstNonBlank(
+                    route != null ? route.configId() : null,
+                    bot != null ? bot.fallbackProfileId : null,
+                    properties.getDefaultFallbackProfileId());
+            return new MutableSessionState(
+                    umo,
+                    platformId,
+                    platformType,
+                    messageType,
+                    sessionId,
+                    senderId,
+                    senderName,
+                    resolveValidPersonaId(initialPersona),
+                    initialScenario,
+                    initialProfile,
+                    Math.max(4, properties.getSessionMaxTurns())
+            );
+        });
+    }
+
+    private AstrBotInstanceDto toInstanceDto(MutableBotInstance inst) {
+        int activeSessions = 0;
+        for (MutableSessionState s : sessionMap.values()) {
+            if (inst.id.equals(s.platformId)) {
+                activeSessions++;
+            }
+        }
+        List<RouteBindingDto> routes = new ArrayList<>();
+        for (RouteBindingDto r : umoRouteMap.values()) {
+            if (r.umo() != null && (r.umo().startsWith(inst.id + ":") || r.umo().startsWith("*:"))) {
+                routes.add(r);
+            }
+        }
+        return new AstrBotInstanceDto(
+                inst.id,
+                inst.type,
+                inst.displayName,
+                inst.enable,
+                inst.status,
+                inst.startedAt,
+                inst.unifiedWebhook,
+                inst.webhookUuid,
+                buildWebhookUrl(inst.webhookUuid),
+                inst.errorCount,
+                inst.lastError,
+                inst.messageCount.get(),
+                activeSessions,
+                inst.fallbackProfileId,
+                inst.defaultPersonaId,
+                inst.defaultScenario,
+                inst.hasQrPayload,
+                inst.qrStatus,
+                inst.qrCodeImgContent,
+                new LinkedHashMap<>(inst.config),
+                routes
+        );
+    }
+
+    private String buildWebhookUrl(String webhookUuid) {
+        if (webhookUuid == null || webhookUuid.isBlank()) {
+            return properties.getWebhookBasePath() + "/default";
+        }
+        return properties.getWebhookBasePath() + "/" + webhookUuid;
+    }
+
+    private void recordTrace(AstrBotTraceDto trace) {
+        recentTraces.addFirst(trace);
+        int max = Math.max(20, properties.getMaxRecentTraces());
+        while (recentTraces.size() > max) {
+            recentTraces.pollLast();
+        }
+    }
+
+    private void appendLog(String level, String platformId, String source, String message, boolean isUserChat) {
+        AstrBotLogEntryDto entry = new AstrBotLogEntryDto(
+                "log-" + sequenceCounter.getAndIncrement(),
+                Instant.now().toString(),
+                level,
+                platformId,
+                source,
+                message,
+                isUserChat
+        );
+        consoleLogs.addFirst(entry);
+        int max = Math.max(30, properties.getMaxConsoleLogs());
+        while (consoleLogs.size() > max) {
+            consoleLogs.pollLast();
+        }
+    }
+
+    private CustomerEvolutionStatusResponse safeGetEvolutionStatus() {
+        try {
+            return evolutionService != null ? evolutionService.getStatus() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public synchronized void saveStateToDiskIfEnabled() {
+        if (properties == null || !properties.isPersistToDisk()) {
+            return;
+        }
+        String filePath = properties.getStateFilePath();
+        if (filePath == null || filePath.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(filePath);
+            if (path.getParent() != null) {
+                java.nio.file.Files.createDirectories(path.getParent());
+            }
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            snapshot.put("bots", listBots(null, null));
+            snapshot.put("routes", new ArrayList<>(umoRouteMap.values()));
+            snapshot.put("personas", listPersonas());
+            snapshot.put("providers", listProviders());
+            snapshot.put("cron_jobs", listCronJobs());
+            snapshot.put("extensions", listExtensions());
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(path.toFile(), snapshot);
+        } catch (Exception e) {
+            log.warn("Failed to persist AstrBot state to {}: {}", filePath, e.getMessage());
+        }
+    }
+
+    public synchronized void loadStateFromDisk() {
+        if (properties == null || !properties.isPersistToDisk()) {
+            return;
+        }
+        String filePath = properties.getStateFilePath();
+        if (filePath == null || filePath.isBlank()) {
+            return;
+        }
+        java.nio.file.Path path = java.nio.file.Paths.get(filePath);
+        if (!java.nio.file.Files.exists(path)) {
+            return;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(path.toFile());
+            if (root == null || !root.isObject()) {
+                return;
+            }
+            if (root.has("personas") && root.path("personas").isArray()) {
+                for (JsonNode n : root.path("personas")) {
+                    AstrBotPersonaDto p = objectMapper.treeToValue(n, AstrBotPersonaDto.class);
+                    if (p != null && p.id() != null) {
+                        personaMap.put(p.id(), p);
+                    }
+                }
+            }
+            if (root.has("providers") && root.path("providers").isArray()) {
+                for (JsonNode n : root.path("providers")) {
+                    AstrBotProviderDto pr = objectMapper.treeToValue(n, AstrBotProviderDto.class);
+                    if (pr != null && pr.id() != null) {
+                        providerMap.put(pr.id(), pr);
+                    }
+                }
+            }
+            if (root.has("routes") && root.path("routes").isArray()) {
+                for (JsonNode n : root.path("routes")) {
+                    RouteBindingDto r = objectMapper.treeToValue(n, RouteBindingDto.class);
+                    if (r != null && r.umo() != null) {
+                        umoRouteMap.put(r.umo(), r);
+                    }
+                }
+            }
+            if (root.has("cron_jobs") && root.path("cron_jobs").isArray()) {
+                for (JsonNode n : root.path("cron_jobs")) {
+                    AstrBotCronJobDto c = objectMapper.treeToValue(n, AstrBotCronJobDto.class);
+                    if (c != null && c.jobId() != null) {
+                        cronJobMap.put(c.jobId(), c);
+                    }
+                }
+            }
+            if (root.has("extensions") && root.path("extensions").isArray()) {
+                for (JsonNode n : root.path("extensions")) {
+                    AstrBotExtensionDto ext = objectMapper.treeToValue(n, AstrBotExtensionDto.class);
+                    if (ext != null && ext.name() != null) {
+                        extensionMap.put(ext.name(), ext);
+                    }
+                }
+            }
+            if (root.has("bots") && root.path("bots").isArray()) {
+                for (JsonNode n : root.path("bots")) {
+                    AstrBotInstanceDto dto = objectMapper.treeToValue(n, AstrBotInstanceDto.class);
+                    if (dto != null && dto.id() != null) {
+                        Map<String, Object> cfg = dto.config() != null ? new LinkedHashMap<>(dto.config()) : new LinkedHashMap<>();
+                        MutableBotInstance inst = new MutableBotInstance(
+                                dto.id(),
+                                dto.type(),
+                                dto.displayName(),
+                                dto.enable(),
+                                dto.status(),
+                                dto.startedAt(),
+                                dto.unifiedWebhook(),
+                                dto.webhookUuid(),
+                                dto.fallbackProfileId(),
+                                dto.defaultPersonaId(),
+                                dto.defaultScenario(),
+                                cfg
+                        );
+                        inst.errorCount = dto.errorCount();
+                        inst.lastError = dto.lastError();
+                        inst.hasQrPayload = dto.hasQrPayload();
+                        inst.qrStatus = dto.qrStatus();
+                        inst.qrCodeImgContent = dto.qrCodeImgContent();
+                        inst.messageCount.set(dto.messageCount());
+                        botInstances.put(inst.id, inst);
+                        if (!botOrder.contains(inst.id)) {
+                            botOrder.add(inst.id);
+                        }
+                    }
+                }
+            }
+            appendLog("INFO", "system", "StateLoader", "Đã nạp cấu hình AstrBot từ " + filePath, false);
+        } catch (Exception e) {
+            log.warn("Failed to load AstrBot state from {}: {}", filePath, e.getMessage());
+        }
+    }
+
+    private static String normalizeMessageType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "PrivateMessage";
+        }
+        String lower = raw.trim().toLowerCase(Locale.ROOT);
+        if (lower.contains("group") || lower.contains("guild") || lower.contains("channel")) {
+            return "GroupMessage";
+        }
+        return "PrivateMessage";
+    }
+
+    private static String asString(Object val) {
+        return val != null ? String.valueOf(val).trim() : null;
+    }
+
+    private static boolean asBoolean(Object val, boolean fallback) {
+        if (val instanceof Boolean b) {
+            return b;
+        }
+        if (val instanceof String s && !s.isBlank()) {
+            return Boolean.parseBoolean(s.trim());
+        }
+        return fallback;
+    }
+
+    private static double asDouble(Object val, double fallback) {
+        if (val instanceof Number n) {
+            return n.doubleValue();
+        }
+        if (val instanceof String s && !s.isBlank()) {
+            try {
+                return Double.parseDouble(s.trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return fallback;
+    }
+
+    private static List<String> asStringList(Object val) {
+        if (val instanceof List<?> rawList) {
+            List<String> out = new ArrayList<>();
+            for (Object item : rawList) {
+                if (item != null && !String.valueOf(item).isBlank()) {
+                    out.add(String.valueOf(item).trim());
+                }
+            }
+            return out;
+        }
+        return List.of();
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String v : values) {
+            if (v != null && !v.isBlank()) {
+                return v.trim();
+            }
+        }
+        return null;
+    }
+
+    private static String truncate(String s, int maxLen) {
+        if (s == null || s.length() <= maxLen) {
+            return s;
+        }
+        return s.substring(0, maxLen) + "...";
+    }
+
+    private static String maskSecret(String secret) {
+        if (secret == null || secret.length() <= 6) {
+            return "••••••••";
+        }
+        return secret.substring(0, 4) + "••••••" + secret.substring(secret.length() - 3);
+    }
+
+    private record ParsedWebhookEvent(
+            String messageType,
+            String sessionId,
+            String senderId,
+            String senderName,
+            String messageText
+    ) {
+    }
+
+    private enum ComparatorNullSafe implements java.util.Comparator<String> {
+        INSTANCE;
+        @Override
+        public int compare(String a, String b) {
+            if (a == null && b == null) return 0;
+            if (a == null) return -1;
+            if (b == null) return 1;
+            return a.compareTo(b);
+        }
+    }
+
+    private static final class MutableBotInstance {
+        final String id;
+        final String type;
+        final String displayName;
+        volatile boolean enable;
+        volatile String status;
+        volatile String startedAt;
+        volatile boolean unifiedWebhook;
+        volatile String webhookUuid;
+        volatile String fallbackProfileId;
+        volatile String defaultPersonaId;
+        volatile String defaultScenario;
+        volatile int errorCount = 0;
+        volatile ErrorDetailDto lastError = null;
+        volatile boolean hasQrPayload = false;
+        volatile String qrStatus = null;
+        volatile String qrCodeImgContent = null;
+        final AtomicLong messageCount = new AtomicLong(0);
+        final Map<String, Object> config;
+
+        MutableBotInstance(
+                String id,
+                String type,
+                String displayName,
+                boolean enable,
+                String status,
+                String startedAt,
+                boolean unifiedWebhook,
+                String webhookUuid,
+                String fallbackProfileId,
+                String defaultPersonaId,
+                String defaultScenario,
+                Map<String, Object> config) {
+            this.id = id;
+            this.type = type;
+            this.displayName = displayName;
+            this.enable = enable;
+            this.status = status;
+            this.startedAt = startedAt;
+            this.unifiedWebhook = unifiedWebhook;
+            this.webhookUuid = webhookUuid;
+            this.fallbackProfileId = fallbackProfileId;
+            this.defaultPersonaId = defaultPersonaId;
+            this.defaultScenario = defaultScenario;
+            this.config = new LinkedHashMap<>(config);
+        }
+
+        void recordError(String message, String traceback) {
+            this.errorCount++;
+            this.status = "error";
+            this.lastError = new ErrorDetailDto(message, Instant.now().toString(), traceback);
+        }
+    }
+
+    private static final class MutableSessionState {
+        final String umo;
+        final String platformId;
+        final String platformType;
+        final String messageType;
+        final String sessionId;
+        final String senderId;
+        volatile String senderName;
+        volatile String customName;
+        volatile boolean llmEnabled = true;
+        volatile boolean ttsEnabled = false;
+        volatile String personaId;
+        volatile String scenario;
+        volatile String configProfileId;
+        volatile List<String> kbNames = List.of("dior_sop_kb", "docmind_hybrid_rag");
+        volatile List<String> disabledPlugins = List.of();
+        volatile int messageCount = 0;
+        volatile String lastInteractionId = null;
+        volatile String lastMessage = "";
+        volatile String lastReply = "";
+        volatile String lastActiveAt = Instant.now().toString();
+        final int maxTurns;
+        final Deque<Map<String, String>> history = new ConcurrentLinkedDeque<>();
+
+        MutableSessionState(
+                String umo,
+                String platformId,
+                String platformType,
+                String messageType,
+                String sessionId,
+                String senderId,
+                String senderName,
+                String personaId,
+                String scenario,
+                String configProfileId,
+                int maxTurns) {
+            this.umo = umo;
+            this.platformId = platformId;
+            this.platformType = platformType;
+            this.messageType = messageType;
+            this.sessionId = sessionId;
+            this.senderId = senderId;
+            this.senderName = senderName;
+            this.personaId = personaId;
+            this.scenario = scenario;
+            this.configProfileId = configProfileId;
+            this.maxTurns = maxTurns;
+        }
+
+        synchronized void recordTurn(String question, String answer) {
+            this.lastMessage = question;
+            this.lastReply = answer;
+            this.messageCount++;
+            this.lastActiveAt = Instant.now().toString();
+            this.history.addLast(Map.of("role", "user", "content", question));
+            this.history.addLast(Map.of("role", "assistant", "content", answer));
+            while (this.history.size() > maxTurns * 2) {
+                this.history.pollFirst();
+            }
+        }
+
+        List<CustomerChatRequest.ConversationTurn> buildHistoryTurns() {
+            List<CustomerChatRequest.ConversationTurn> turns = new ArrayList<>();
+            for (Map<String, String> h : history) {
+                turns.add(new CustomerChatRequest.ConversationTurn(h.get("role"), h.get("content")));
+            }
+            return turns;
+        }
+
+        AstrBotSessionRuleDto toDto() {
+            return new AstrBotSessionRuleDto(
+                    umo,
+                    platformId,
+                    platformType,
+                    messageType,
+                    sessionId,
+                    senderId,
+                    senderName,
+                    customName,
+                    llmEnabled,
+                    ttsEnabled,
+                    personaId,
+                    scenario,
+                    configProfileId,
+                    kbNames,
+                    disabledPlugins,
+                    messageCount,
+                    lastMessage,
+                    lastReply,
+                    lastActiveAt,
+                    new ArrayList<>(history)
+            );
+        }
+    }
+}

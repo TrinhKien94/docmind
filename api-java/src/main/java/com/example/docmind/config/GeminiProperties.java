@@ -8,8 +8,8 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 
 /**
- * Cấu hình Gemini. Để trống {@code gemini.api.keys} => chat dùng LLM stub.
- * Chỉ khi có ít nhất 1 key, GeminiLlmClient mới được kích hoạt.
+ * Cấu hình Gemini. Để trống {@code gemini.api.keys} => chat dùng LLM stub hoặc 9Router.
+ * Chỉ khi có ít nhất 1 key và 9Router tắt, GeminiLlmClient mới được kích hoạt.
  */
 @Getter
 @Setter
@@ -17,12 +17,21 @@ import java.util.List;
 @ConfigurationProperties(prefix = "gemini")
 public class GeminiProperties {
 
-    /** Danh sách API key (round-robin sau này). Trống => stub. */
+    /** Danh sách API key (round-robin). Trống => stub. */
     private Api api = new Api();
 
     private String model = "gemini-2.5-flash-lite";
 
     private String baseUrl = "https://generativelanguage.googleapis.com/v1beta";
+
+    /** Đường dẫn endpoint generateContent của Gemini API. */
+    private String generatePathTemplate = "/models/{model}:generateContent?key={key}";
+
+    /** Timeout kết nối (ms) khi gọi Gemini. */
+    private int connectTimeoutMs = 10000;
+
+    /** Timeout đọc phản hồi (ms) khi gọi Gemini. */
+    private int readTimeoutMs = 60000;
 
     @Getter
     @Setter

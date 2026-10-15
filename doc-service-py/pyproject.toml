@@ -1,6 +1,7 @@
 [tool.pytest.ini_options]
 # Run from the service root (docmind/doc-service-py) so `app` + `tests`
 # are importable without extra PYTHONPATH juggling.
+# Disable broken global third-party pytest_ethereum plugin if present on host.
 pythonpath = ["."]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -p no:ethereum"

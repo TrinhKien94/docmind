@@ -13,7 +13,7 @@ public class GeminiEnabledCondition implements Condition {
 
     @Override
     public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-        return hasKey(context);
+        return hasKey(context) && !NineRouterEnabledCondition.isNineRouterEnabled(context);
     }
 
     static boolean hasKey(ConditionContext context) {
@@ -30,11 +30,11 @@ public class GeminiEnabledCondition implements Condition {
         return false;
     }
 
-    /** Negation: active khi KHÔNG có Gemini key -> StubLlmClient dùng cái này. */
+    /** Negation: active khi KHÔNG bật 9Router VÀ KHÔNG có Gemini key -> StubLlmClient dùng cái này. */
     public static class Disabled implements Condition {
         @Override
         public boolean matches(ConditionContext context, AnnotatedTypeMetadata metadata) {
-            return !hasKey(context);
+            return !NineRouterEnabledCondition.isNineRouterEnabled(context) && !hasKey(context);
         }
     }
 }

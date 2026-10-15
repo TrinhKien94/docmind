@@ -23,17 +23,19 @@ import functools
 import time
 from typing import Protocol
 
+from app.config import get_settings
 from app.logging_config import get_logger
 
 log = get_logger()
+_settings = get_settings()
 
-# --- Hard contract constants (do NOT change) --------------------------------
+# --- Contract constants (backed by Settings config, defaults preserved) -----
 #: Embedding dimension — matches the pgvector column and Java EmbeddingProperties.
-EMBEDDING_DIM = 384
+EMBEDDING_DIM = _settings.embedding_dim
 #: Max texts processed per request; the route caps-and-logs beyond this.
-MAX_BATCH = 256
+MAX_BATCH = _settings.embedding_max_batch
 #: Real provider model id (multilingual MiniLM, 384-dim, CPU, VI-friendly).
-REAL_MODEL_ID = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
+REAL_MODEL_ID = _settings.embedding_model
 
 
 class _ModelUnavailable(Exception):
@@ -146,7 +148,7 @@ def _load_model():
         raise _ModelUnavailable(f"sentence_transformers import failed: {exc}") from exc
     started = time.perf_counter()
     try:
-        model = SentenceTransformer(REAL_MODEL_ID, device="cpu")
+        model = SentenceTransformer(REAL_MODEL_ID, device=_settings.embedding_device)
     except Exception as exc:  # download/load failure (offline, disk, etc.)
         raise _ModelUnavailable(f"model load failed: {exc}") from exc
     _MODEL = model

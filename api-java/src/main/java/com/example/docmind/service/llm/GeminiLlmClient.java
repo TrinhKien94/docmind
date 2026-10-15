@@ -5,23 +5,20 @@ import com.example.docmind.config.GeminiProperties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Conditional;
+import org.springframework.context.annotation.Primary;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
 /**
- * GeminiLlmClient — CHỈ kích hoạt khi gemini.api.keys có giá trị
- * (@ConditionalOnProperty, không matchIfMissing). Khi active, nó là primary LlmClient
- * (@Primary) và lấn át StubLlmClient.
- *
- * <p>Skeleton: round-robin key đơn giản + gọi generativelanguage API. Nếu lỗi,
- * fallback trả về thông báo an toàn (không ném) để chat không chết. Hoàn thiện
- * (retry, nhiều model fallback, streaming) để lại TODO cho giai đoạn sau.
+ * GeminiLlmClient — CHỈ kích hoạt khi gemini.api.keys có giá trị và 9Router tắt.
  */
 @Component
-@org.springframework.context.annotation.Primary
+@Primary
 @Conditional(GeminiEnabledCondition.class)
 public class GeminiLlmClient implements LlmClient {
 
@@ -33,7 +30,16 @@ public class GeminiLlmClient implements LlmClient {
 
     public GeminiLlmClient(GeminiProperties props) {
         this.props = props;
-        this.http = RestClient.builder().baseUrl(props.getBaseUrl()).build();
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(Duration.ofMillis(
+                props.getConnectTimeoutMs() > 0 ? props.getConnectTimeoutMs() : 10000));
+        requestFactory.setReadTimeout(Duration.ofMillis(
+                props.getReadTimeoutMs() > 0 ? props.getReadTimeoutMs() : 60000));
+
+        this.http = RestClient.builder()
+                .baseUrl(props.getBaseUrl())
+                .requestFactory(requestFactory)
+                .build();
         log.info("GeminiLlmClient active (model={}, keys={})",
                 props.getModel(), props.getApi().getKeys().size());
     }
@@ -46,6 +52,9 @@ public class GeminiLlmClient implements LlmClient {
             log.warn("Không có Gemini key hợp lệ -> trả câu trả lời fallback.");
             return "[gemini-unavailable] Chưa cấu hình được Gemini key hợp lệ.";
         }
+        String pathTemplate = (props.getGeneratePathTemplate() != null && !props.getGeneratePathTemplate().isBlank())
+                ? props.getGeneratePathTemplate().strip()
+                : "/models/{model}:generateContent?key={key}";
         try {
             Map<String, Object> body = Map.of(
                     "contents", List.of(Map.of(
@@ -53,13 +62,12 @@ public class GeminiLlmClient implements LlmClient {
                     ))
             );
             Map<String, Object> resp = http.post()
-                    .uri("/models/{model}:generateContent?key={key}", props.getModel(), key)
+                    .uri(pathTemplate, props.getModel(), key)
                     .body(body)
                     .retrieve()
                     .body(Map.class);
             return extractText(resp);
         } catch (Exception e) {
-            // TODO: retry + fallback-models + round-robin key khi 429/5xx.
             log.error("Gọi Gemini thất bại, fallback: {}", e.getMessage());
             return "[gemini-error] Không gọi được Gemini: " + e.getMessage();
         }

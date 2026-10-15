@@ -4,17 +4,20 @@ import com.example.docmind.config.EmbeddingProperties;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.stereotype.Component;
 
+import java.text.Normalizer;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+
 /**
- * Embedding stub: vector giả TẤT ĐỊNH (hash-seeded) + L2-normalize.
+ * Embedding stub: vector giả TẤT ĐỊNH (hash-seeded) + L2-normalize hỗ trợ tiếng Việt Unicode
+ * và tổ hợp từ ghép (Unigram + Bigram feature hashing).
  *
- * <p>Mục tiêu: toán retrieval (cosine) chạy được KHÔNG cần model nào. Vì cùng text
- * luôn ra cùng vector, cosine giữa text giống/khác nhau vẫn có ý nghĩa tương đối,
- * đủ để kiểm thử và chạy pipeline. KHÔNG dùng cho chất lượng ngữ nghĩa thật.
+ * <p>Mục tiêu: toán retrieval (cosine) chạy được KHÔNG cần model ngoài, giữ nguyên từ tiếng Việt
+ * có dấu, đồng thời băm cả biến thể bỏ dấu và cụm 2 từ liền kề (bigrams) như "kem_nen", "nuoc_hoa",
+ * "da_dau", "di_ung", "doi_tra", "capture_totale", "dior_prestige" để truy xuất ngữ nghĩa chính xác.
  *
  * <p>Active mặc định; nhường chỗ cho impl thật qua @ConditionalOnMissingBean.
- *
- * <p>TODO: thay bằng impl thật dùng paraphrase-multilingual-MiniLM-L12-v2 (dim 384),
- * có thể gọi sang doc-service-py hoặc nạp ONNX in-JVM.
  */
 @Component
 @ConditionalOnMissingBean(name = "primaryEmbeddingClient")
@@ -33,19 +36,30 @@ public class StubEmbeddingClient implements EmbeddingClient {
 
     @Override
     public float[] embed(String text) {
-        String src = text == null ? "" : text.toLowerCase();
+        String src = text == null ? "" : text.toLowerCase(Locale.ROOT);
         float[] v = new float[dim];
 
-        // Băm theo từng token để vector phản ánh (phần nào) nội dung text.
-        for (String token : src.split("\\W+")) {
+        // 1. Băm theo từng token Unicode nguyên bản (giữ nguyên dấu tiếng Việt).
+        for (String token : src.split("(?U)[^\\p{L}\\p{N}]+")) {
             if (token.isEmpty()) {
                 continue;
             }
-            int h = token.hashCode();
-            int idx = Math.floorMod(h, dim);
-            // dấu dựa trên bit cao để phân tán +/-.
-            float sign = ((h >>> 31) & 1) == 0 ? 1f : -1f;
-            v[idx] += sign;
+            accumulateTokenHash(v, token, 1.0f);
+        }
+
+        // 2. Băm thêm token chuẩn hoá bỏ dấu tiếng Việt + Bigram (cụm 2 từ liền kề)
+        // giúp bắt chính xác các khái niệm tiếng Việt & tên dòng sản phẩm (vd: "kem_nen", "da_nhay_cam", "miss_dior").
+        String normalizedAscii = normalizeVietnameseAscii(src);
+        List<String> normTokens = new ArrayList<>();
+        for (String token : normalizedAscii.split("[^a-z0-9]+")) {
+            if (!token.isEmpty()) {
+                normTokens.add(token);
+                accumulateTokenHash(v, "vn_" + token, 0.85f);
+            }
+        }
+        for (int i = 0; i + 1 < normTokens.size(); i++) {
+            String bigram = normTokens.get(i) + "_" + normTokens.get(i + 1);
+            accumulateTokenHash(v, "bg_" + bigram, 1.25f);
         }
 
         // Nếu text rỗng, tạo vector tất định nhỏ để tránh toàn 0 (chia 0 khi normalize).
@@ -56,6 +70,23 @@ public class StubEmbeddingClient implements EmbeddingClient {
 
         l2Normalize(v);
         return v;
+    }
+
+    private void accumulateTokenHash(float[] v, String feature, float weight) {
+        int h = feature.hashCode();
+        int idx = Math.floorMod(h, dim);
+        float sign = ((h >>> 31) & 1) == 0 ? 1f : -1f;
+        v[idx] += sign * weight;
+    }
+
+    private static String normalizeVietnameseAscii(String input) {
+        if (input == null || input.isEmpty()) {
+            return "";
+        }
+        String nfd = Normalizer.normalize(input, Normalizer.Form.NFD);
+        return nfd.replaceAll("\\p{InCombiningDiacriticalMarks}+", "")
+                .replace('đ', 'd')
+                .replace('Đ', 'd');
     }
 
     private static boolean isAllZero(float[] v) {
@@ -80,3 +111,4 @@ public class StubEmbeddingClient implements EmbeddingClient {
         }
     }
 }
+

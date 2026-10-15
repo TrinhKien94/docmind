@@ -23,4 +23,13 @@ public class DocServiceProperties {
 
     /** Số lần poll tối đa trước khi coi là timeout. */
     private int pollMaxAttempts = 40;
+
+    /** Đường dẫn endpoint gửi file phân tích. */
+    private String parseEndpointPath = "/v1/parse";
+
+    /** Đường dẫn endpoint kiểm tra trạng thái job. */
+    private String jobStatusEndpointPath = "/v1/jobs/{jobId}";
+
+    /** Đường dẫn endpoint lấy kết quả phân tích job. */
+    private String jobResultEndpointPath = "/v1/jobs/{jobId}/result";
 }

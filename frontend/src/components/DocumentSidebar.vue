@@ -1,5 +1,10 @@
 <template>
-  <aside class="sidebar-container">
+  <aside 
+    class="sidebar-container" 
+    :class="{ 'is-mobile-open': isDrawerOpen, 'is-open': isDrawerOpen }"
+    role="complementary"
+    aria-label="Quản lý tài liệu DocMind"
+  >
     <!-- Header / Branding -->
     <div class="sidebar-header">
       <div class="brand">
@@ -17,16 +22,32 @@
         </div>
       </div>
 
-      <!-- Live / Demo Indicator -->
-      <div class="connection-badge" :class="{ 'is-live': isConnected, 'is-demo': !isConnected }" :title="connectionTooltip">
-        <span class="status-dot"></span>
-        <span>{{ isConnected ? 'API Live (8090)' : 'Chế độ Demo' }}</span>
-        <button class="toggle-mode-btn" @click="$emit('toggle-demo')" :title="isConnected ? 'Chuyển sang Demo' : 'Thử kết nối lại API thật'">
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
-            <path d="M3 3v5h5"/>
-            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
-            <path d="M16 21h5v-5"/>
+      <div class="sidebar-header-actions">
+        <!-- Live / Demo Indicator -->
+        <div class="connection-badge" :class="{ 'is-live': isConnected, 'is-demo': !isConnected }" :title="connectionTooltip">
+          <span class="status-dot"></span>
+          <span class="badge-text">{{ isConnected ? 'API Live (8090)' : 'Chế độ Demo' }}</span>
+          <button class="toggle-mode-btn" @click="$emit('toggle-demo')" :title="isConnected ? 'Chuyển sang Demo' : 'Thử kết nối lại API thật'">
+            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+              <path d="M3 3v5h5"/>
+              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+              <path d="M16 21h5v-5"/>
+            </svg>
+          </button>
+        </div>
+
+        <!-- Mobile Drawer Close Button (>= 44px touch target) -->
+        <button 
+          class="btn-drawer-close"
+          data-testid="drawer-close"
+          title="Đóng thanh tài liệu (Esc)"
+          aria-label="Đóng thanh tài liệu"
+          @click="$emit('close'); $emit('close-sidebar');"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"/>
+            <line x1="6" y1="6" x2="18" y2="18"/>
           </svg>
         </button>
       </div>
@@ -136,7 +157,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import DocumentUploadZone from './DocumentUploadZone.vue'
 import DocumentCard from './DocumentCard.vue'
 
@@ -156,6 +177,14 @@ const props = defineProps({
   isConnected: {
     type: Boolean,
     default: false
+  },
+  isOpen: {
+    type: Boolean,
+    default: false
+  },
+  isMobileOpen: {
+    type: Boolean,
+    default: false
   }
 })
 
@@ -165,8 +194,28 @@ const emit = defineEmits([
   'toggle-select-all',
   'refresh-documents',
   'view-detail',
-  'toggle-demo'
+  'toggle-demo',
+  'close',
+  'close-sidebar'
 ])
+
+const isDrawerOpen = computed(() => props.isOpen || props.isMobileOpen)
+
+// Close drawer on Escape key
+const handleKeyDown = (e) => {
+  if (e.key === 'Escape' && isDrawerOpen.value) {
+    emit('close')
+    emit('close-sidebar')
+  }
+}
+
+onMounted(() => {
+  window.addEventListener('keydown', handleKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleKeyDown)
+})
 
 const currentFilter = ref('all')
 
@@ -206,6 +255,18 @@ const connectionTooltip = computed(() => {
   display: flex;
   flex-direction: column;
   user-select: none;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.sidebar-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-drawer-close {
+  display: none;
 }
 
 .sidebar-header {
@@ -476,5 +537,119 @@ const connectionTooltip = computed(() => {
   height: 6px;
   border-radius: 50%;
   background: #6366f1;
+}
+
+/* Mobile Responsive Off-Canvas Drawer (< 768px) */
+@media (max-width: 767px) {
+  .sidebar-container {
+    position: fixed;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: min(340px, 85vw);
+    min-width: 0;
+    max-width: 85vw;
+    height: 100%;
+    height: 100dvh;
+    z-index: 1000;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: none;
+    border-right: 1px solid var(--border-active);
+    padding-top: max(0px, env(safe-area-inset-top));
+    padding-bottom: max(0px, env(safe-area-inset-bottom));
+  }
+
+  .sidebar-container.is-mobile-open,
+  .sidebar-container.is-open {
+    transform: translateX(0);
+    box-shadow: 8px 0 32px rgba(0, 0, 0, 0.65);
+  }
+
+  .btn-drawer-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0;
+    border-radius: var(--radius-md);
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .btn-drawer-close:hover,
+  .btn-drawer-close:active {
+    background: rgba(255, 255, 255, 0.14);
+    color: #ffffff;
+    border-color: var(--border-active);
+  }
+
+  /* Touch Targets >= 44px for Action Controls */
+  .btn-refresh {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .filter-pills {
+    gap: 8px;
+    padding-bottom: 4px;
+  }
+
+  .pill-btn {
+    min-height: 44px;
+    padding: 8px 14px;
+    font-size: 0.8rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .selection-bar {
+    min-height: 44px;
+    padding: 4px 0;
+  }
+
+  .btn-text {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    padding: 8px 4px;
+    font-size: 0.8rem;
+  }
+
+  .connection-badge {
+    min-height: 44px;
+    padding: 4px 10px;
+  }
+
+  .toggle-mode-btn {
+    width: 32px;
+    height: 32px;
+    min-width: 32px;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .connection-badge .badge-text {
+    display: none;
+  }
+  .connection-badge {
+    padding: 4px 6px;
+  }
 }
 </style>

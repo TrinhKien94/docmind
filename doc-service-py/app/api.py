@@ -44,8 +44,8 @@ def _correlation_from(header_value: str | None) -> str | None:
     return header_value or None
 
 
-# Per-text char cap: truncate very long inputs before embedding (logged).
-_MAX_CHARS = 20_000
+# Per-text char cap: truncate very long inputs before embedding (logged, backed by Settings).
+_MAX_CHARS = get_settings().embedding_max_chars
 
 
 class EmbedRequest(BaseModel):
