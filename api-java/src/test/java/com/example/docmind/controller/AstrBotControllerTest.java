@@ -60,7 +60,12 @@ class AstrBotControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.enabled").value(true))
                 .andExpect(jsonPath("$.version").value("v4.14.0-docmind"))
-                .andExpect(jsonPath("$.bot_types.length()").value(19));
+                .andExpect(jsonPath("$.bot_types.length()").value(19))
+                .andExpect(jsonPath("$.bot_types[0].category").value("Global Messaging"))
+                .andExpect(jsonPath("$.bot_types[0].doc_url").isNotEmpty())
+                .andExpect(jsonPath("$.bot_types[0].fields").isArray())
+                .andExpect(jsonPath("$.bot_types[0].fields[0].key").isNotEmpty())
+                .andExpect(jsonPath("$.bot_types[0].fields[0].label").isNotEmpty());
     }
 
     @Test
@@ -95,6 +100,11 @@ class AstrBotControllerTest {
                         .content("{\"bot_id\":\"telegram_dior_concierge\",\"message\":\"Xin chào\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.umo").value("telegram_dior_concierge:PrivateMessage:u1"))
+                .andExpect(jsonPath("$.platform_id").value("telegram_dior_concierge"))
+                .andExpect(jsonPath("$.incoming_message").value("Xin chào"))
+                .andExpect(jsonPath("$.scenario").value("SALES"))
+                .andExpect(jsonPath("$.persona_id").value("dior_luxury_advisor"))
+                .andExpect(jsonPath("$.stages.length()").value(6))
                 .andExpect(jsonPath("$.reply_sent").value("Dạ Christian Dior xin kính chào Quý khách!"));
     }
 

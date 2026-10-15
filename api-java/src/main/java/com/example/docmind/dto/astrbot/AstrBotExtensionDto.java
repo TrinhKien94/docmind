@@ -1,5 +1,6 @@
 package com.example.docmind.dto.astrbot;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
@@ -7,6 +8,7 @@ import java.util.List;
 /**
  * Thông tin Star Plugin, Slash Command hoặc MCP Server trong ExtensionPage của AstrBot.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AstrBotExtensionDto(
         @JsonProperty("id") String id,

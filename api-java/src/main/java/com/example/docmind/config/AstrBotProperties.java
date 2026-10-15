@@ -63,4 +63,11 @@ public class AstrBotProperties {
 
     /** Múi giờ hệ thống hiển thị trên Dashboard AstrBot. */
     private String timezone = "Asia/Ho_Chi_Minh";
+
+    /** Bật/tắt lưu trạng thái cấu hình AstrBot xuống đĩa (JSON atomic persistence). */
+    private boolean persistToDisk = false;
+
+    /** Đường dẫn tệp JSON lưu trữ trạng thái cấu hình và phiên AstrBot khi persistToDisk=true. */
+    private String stateFilePath = "data/astrbot-state.json";
 }
+

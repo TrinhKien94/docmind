@@ -292,4 +292,213 @@ class AstrBotServiceTest {
         assertFalse(overview.traces().isEmpty());
         assertFalse(overview.logs().isEmpty());
     }
+
+    @Test
+    @DisplayName("Contract DTO cho Frontend: fields, doc_url, category 6 nhóm, umo_routes, active_sessions và 6 stages")
+    void frontendDtoContractAliasesAndCategoriesArePopulated() {
+        List<String> validCategories = List.of(
+                "Global Messaging",
+                "Enterprise Workspace",
+                "WeChat Ecosystem",
+                "QQ & OneBot Ecosystem",
+                "Open Federation & Protocol",
+                "Built-in Channel"
+        );
+        for (AstrBotPlatformTypeDto pt : astrBotService.listPlatformTypes()) {
+            assertTrue(validCategories.contains(pt.category()), "Invalid category for " + pt.type() + ": " + pt.category());
+            assertNotNull(pt.docUrl());
+            assertFalse(pt.fields().isEmpty(), "fields() must not be empty for " + pt.type());
+            Map<String, Object> firstField = pt.fields().get(0);
+            assertNotNull(firstField.get("key"));
+            assertNotNull(firstField.get("label"));
+            assertNotNull(firstField.get("type"));
+        }
+
+        AstrBotInstanceDto tgBot = astrBotService.getBot("telegram_dior_concierge");
+        assertFalse(tgBot.umoRoutes().isEmpty());
+        assertTrue(tgBot.activeSessions() >= 1);
+
+        assertFalse(astrBotService.getTraces().isEmpty());
+        var firstTrace = astrBotService.getTraces().get(0);
+        assertNotNull(firstTrace.question());
+        assertNotNull(firstTrace.replyExcerpt());
+        assertNotNull(firstTrace.scenario());
+        assertNotNull(firstTrace.personaId());
+        assertEquals(6, firstTrace.stages().size());
+    }
+
+    @Test
+    @DisplayName("updateBot ưu tiên enable và unified_webhook ở top-level thay vì giá trị cũ trong editForm.config")
+    void updateBotHonorsTopLevelEnableAndUnifiedWebhookOverStaleConfig() {
+        AstrBotInstanceDto updated = astrBotService.updateBot("telegram_dior_concierge", Map.of(
+                "enable", false,
+                "unified_webhook", false,
+                "config", Map.of(
+                        "bot_token", "889900:AAH-updated-token",
+                        "enable", true,
+                        "unified_webhook", true
+                )
+        ));
+        assertFalse(updated.enable());
+        assertEquals("stopped", updated.status());
+        assertFalse(updated.unifiedWebhook());
+        assertEquals(false, updated.config().get("enable"));
+        assertEquals(false, updated.config().get("unified_webhook"));
+    }
+
+    @Test
+    @DisplayName("Định tuyến UMO hỗ trợ ký tự đại diện (*) và không bị kịch bản AUTO làm lu mờ")
+    void wildcardUmoRoutingAndAutoScenarioResolution() {
+        astrBotService.upsertRoute(Map.of(
+                "umo", "telegram_dior_concierge:PrivateMessage:*",
+                "config_id", "dior_luxury_default",
+                "persona_id", "vip_aftersales_concierge",
+                "scenario", "WARRANTY_RETURN"
+        ));
+
+        AstrBotSimulateResponse resp = astrBotService.simulateOrProcessMessage(new AstrBotSimulateRequest(
+                "telegram_dior_concierge",
+                "telegram",
+                "PrivateMessage",
+                "wildcard_vip_user_42",
+                "wildcard_vip_user_42",
+                "Khách VIP Wildcard",
+                "Hộp nước hoa của mình bị móp góc khi vận chuyển",
+                "AUTO",
+                null
+        ));
+
+        assertEquals("WARRANTY_RETURN", resp.resolvedScenario());
+        assertEquals("WARRANTY_RETURN", resp.scenario());
+        assertEquals("vip_aftersales_concierge", resp.resolvedPersonaId());
+        assertEquals("vip_aftersales_concierge", resp.personaId());
+        assertEquals("telegram_dior_concierge", resp.platformId());
+        assertEquals(6, resp.stages().size());
+    }
+
+    @Test
+    @DisplayName("Các lệnh Star mở rộng (/provider, /kb, /guidelines, /tts) và gắn nhãn TTS khi bật tts_enabled")
+    void extendedStarSlashCommandsAndTtsSynthesisTag() {
+        AstrBotSimulateResponse provResp = astrBotService.simulateOrProcessMessage(new AstrBotSimulateRequest(
+                "telegram_dior_concierge", "telegram", "PrivateMessage", "tts_user_1", "tts_user_1", "VIP", "/provider", "AUTO", null
+        ));
+        assertTrue(provResp.isCommand());
+        assertTrue(provResp.replySent().contains("LLM Provider"));
+
+        AstrBotSimulateResponse kbResp = astrBotService.simulateOrProcessMessage(new AstrBotSimulateRequest(
+                "telegram_dior_concierge", "telegram", "PrivateMessage", "tts_user_1", "tts_user_1", "VIP", "/kb Sauvage", "AUTO", null
+        ));
+        assertTrue(kbResp.isCommand());
+        assertTrue(kbResp.replySent().contains("Sauvage"));
+
+        AstrBotSimulateResponse guideResp = astrBotService.simulateOrProcessMessage(new AstrBotSimulateRequest(
+                "telegram_dior_concierge", "telegram", "PrivateMessage", "tts_user_1", "tts_user_1", "VIP", "/guidelines", "AUTO", null
+        ));
+        assertTrue(guideResp.isCommand());
+        assertTrue(guideResp.replySent().contains("EvoAgentX"));
+
+        // Toggle TTS on via /tts
+        AstrBotSimulateResponse ttsResp = astrBotService.simulateOrProcessMessage(new AstrBotSimulateRequest(
+                "telegram_dior_concierge", "telegram", "PrivateMessage", "tts_user_1", "tts_user_1", "VIP", "/tts", "AUTO", null
+        ));
+        assertTrue(ttsResp.isCommand());
+        assertTrue(ttsResp.replySent().contains("BẬT"));
+
+        // Normal message should now carry TTS synthesis tag
+        AstrBotSimulateResponse chatWithTts = astrBotService.simulateOrProcessMessage(new AstrBotSimulateRequest(
+                "telegram_dior_concierge", "telegram", "PrivateMessage", "tts_user_1", "tts_user_1", "VIP", "Tư vấn nước hoa J'adore", "AUTO", null
+        ));
+        assertFalse(chatWithTts.isCommand());
+        assertTrue(chatWithTts.replySent().contains("TTS Audio Ready"));
+    }
+
+    @Test
+    @DisplayName("Xoá Persona và Provider tự động dọn dẹp tham chiếu mồ côi trên Bot, Session và Route")
+    void deletePersonaAndProviderCleansUpDanglingReferences() {
+        astrBotService.savePersona(Map.of("id", "temp_persona", "name", "Temp Persona", "system_prompt", "Temp"));
+        astrBotService.saveProvider(Map.of("id", "temp_provider", "provider", "Temp", "model", "gpt-temp"));
+
+        astrBotService.updateBot("telegram_dior_concierge", Map.of(
+                "default_persona_id", "temp_persona",
+                "fallback_profile_id", "temp_provider"
+        ));
+        astrBotService.upsertRoute(Map.of(
+                "umo", "telegram_dior_concierge:PrivateMessage:temp_sess",
+                "persona_id", "temp_persona",
+                "config_id", "temp_provider",
+                "scenario", "SALES"
+        ));
+        astrBotService.upsertSessionRule(Map.of(
+                "umo", "telegram_dior_concierge:PrivateMessage:temp_sess",
+                "persona_id", "temp_persona",
+                "config_profile_id", "temp_provider"
+        ));
+
+        astrBotService.deletePersona("temp_persona");
+        astrBotService.deleteProvider("temp_provider");
+
+        AstrBotInstanceDto botAfter = astrBotService.getBot("telegram_dior_concierge");
+        assertFalse("temp_persona".equals(botAfter.defaultPersonaId()));
+        assertFalse("temp_provider".equals(botAfter.fallbackProfileId()));
+    }
+
+    @Test
+    @DisplayName("Unified Webhook chặn Bot đang tắt, xử lý mảng JSON và từ chối payload quá lớn")
+    void webhookEdgeCasesDisabledBotArrayPayloadAndOversizedGuard() {
+        AstrBotInstanceDto tgBot = astrBotService.getBot("telegram_dior_concierge");
+        String uuid = tgBot.webhookUuid();
+
+        // JSON array payload works
+        Map<String, Object> arrRes = astrBotService.handleUnifiedWebhookPost(uuid, "[{\"message\":\"Xin chào từ mảng JSON\"}]");
+        assertEquals("ok", arrRes.get("status"));
+
+        // Malformed JSON increments error count and returns ignored
+        Map<String, Object> badJsonRes = astrBotService.handleUnifiedWebhookPost(uuid, "{invalid_json");
+        assertEquals("ignored", badJsonRes.get("status"));
+        assertEquals("invalid_json", badJsonRes.get("reason"));
+        assertTrue(astrBotService.getBot("telegram_dior_concierge").errorCount() >= 1);
+
+        astrBotService.clearBotErrors("telegram_dior_concierge");
+        assertEquals(0, astrBotService.getBot("telegram_dior_concierge").errorCount());
+
+        // Disabled bot returns ignored
+        astrBotService.setBotEnabled("telegram_dior_concierge", false);
+        Map<String, Object> disabledRes = astrBotService.handleUnifiedWebhookPost(uuid, "{\"message\":\"Hello\"}");
+        assertEquals("ignored", disabledRes.get("status"));
+        assertEquals("bot_disabled", disabledRes.get("reason"));
+
+        // Oversized payload > 256KB throws IllegalArgumentException
+        astrBotService.setBotEnabled("telegram_dior_concierge", true);
+        String hugePayload = "{\"message\":\"" + "A".repeat(270_000) + "\"}";
+        assertThrows(IllegalArgumentException.class, () -> astrBotService.handleUnifiedWebhookPost(uuid, hugePayload));
+    }
+
+    @Test
+    @DisplayName("Lưu trữ và khôi phục trạng thái AstrBot từ đĩa (persistToDisk = true)")
+    void diskPersistenceSaveAndLoadRoundTrip(@org.junit.jupiter.api.io.TempDir java.nio.file.Path tempDir) {
+        AstrBotProperties diskProps = new AstrBotProperties();
+        diskProps.setPersistToDisk(true);
+        diskProps.setStateFilePath(tempDir.resolve("astrbot-state.json").toString());
+
+        AstrBotService service1 = new AstrBotService(diskProps, customerChatService, evolutionService);
+        service1.createBot(Map.of(
+                "id", "mattermost_sec_ops",
+                "type", "mattermost",
+                "enable", true,
+                "default_persona_id", "docmind_rag_architect",
+                "default_scenario", "SERVICE_SUPPORT"
+        ));
+        service1.savePersona(Map.of(
+                "id", "persisted_persona",
+                "name", "Persisted Persona",
+                "system_prompt", "Persisted prompt"
+        ));
+
+        // Reload in a second service instance
+        AstrBotService service2 = new AstrBotService(diskProps, customerChatService, evolutionService);
+        AstrBotInstanceDto restoredBot = service2.getBot("mattermost_sec_ops");
+        assertNotNull(restoredBot);
+        assertEquals("mattermost", restoredBot.type());
+        assertTrue(service2.listPersonas().stream().anyMatch(p -> "persisted_persona".equals(p.id())));
+    }
 }

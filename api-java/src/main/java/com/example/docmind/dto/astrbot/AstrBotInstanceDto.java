@@ -1,5 +1,6 @@
 package com.example.docmind.dto.astrbot;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
@@ -9,6 +10,7 @@ import java.util.Map;
  * Thông tin cấu hình & trạng thái runtime của một Bot / Platform Adapter đã khởi tạo
  * (tương ứng Platform.get_stats() + BotConfigService.get_bot() trong astrbot).
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AstrBotInstanceDto(
         @JsonProperty("id") String id,
@@ -33,6 +35,17 @@ public record AstrBotInstanceDto(
         @JsonProperty("config") Map<String, Object> config,
         @JsonProperty("routes") List<RouteBindingDto> routes
 ) {
+    @JsonProperty("active_sessions")
+    public int activeSessions() {
+        return activeSessionsCount;
+    }
+
+    @JsonProperty("umo_routes")
+    public List<RouteBindingDto> umoRoutes() {
+        return routes != null ? routes : List.of();
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record ErrorDetailDto(
             @JsonProperty("message") String message,
@@ -41,6 +54,7 @@ public record AstrBotInstanceDto(
     ) {
     }
 
+    @JsonIgnoreProperties(ignoreUnknown = true)
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record RouteBindingDto(
             @JsonProperty("umo") String umo,
@@ -50,3 +64,4 @@ public record AstrBotInstanceDto(
     ) {
     }
 }
+

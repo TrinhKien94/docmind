@@ -29,6 +29,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -54,6 +57,7 @@ public class AstrBotService {
 
     private static final Logger log = LoggerFactory.getLogger(AstrBotService.class);
     private static final String ASTRBOT_VERSION = "v4.14.0-docmind";
+    private static final int MAX_WEBHOOK_PAYLOAD_BYTES = 262_144;
 
     private final AstrBotProperties properties;
     private final CustomerChatService customerChatService;
@@ -95,6 +99,9 @@ public class AstrBotService {
         }
 
         seedInitialState();
+        if (this.properties.isPersistToDisk()) {
+            loadStateFromDisk();
+        }
     }
 
     private void seedInitialState() {
@@ -178,6 +185,50 @@ public class AstrBotService {
         sess2.recordTurn(
                 "Chính sách đổi trả sản phẩm bị lỗi vòi xịt tại Dior áp dụng trong bao nhiêu ngày?",
                 "Dạ theo quy trình SOP Bảo hành & Đổi trả chính hãng Christian Dior (05-dior-authenticity-warranty-return-complaints.md), sản phẩm lỗi kỹ thuật từ nhà sản xuất (như lỗi vòi xịt, nắp hít) được hỗ trợ đổi mới 1-1 miễn phí trong vòng 14 ngày kể từ ngày nhận hàng kèm video unbox và mã batch code.");
+
+        String nowIso = Instant.now().toString();
+        recordTrace(new AstrBotTraceDto(
+                "trace-9002",
+                nowIso,
+                routeUmo2,
+                "discord_community_hub",
+                "discord",
+                "GroupMessage",
+                "discord_dev_42",
+                "Hoàng Nam (@hoangnam)",
+                "Chính sách đổi trả sản phẩm bị lỗi vòi xịt tại Dior áp dụng trong bao nhiêu ngày?",
+                "Dạ theo quy trình SOP Bảo hành & Đổi trả chính hãng Christian Dior (05-dior-authenticity-warranty-return-complaints.md), sản phẩm lỗi kỹ thuật được hỗ trợ đổi mới 1-1 miễn phí trong vòng 14 ngày...",
+                "SERVICE_SUPPORT",
+                "docmind_rag_specialist",
+                1,
+                0.95,
+                4,
+                38L,
+                false,
+                "succeeded",
+                AstrBotTraceDto.DEFAULT_PIPELINE_STAGES
+        ));
+        recordTrace(new AstrBotTraceDto(
+                "trace-9001",
+                nowIso,
+                routeUmo1,
+                "telegram_dior_concierge",
+                "telegram",
+                "PrivateMessage",
+                "tg_user_8801",
+                "Chị Minh Anh (VIP Platinum)",
+                "Mình da hỗn hợp thiên khô và đang mang thai 5 tháng thì dùng serum Dior nào an toàn?",
+                "Dạ Christian Dior xin kính chào Chị Minh Anh! Với làn da hỗn hợp thiên khô trong giai đoạn thai kỳ 5 tháng, em xin khuyến nghị dòng Dior Prestige La Micro-Huile de Rose hoặc Capture Totale Le Sérum...",
+                "SALES",
+                "dior_luxury_advisor",
+                2,
+                0.96,
+                4,
+                42L,
+                false,
+                "succeeded",
+                AstrBotTraceDto.DEFAULT_PIPELINE_STAGES
+        ));
 
         MutableBotInstance tgBot = botInstances.get("telegram_dior_concierge");
         if (tgBot != null) {
@@ -321,20 +372,30 @@ public class AstrBotService {
         mergedConfig.put("id", sanitizedId);
         mergedConfig.put("type", typeMeta.type());
 
-        boolean enable = asBoolean(mergedConfig.getOrDefault("enable", payload.get("enabled")), true);
+        Object rawEnable = payload.containsKey("enable") ? payload.get("enable")
+                : payload.containsKey("enabled") ? payload.get("enabled")
+                : configMap.get("enable");
+        boolean enable = asBoolean(rawEnable, true);
         mergedConfig.put("enable", enable);
 
-        boolean unifiedWebhook = asBoolean(mergedConfig.get("unified_webhook_mode"), typeMeta.supportUnifiedWebhook());
+        Object rawUnified = payload.containsKey("unified_webhook") ? payload.get("unified_webhook")
+                : payload.containsKey("unified_webhook_mode") ? payload.get("unified_webhook_mode")
+                : configMap.containsKey("unified_webhook") ? configMap.get("unified_webhook")
+                : configMap.get("unified_webhook_mode");
+        boolean unifiedWebhook = asBoolean(rawUnified, typeMeta.supportUnifiedWebhook());
+        mergedConfig.put("unified_webhook_mode", unifiedWebhook);
+        mergedConfig.put("unified_webhook", unifiedWebhook);
+
         String webhookUuid = asString(mergedConfig.get("webhook_uuid"));
         if (unifiedWebhook && (webhookUuid == null || webhookUuid.isBlank())) {
             webhookUuid = UUID.randomUUID().toString().replace("-", "");
             mergedConfig.put("webhook_uuid", webhookUuid);
         }
 
-        String personaId = firstNonBlank(
+        String personaId = resolveValidPersonaId(firstNonBlank(
                 asString(payload.get("default_persona_id")),
                 asString(mergedConfig.get("default_persona_id")),
-                properties.getDefaultPersonaId());
+                properties.getDefaultPersonaId()));
         String scenario = firstNonBlank(
                 asString(payload.get("default_scenario")),
                 asString(mergedConfig.get("default_scenario")),
@@ -363,6 +424,7 @@ public class AstrBotService {
 
         appendLog("INFO", sanitizedId, "PlatformManager",
                 "Đã khởi tạo và nạp thành công Platform Adapter [" + sanitizedId + "] (loại: " + typeMeta.type() + ").", false);
+        saveStateToDiskIfEnabled();
         return toInstanceDto(inst);
     }
 
@@ -385,10 +447,11 @@ public class AstrBotService {
             inst.config.put("id", inst.id);
             inst.config.put("type", inst.type);
 
-            if (payload.containsKey("enabled") || incomingConfig.containsKey("enable")) {
-                boolean enableVal = asBoolean(
-                        incomingConfig.getOrDefault("enable", payload.get("enabled")),
-                        inst.enable);
+            Object rawEnable = payload.containsKey("enable") ? payload.get("enable")
+                    : payload.containsKey("enabled") ? payload.get("enabled")
+                    : incomingConfig.get("enable");
+            if (rawEnable != null) {
+                boolean enableVal = asBoolean(rawEnable, inst.enable);
                 inst.enable = enableVal;
                 inst.config.put("enable", enableVal);
                 inst.status = enableVal ? "running" : "stopped";
@@ -398,10 +461,10 @@ public class AstrBotService {
             }
 
             if (payload.containsKey("default_persona_id") || incomingConfig.containsKey("default_persona_id")) {
-                inst.defaultPersonaId = firstNonBlank(
+                inst.defaultPersonaId = resolveValidPersonaId(firstNonBlank(
                         asString(payload.get("default_persona_id")),
                         asString(incomingConfig.get("default_persona_id")),
-                        inst.defaultPersonaId);
+                        inst.defaultPersonaId));
             }
             if (payload.containsKey("default_scenario") || incomingConfig.containsKey("default_scenario")) {
                 inst.defaultScenario = firstNonBlank(
@@ -416,8 +479,14 @@ public class AstrBotService {
                         inst.fallbackProfileId);
             }
 
-            boolean unified = asBoolean(inst.config.get("unified_webhook_mode"), inst.unifiedWebhook);
+            Object rawUnified = payload.containsKey("unified_webhook") ? payload.get("unified_webhook")
+                    : payload.containsKey("unified_webhook_mode") ? payload.get("unified_webhook_mode")
+                    : incomingConfig.containsKey("unified_webhook") ? incomingConfig.get("unified_webhook")
+                    : incomingConfig.get("unified_webhook_mode");
+            boolean unified = asBoolean(rawUnified, inst.unifiedWebhook);
             inst.unifiedWebhook = unified;
+            inst.config.put("unified_webhook_mode", unified);
+            inst.config.put("unified_webhook", unified);
             if (unified && (inst.webhookUuid == null || inst.webhookUuid.isBlank())) {
                 inst.webhookUuid = UUID.randomUUID().toString().replace("-", "");
                 inst.config.put("webhook_uuid", inst.webhookUuid);
@@ -426,6 +495,7 @@ public class AstrBotService {
 
         appendLog("INFO", botId, "PlatformManager",
                 "Đã cập nhật cấu hình và reload Platform Adapter [" + botId + "].", false);
+        saveStateToDiskIfEnabled();
         return toInstanceDto(inst);
     }
 
@@ -444,6 +514,7 @@ public class AstrBotService {
         }
         appendLog("INFO", botId, "PlatformManager",
                 "Platform Adapter [" + botId + "] đã chuyển sang trạng thái: " + (enabled ? "RUNNING" : "STOPPED"), false);
+        saveStateToDiskIfEnabled();
         return toInstanceDto(inst);
     }
 
@@ -453,8 +524,10 @@ public class AstrBotService {
             throw new IllegalArgumentException("Không tìm thấy nền tảng Bot với ID: " + botId);
         }
         botOrder.remove(botId);
+        umoRouteMap.keySet().removeIf(k -> k != null && k.startsWith(botId + ":"));
         appendLog("WARN", botId, "PlatformManager",
                 "Đã dừng tác vụ và xoá Platform Adapter [" + botId + "].", false);
+        saveStateToDiskIfEnabled();
     }
 
     public Map<String, Object> testBotConnection(String botId) {
@@ -511,6 +584,7 @@ public class AstrBotService {
             }
         }
         appendLog("INFO", botId, "PlatformManager", "Đã xoá lịch sử lỗi của [" + botId + "].", false);
+        saveStateToDiskIfEnabled();
         return toInstanceDto(inst);
     }
 
@@ -537,21 +611,26 @@ public class AstrBotService {
             String deviceCode = "astr_qr_" + UUID.randomUUID().toString().substring(0, 8);
             String qrContent = "https://open.astrbot.app/qr-auth?platform=" + platformType
                     + "&bot_id=" + botId + "&code=" + deviceCode;
+            String msg = "Đang chờ quét mã QR trên ứng dụng " + platformType.toUpperCase(Locale.ROOT)
+                    + " để tự động cấp phát thông tin kết nối cho [" + botId + "].";
             result.put("status", "pending");
-            result.put("qr_status", "Đang chờ quét mã QR trên ứng dụng " + platformType.toUpperCase(Locale.ROOT));
+            result.put("qr_status", msg);
+            result.put("message", msg);
             result.put("device_code", deviceCode);
             result.put("user_code", deviceCode.substring(deviceCode.length() - 6).toUpperCase(Locale.ROOT));
             result.put("verification_uri", qrContent);
+            result.put("verification_uri_complete", qrContent);
             result.put("qrcode_img_content", qrContent);
 
             MutableBotInstance inst = botInstances.get(botId);
             if (inst != null) {
                 inst.hasQrPayload = true;
-                inst.qrStatus = (String) result.get("qr_status");
+                inst.qrStatus = msg;
                 inst.qrCodeImgContent = qrContent;
             }
             appendLog("INFO", botId, "QRRegistration",
                     "Đã khởi tạo phiên đăng nhập QR cho nền tảng [" + platformType + "] (mã: " + deviceCode + ").", false);
+            saveStateToDiskIfEnabled();
             return result;
         }
 
@@ -575,16 +654,20 @@ public class AstrBotService {
                 synchronized (inst) {
                     inst.config.putAll(autoCredentials);
                     inst.enable = true;
+                    inst.config.put("enable", true);
                     inst.status = "running";
                     inst.startedAt = Instant.now().toString();
                     inst.qrStatus = "Đã xác thực QR thành công!";
                 }
             }
+            String msg = "Đã xác thực QR & đồng bộ thông tin kết nối thành công cho [" + botId + "]!";
             result.put("status", "completed");
-            result.put("qr_status", "Đã xác thực QR & đồng bộ thông tin kết nối thành công!");
+            result.put("qr_status", msg);
+            result.put("message", msg);
             result.put("credentials", autoCredentials);
             appendLog("INFO", botId, "QRRegistration",
                     "Xác thực mã QR thành công cho [" + botId + "]. Đã tự động điền thông tin kết nối.", false);
+            saveStateToDiskIfEnabled();
             return result;
         }
 
@@ -623,15 +706,37 @@ public class AstrBotService {
         if (inst == null) {
             throw new IllegalArgumentException("Không tìm thấy nền tảng ứng với webhook_uuid: " + webhookUuid);
         }
+        if (rawBody != null && rawBody.length() > MAX_WEBHOOK_PAYLOAD_BYTES) {
+            inst.recordError("Payload Webhook vượt quá kích thước cho phép (256KB)", "PayloadLength=" + rawBody.length());
+            throw new IllegalArgumentException("Payload Webhook vượt quá kích thước cho phép (tối đa 256KB)");
+        }
 
         try {
             JsonNode root = (rawBody != null && !rawBody.isBlank())
                     ? objectMapper.readTree(rawBody)
                     : objectMapper.createObjectNode();
 
+            if (root.isArray() && !root.isEmpty()) {
+                root = root.get(0);
+            }
+
             // Slack / Lark URL verification challenge
-            if (root.hasNonNull("challenge") && ("url_verification".equals(root.path("type").asText()) || !root.has("message"))) {
+            if (root.isObject() && root.hasNonNull("challenge")
+                    && ("url_verification".equals(root.path("type").asText()) || !root.has("message"))) {
                 return Map.of("challenge", root.get("challenge").asText());
+            }
+
+            if (!inst.enable) {
+                appendLog("WARN", inst.id, "WebhookReceiver",
+                        "Bỏ qua sự kiện Webhook vì Platform Adapter [" + inst.id + "] đang ở trạng thái tạm dừng (stopped).", false);
+                Map<String, Object> ignored = new LinkedHashMap<>();
+                ignored.put("status", "ignored");
+                ignored.put("event_received", false);
+                ignored.put("bot_id", inst.id);
+                ignored.put("platform_type", inst.type);
+                ignored.put("reason", "bot_disabled");
+                ignored.put("message", "Platform Adapter [" + inst.id + "] đang tạm dừng (stopped)");
+                return ignored;
             }
 
             ParsedWebhookEvent parsed = extractWebhookEvent(inst, root);
@@ -661,17 +766,24 @@ public class AstrBotService {
             inst.recordError(e.getMessage(), e.toString());
             appendLog("ERROR", inst.id, "WebhookReceiver",
                     "Lỗi xử lý callback Webhook [" + inst.id + "]: " + e.getMessage(), false);
-            throw new IllegalArgumentException("Payload Webhook không hợp lệ: " + e.getMessage(), e);
+            Map<String, Object> ignored = new LinkedHashMap<>();
+            ignored.put("status", "ignored");
+            ignored.put("event_received", false);
+            ignored.put("bot_id", inst.id);
+            ignored.put("platform_type", inst.type);
+            ignored.put("reason", "invalid_json");
+            ignored.put("message", "Payload Webhook không hợp lệ: " + e.getMessage());
+            return ignored;
         }
     }
 
     /**
      * Luồng xử lý trung tâm AstrBot Event Pipeline:
      * 1. Xác định Bot Instance & chuẩn hoá định danh phiên UMO ({bot_id}:{message_type}:{session_id})
-     * 2. Áp dụng định tuyến UMO Route Binding & Session Custom Rules
-     * 3. Kiểm tra và thực thi lệnh quản trị nội bộ Star Slash Commands (/help, /status, /reset, /persona, /scenario, /evolve, /kb)
+     * 2. Áp dụng định tuyến UMO Route Binding (hỗ trợ cả exact & wildcard *) & Session Custom Rules
+     * 3. Kiểm tra và thực thi lệnh quản trị nội bộ Star Slash Commands (/help, /status, /reset, /persona, /scenario, /evolve, /kb, /provider, /tts, /search, /guidelines)
      * 4. Chuyển tiếp câu hỏi khách hàng sang CustomerChatService (RAG + Dior SOP KB + Persona Prompt + EvoAgentX)
-     * 5. Lưu lịch sử phiên UMO, ghi nhận Trace & Console Log.
+     * 5. Lưu lịch sử phiên UMO, ghi nhận Trace (6 stages) & Console Log.
      */
     public AstrBotSimulateResponse simulateOrProcessMessage(AstrBotSimulateRequest request) {
         long startNs = System.nanoTime();
@@ -689,26 +801,34 @@ public class AstrBotService {
         String senderName = firstNonBlank(request.getSenderName(), "Khách hàng " + platformType.toUpperCase(Locale.ROOT));
 
         String umo = botId + ":" + messageType + ":" + sessionId;
+        RouteBindingDto routeBinding = resolveRouteBinding(botId, messageType, sessionId);
         MutableSessionState session = getOrCreateSession(
                 umo, botId, platformType, messageType, sessionId, senderId, senderName);
-
-        RouteBindingDto routeBinding = umoRouteMap.get(umo);
 
         String resolvedProfileId = routeBinding != null && routeBinding.configId() != null
                 ? routeBinding.configId()
                 : firstNonBlank(session.configProfileId, bot.fallbackProfileId, properties.getDefaultFallbackProfileId());
 
-        String resolvedPersonaId = firstNonBlank(
+        String candidatePersonaId = firstNonBlank(
                 request.getPersonaId(),
-                session.personaId,
                 routeBinding != null ? routeBinding.personaId() : null,
+                session.personaId,
                 bot.defaultPersonaId,
                 properties.getDefaultPersonaId());
+        String resolvedPersonaId = resolveValidPersonaId(candidatePersonaId);
 
+        String explicitReqScenario = (request.getScenario() != null
+                && !request.getScenario().isBlank()
+                && !"AUTO".equalsIgnoreCase(request.getScenario().trim()))
+                ? request.getScenario().trim()
+                : null;
         String resolvedScenario = firstNonBlank(
+                explicitReqScenario,
+                routeBinding != null && !"AUTO".equalsIgnoreCase(routeBinding.scenario()) ? routeBinding.scenario() : null,
+                session.scenario != null && !"AUTO".equalsIgnoreCase(session.scenario) ? session.scenario : null,
+                bot.defaultScenario != null && !"AUTO".equalsIgnoreCase(bot.defaultScenario) ? bot.defaultScenario : null,
                 request.getScenario(),
                 session.scenario,
-                routeBinding != null ? routeBinding.scenario() : null,
                 bot.defaultScenario,
                 properties.getDefaultScenario());
 
@@ -716,6 +836,7 @@ public class AstrBotService {
                 "[" + umo + "] " + senderName + ": " + incomingText, true);
 
         boolean isCommand = properties.isEnableStarCommands()
+                && isExtensionEnabled("star-builtin-commands", session)
                 && incomingText.startsWith(properties.getCommandPrefix());
 
         String replyText;
@@ -726,6 +847,8 @@ public class AstrBotService {
 
         if (isCommand) {
             replyText = executeStarCommand(incomingText, session, bot, resolvedPersonaId, resolvedScenario);
+            resolvedPersonaId = resolveValidPersonaId(firstNonBlank(session.personaId, resolvedPersonaId));
+            resolvedScenario = firstNonBlank(session.scenario, resolvedScenario);
             CustomerEvolutionStatusResponse evoStatus = safeGetEvolutionStatus();
             if (evoStatus != null) {
                 evoGen = evoStatus.evolutionGeneration();
@@ -752,6 +875,9 @@ public class AstrBotService {
 
             CustomerChatResponse chatResponse = customerChatService.chat(chatRequest);
             replyText = chatResponse.answer();
+            if (session.ttsEnabled) {
+                replyText = replyText + "\n\n🔊 *[Edge Neural TTS · TTS Audio Ready: Đã tổng hợp giọng nói vi-VN-HoaiMyNeural]*";
+            }
             citations = chatResponse.citations() != null ? chatResponse.citations() : List.of();
             if (chatResponse.scenario() != null && !chatResponse.scenario().isBlank()) {
                 resolvedScenario = chatResponse.scenario();
@@ -794,13 +920,15 @@ public class AstrBotService {
                 evoGen,
                 latencyMs,
                 isCommand,
-                "succeeded"
+                "succeeded",
+                AstrBotTraceDto.DEFAULT_PIPELINE_STAGES
         );
         recordTrace(trace);
 
         appendLog("INFO", botId, "EventPipeline",
                 "Đã phản hồi [" + umo + "] (kịch bản=" + resolvedScenario + ", persona=" + resolvedPersonaId
                         + ", citations=" + citations.size() + ", latency=" + latencyMs + "ms).", true);
+        saveStateToDiskIfEnabled();
 
         return new AstrBotSimulateResponse(
                 interactionId,
@@ -847,7 +975,12 @@ public class AstrBotService {
                         + "  • `/reset` — Xoá lịch sử hội thoại của phiên UMO hiện tại\n"
                         + "  • `/persona <id>` — Chuyển đổi nhân cách AI (VD: `/persona dior_luxury_advisor`)\n"
                         + "  • `/scenario <mã>` — Cố định kịch bản (`SALES`, `SERVICE_SUPPORT`, `WARRANTY_RETURN`, `ORDER_BILLING`, `AUTO`)\n"
-                        + "  • `/evolve` — Kích hoạt ngay một chu kỳ tối ưu hoá TextGrad + MIPRO\n"
+                        + "  • `/provider [id]` — Xem hoặc chuyển đổi nguồn mô hình LLM cho phiên\n"
+                        + "  • `/kb` — Xem danh sách Kho Tri thức RAG & Dior SOP gắn với phiên\n"
+                        + "  • `/search <từ khoá>` — Tra cứu nhanh kho tri thức Hybrid RAG\n"
+                        + "  • `/evolve` (`/evo`) — Kích hoạt ngay chu kỳ tối ưu hoá TextGrad + MIPRO\n"
+                        + "  • `/guidelines` — Xem quy tắc TextGrad & mẫu Few-Shot MIPRO đã học\n"
+                        + "  • `/tts [on|off]` — Bật/tắt tổng hợp giọng nói Neural TTS cho phiên\n"
                         + "  • `/whoami` — Xem thông tin định tuyến UMO và quy tắc phiên";
             case "/status": {
                 CustomerEvolutionStatusResponse evo = safeGetEvolutionStatus();
@@ -858,6 +991,8 @@ public class AstrBotService {
                         + "- **Phiên UMO**: `" + session.umo + "` (" + session.history.size() + " lượt nhớ)\n"
                         + "- **Persona đang gắn**: `" + activePersonaId + "`\n"
                         + "- **Kịch bản tư vấn**: `" + activeScenario + "`\n"
+                        + "- **Nguồn LLM / Profile**: `" + firstNonBlank(session.configProfileId, bot.fallbackProfileId) + "`\n"
+                        + "- **TTS**: `" + (session.ttsEnabled ? "ON" : "OFF") + "`\n"
                         + "- **EvoAgentX Self-Evolution**: Thế hệ `Gen #" + gen + "` · Điểm chất lượng `" + String.format(Locale.US, "%.1f%%", score * 100) + "`";
             }
             case "/reset":
@@ -875,6 +1010,10 @@ public class AstrBotService {
                     return "⚠️ Không tìm thấy Persona `" + arg + "`. Các Persona hợp lệ: `" + String.join("`, `", personaMap.keySet()) + "`.";
                 }
                 session.personaId = arg;
+                if (umoRouteMap.containsKey(session.umo)) {
+                    RouteBindingDto existingRoute = umoRouteMap.get(session.umo);
+                    umoRouteMap.put(session.umo, new RouteBindingDto(session.umo, existingRoute.configId(), arg, existingRoute.scenario()));
+                }
                 return "✅ Đã gắn Persona `" + arg + "` (" + personaMap.get(arg).name() + ") cho phiên `" + session.umo + "`.";
             case "/scenario":
                 if (arg.isEmpty()) {
@@ -882,8 +1021,58 @@ public class AstrBotService {
                             + "`. Gõ `/scenario SALES|SERVICE_SUPPORT|WARRANTY_RETURN|ORDER_BILLING|AUTO` để đổi.";
                 }
                 session.scenario = arg.toUpperCase(Locale.ROOT);
+                if (umoRouteMap.containsKey(session.umo)) {
+                    RouteBindingDto existingRoute = umoRouteMap.get(session.umo);
+                    umoRouteMap.put(session.umo, new RouteBindingDto(session.umo, existingRoute.configId(), existingRoute.personaId(), session.scenario));
+                }
                 return "✅ Đã chuyển kịch bản ưu tiên của phiên `" + session.umo + "` sang `" + session.scenario + "`.";
+            case "/provider":
+                if (arg.isEmpty()) {
+                    return "⚡ **Danh sách Nguồn Mô hình LLM Provider (Providers)**: `" + String.join("`, `", providerMap.keySet())
+                            + "`\nCấu hình phiên hiện tại: `" + firstNonBlank(session.configProfileId, bot.fallbackProfileId)
+                            + "`. Gõ `/provider <id>` để chuyển đổi.";
+                }
+                if (!providerMap.containsKey(arg)) {
+                    return "⚠️ Không tìm thấy LLM Provider `" + arg + "`. Các Provider hợp lệ: `" + String.join("`, `", providerMap.keySet()) + "`.";
+                }
+                session.configProfileId = arg;
+                AstrBotProviderDto chosenPr = providerMap.get(arg);
+                return "✅ Đã chuyển nguồn mô hình LLM Provider của phiên `" + session.umo + "` sang `" + chosenPr.id() + "` (`" + chosenPr.model() + "`).";
+            case "/kb":
+                if (!isExtensionEnabled("star-docmind-rag-bridge", session)) {
+                    return "⚠️ Tiện ích `star-docmind-rag-bridge` hiện đang tạm tắt cho phiên này.";
+                }
+                String kbHeader = "📚 **Kho Tri thức (Knowledge Bases) đang gắn với phiên `" + session.umo + "`**:\n"
+                        + "- Danh sách KB: `" + String.join("`, `", session.kbNames) + "`\n"
+                        + "- Chế độ truy xuất: `Hybrid RAG (pgvector + BM25 RRF + MMR Rerank + Local Dior SOP KB)`";
+                if (!arg.isEmpty() && customerChatService != null) {
+                    CustomerChatResponse ragRes = customerChatService.chat(new CustomerChatRequest(
+                            arg, null, null, session.senderName, "Star Command /kb",
+                            "AUTO".equalsIgnoreCase(activeScenario) ? null : activeScenario, null, 3, List.of(), null
+                    ));
+                    return kbHeader + "\n\n🔍 **Kết quả tra cứu KB cho `" + arg + "`**:\n" + ragRes.answer();
+                }
+                return kbHeader + "\n- Gõ `/kb <từ khoá>` hoặc `/search <từ khoá>` để truy vấn nhanh tài liệu.";
+            case "/search":
+                if (!isExtensionEnabled("star-docmind-rag-bridge", session)) {
+                    return "⚠️ Tiện ích `star-docmind-rag-bridge` hiện đang tạm tắt cho phiên này.";
+                }
+                if (arg.isEmpty()) {
+                    return "🔍 Vui lòng nhập nội dung cần tra cứu. Ví dụ: `/search chính sách đổi trả Dior`";
+                }
+                if (customerChatService != null) {
+                    CustomerChatResponse ragRes = customerChatService.chat(new CustomerChatRequest(
+                            arg, null, null, session.senderName, "Star Command /search",
+                            "AUTO".equalsIgnoreCase(activeScenario) ? null : activeScenario, null, 3, List.of(), null
+                    ));
+                    return "🔍 **Kết quả tra cứu nhanh Hybrid RAG cho `" + arg + "`**:\n" + ragRes.answer();
+                }
+                return "🔍 Đã tra cứu kho tri thức cho từ khoá: `" + arg + "`.";
             case "/evolve":
+            case "/evo":
+                if (!isExtensionEnabled("star-evoagentx-optimizer", session)) {
+                    return "⚠️ Tiện ích `star-evoagentx-optimizer` hiện đang tạm tắt.";
+                }
                 if (evolutionService != null) {
                     CustomerEvolutionStatusResponse evolved = evolutionService.triggerEvolutionCycle(
                             "AUTO".equalsIgnoreCase(activeScenario) ? "SALES" : activeScenario);
@@ -892,6 +1081,28 @@ public class AstrBotService {
                             + evolved.evolvedFewShotExamples().size() + " nhóm mẫu MIPRO).";
                 }
                 return "🧬 Động cơ EvoAgentX đã ghi nhận yêu cầu tối ưu hoá.";
+            case "/guidelines": {
+                if (!isExtensionEnabled("star-evoagentx-optimizer", session)) {
+                    return "⚠️ Tiện ích `star-evoagentx-optimizer` hiện đang tạm tắt.";
+                }
+                CustomerEvolutionStatusResponse evo = safeGetEvolutionStatus();
+                if (evo == null) {
+                    return "📋 Hiện chưa có dữ liệu quy tắc TextGrad.";
+                }
+                return "📋 **Quy tắc Tự tiến hoá EvoAgentX (Gen #" + evo.evolutionGeneration() + ")**:\n"
+                        + "- Điểm chất lượng trung bình: `" + String.format(Locale.US, "%.1f%%", evo.averageQualityScore() * 100) + "`\n"
+                        + "- Số nhóm kịch bản đã học quy tắc TextGrad: `" + (evo.learnedGuidelines() != null ? evo.learnedGuidelines().size() : 0) + "`\n"
+                        + "- Số nhóm mẫu Few-Shot MIPRO: `" + (evo.evolvedFewShotExamples() != null ? evo.evolvedFewShotExamples().size() : 0) + "`";
+            }
+            case "/tts":
+                if ("on".equalsIgnoreCase(arg) || "true".equalsIgnoreCase(arg)) {
+                    session.ttsEnabled = true;
+                } else if ("off".equalsIgnoreCase(arg) || "false".equalsIgnoreCase(arg)) {
+                    session.ttsEnabled = false;
+                } else {
+                    session.ttsEnabled = !session.ttsEnabled;
+                }
+                return "🔊 Đã **" + (session.ttsEnabled ? "BẬT" : "TẮT") + "** tổng hợp giọng nói Neural TTS (`vi-VN-HoaiMyNeural`) cho phiên `" + session.umo + "`.";
             case "/whoami":
             case "/sid":
                 return "🪪 **Thông tin Định danh Hợp nhất (UMO)**:\n"
@@ -971,13 +1182,19 @@ public class AstrBotService {
                 state.ttsEnabled = asBoolean(payload.get("tts_enabled"), state.ttsEnabled);
             }
             if (payload.containsKey("persona_id")) {
-                state.personaId = asString(payload.get("persona_id"));
+                state.personaId = resolveValidPersonaId(asString(payload.get("persona_id")));
             }
             if (payload.containsKey("scenario")) {
                 state.scenario = asString(payload.get("scenario"));
             }
             if (payload.containsKey("config_profile_id")) {
                 state.configProfileId = asString(payload.get("config_profile_id"));
+            }
+            if (payload.containsKey("kb_names")) {
+                state.kbNames = asStringList(payload.get("kb_names"));
+            }
+            if (payload.containsKey("disabled_plugins")) {
+                state.disabledPlugins = asStringList(payload.get("disabled_plugins"));
             }
             state.lastActiveAt = Instant.now().toString();
         }
@@ -986,13 +1203,14 @@ public class AstrBotService {
             umoRouteMap.put(umo, new RouteBindingDto(
                     umo,
                     firstNonBlank(state.configProfileId, properties.getDefaultFallbackProfileId()),
-                    firstNonBlank(state.personaId, properties.getDefaultPersonaId()),
+                    resolveValidPersonaId(firstNonBlank(state.personaId, properties.getDefaultPersonaId())),
                     firstNonBlank(state.scenario, properties.getDefaultScenario())
             ));
         }
 
         appendLog("INFO", platformId, "SessionManagementService",
                 "Đã cập nhật quy tắc phiên cho UMO [" + umo + "].", false);
+        saveStateToDiskIfEnabled();
         return state.toDto();
     }
 
@@ -1000,6 +1218,7 @@ public class AstrBotService {
         sessionMap.remove(umo);
         umoRouteMap.remove(umo);
         appendLog("INFO", "system", "SessionManagementService", "Đã xoá phiên UMO [" + umo + "].", false);
+        saveStateToDiskIfEnabled();
     }
 
     public int clearAllSessions() {
@@ -1007,6 +1226,7 @@ public class AstrBotService {
         sessionMap.clear();
         umoRouteMap.clear();
         appendLog("WARN", "system", "SessionManagementService", "Đã làm sạch toàn bộ " + count + " phiên UMO.", false);
+        saveStateToDiskIfEnabled();
         return count;
     }
 
@@ -1023,17 +1243,27 @@ public class AstrBotService {
                 asString(payload.get("config_id")),
                 asString(payload.get("conf_id")),
                 properties.getDefaultFallbackProfileId());
-        String personaId = firstNonBlank(asString(payload.get("persona_id")), properties.getDefaultPersonaId());
+        String personaId = resolveValidPersonaId(firstNonBlank(asString(payload.get("persona_id")), properties.getDefaultPersonaId()));
         String scenario = firstNonBlank(asString(payload.get("scenario")), properties.getDefaultScenario());
 
         RouteBindingDto binding = new RouteBindingDto(umo, configId, personaId, scenario);
         umoRouteMap.put(umo, binding);
+
+        for (MutableSessionState s : sessionMap.values()) {
+            if (matchesRoutePattern(umo, s.platformId, s.messageType, s.sessionId)) {
+                s.configProfileId = configId;
+                s.personaId = personaId;
+                s.scenario = scenario;
+            }
+        }
+        saveStateToDiskIfEnabled();
         return binding;
     }
 
     public void deleteRoute(String umo) {
         if (umo != null) {
             umoRouteMap.remove(umo);
+            saveStateToDiskIfEnabled();
         }
     }
 
@@ -1067,14 +1297,38 @@ public class AstrBotService {
         );
         personaMap.put(id, dto);
         appendLog("INFO", "system", "PersonaService", "Đã lưu Persona [" + id + "] (" + name + ").", false);
+        saveStateToDiskIfEnabled();
         return dto;
     }
 
     public void deletePersona(String personaId) {
-        if (personaMap.remove(personaId) == null) {
+        if (personaId == null || !personaMap.containsKey(personaId)) {
             throw new IllegalArgumentException("Không tìm thấy Persona: " + personaId);
         }
-        appendLog("INFO", "system", "PersonaService", "Đã xoá Persona [" + personaId + "].", false);
+        if (personaMap.size() <= 1) {
+            throw new IllegalArgumentException("Không thể xoá Persona cuối cùng trong hệ thống.");
+        }
+        personaMap.remove(personaId);
+        String fallbackPersona = resolveValidPersonaId(properties.getDefaultPersonaId());
+        for (MutableBotInstance b : botInstances.values()) {
+            if (personaId.equals(b.defaultPersonaId)) {
+                b.defaultPersonaId = fallbackPersona;
+            }
+        }
+        for (MutableSessionState s : sessionMap.values()) {
+            if (personaId.equals(s.personaId)) {
+                s.personaId = fallbackPersona;
+            }
+        }
+        for (Map.Entry<String, RouteBindingDto> entry : new ArrayList<>(umoRouteMap.entrySet())) {
+            RouteBindingDto r = entry.getValue();
+            if (r != null && personaId.equals(r.personaId())) {
+                umoRouteMap.put(entry.getKey(), new RouteBindingDto(r.umo(), r.configId(), fallbackPersona, r.scenario()));
+            }
+        }
+        appendLog("INFO", "system", "PersonaService",
+                "Đã xoá Persona [" + personaId + "] và chuyển các liên kết sang [" + fallbackPersona + "].", false);
+        saveStateToDiskIfEnabled();
     }
 
     public List<AstrBotProviderDto> listProviders() {
@@ -1109,6 +1363,7 @@ public class AstrBotService {
         );
         providerMap.put(id, dto);
         appendLog("INFO", "system", "ProviderConfigService", "Đã cập nhật nguồn mô hình [" + id + "] (model: " + model + ").", false);
+        saveStateToDiskIfEnabled();
         return dto;
     }
 
@@ -1131,6 +1386,18 @@ public class AstrBotService {
         if (providerMap.remove(providerId) == null) {
             throw new IllegalArgumentException("Không tìm thấy Provider: " + providerId);
         }
+        String fallbackProfile = properties.getDefaultFallbackProfileId();
+        for (MutableSessionState s : sessionMap.values()) {
+            if (providerId.equals(s.configProfileId)) {
+                s.configProfileId = fallbackProfile;
+            }
+        }
+        for (MutableBotInstance b : botInstances.values()) {
+            if (providerId.equals(b.fallbackProfileId)) {
+                b.fallbackProfileId = fallbackProfile;
+            }
+        }
+        saveStateToDiskIfEnabled();
     }
 
     public List<AstrBotCronJobDto> listCronJobs() {
@@ -1166,6 +1433,7 @@ public class AstrBotService {
         );
         cronJobMap.put(jobId, dto);
         appendLog("INFO", "system", "CronService", "Đã lưu Cron Job [" + jobId + "] -> đích [" + targetUmo + "].", false);
+        saveStateToDiskIfEnabled();
         return dto;
     }
 
@@ -1201,8 +1469,9 @@ public class AstrBotService {
                 truncate(simResp.replySent(), 180)
         );
         cronJobMap.put(jobId, updated);
-        appendLog("INFO", botId, "CronService",
+        appendLog("INFO", simResp.botId(), "CronService",
                 "Đã thực thi chủ động Cron Job [" + job.name() + "] và gửi tin nhắn tới [" + job.targetUmo() + "].", false);
+        saveStateToDiskIfEnabled();
         return updated;
     }
 
@@ -1210,6 +1479,7 @@ public class AstrBotService {
         if (cronJobMap.remove(jobId) == null) {
             throw new IllegalArgumentException("Không tìm thấy Cron Job: " + jobId);
         }
+        saveStateToDiskIfEnabled();
     }
 
     public List<AstrBotExtensionDto> listExtensions() {
@@ -1241,6 +1511,7 @@ public class AstrBotService {
         );
         extensionMap.put(id, dto);
         appendLog("INFO", "system", "PluginManager", "Đã cài đặt/cập nhật tiện ích [" + displayName + "] (" + kind + ").", false);
+        saveStateToDiskIfEnabled();
         return dto;
     }
 
@@ -1256,6 +1527,7 @@ public class AstrBotService {
         extensionMap.put(extensionId, updated);
         appendLog("INFO", "system", "PluginManager",
                 "Tiện ích [" + ext.displayName() + "] đã chuyển sang trạng thái: " + (enabled ? "ENABLED" : "DISABLED"), false);
+        saveStateToDiskIfEnabled();
         return updated;
     }
 
@@ -1263,6 +1535,7 @@ public class AstrBotService {
         if (extensionMap.remove(extensionId) == null) {
             throw new IllegalArgumentException("Không tìm thấy Extension: " + extensionId);
         }
+        saveStateToDiskIfEnabled();
     }
 
     // =========================================================================
@@ -1376,9 +1649,20 @@ public class AstrBotService {
 
     private MutableBotInstance resolveBotForRequest(AstrBotSimulateRequest req) {
         if (req.getBotId() != null && !req.getBotId().isBlank()) {
-            MutableBotInstance byId = botInstances.get(req.getBotId().trim());
+            String requestedBotId = req.getBotId().trim();
+            MutableBotInstance byId = botInstances.get(requestedBotId);
             if (byId != null) {
                 return byId;
+            }
+            // Match by platform type or common prefix (e.g. "telegram_bot" -> "telegram_dior_concierge", "line_official_concierge" -> "line_official_vip")
+            String prefix = requestedBotId.contains("_") ? requestedBotId.substring(0, requestedBotId.indexOf('_')) : requestedBotId;
+            for (String id : botOrder) {
+                MutableBotInstance b = botInstances.get(id);
+                if (b != null && (b.type.equalsIgnoreCase(requestedBotId)
+                        || b.type.equalsIgnoreCase(prefix)
+                        || b.id.startsWith(prefix + "_"))) {
+                    return b;
+                }
             }
         }
         if (req.getPlatformType() != null && !req.getPlatformType().isBlank()) {
@@ -1398,6 +1682,78 @@ public class AstrBotService {
         }
         seedBot("telegram_default", "telegram", true, properties.getDefaultPersonaId(), properties.getDefaultScenario(), Map.of());
         return botInstances.get("telegram_default");
+    }
+
+    private RouteBindingDto resolveRouteBinding(String platformId, String messageType, String sessionId) {
+        String exactUmo = platformId + ":" + messageType + ":" + sessionId;
+        RouteBindingDto exact = umoRouteMap.get(exactUmo);
+        if (exact != null) {
+            return exact;
+        }
+        // Check wildcard patterns in order of specificity:
+        // 1. platformId:messageType:*
+        // 2. platformId:*:sessionId
+        // 3. *:messageType:sessionId
+        // 4. platformId:*:*
+        // 5. *:*:*
+        String[] patterns = new String[] {
+                platformId + ":" + messageType + ":*",
+                platformId + ":*:" + sessionId,
+                "*:" + messageType + ":" + sessionId,
+                platformId + ":*:*",
+                "*:" + messageType + ":*",
+                "*:*:" + sessionId,
+                "*:*:*"
+        };
+        for (String pattern : patterns) {
+            RouteBindingDto candidate = umoRouteMap.get(pattern);
+            if (candidate != null) {
+                return candidate;
+            }
+        }
+        // Fallback: scan any custom pattern matching segments
+        for (RouteBindingDto route : umoRouteMap.values()) {
+            if (matchesRoutePattern(route.umo(), platformId, messageType, sessionId)) {
+                return route;
+            }
+        }
+        return null;
+    }
+
+    private boolean matchesRoutePattern(String routePattern, String platformId, String messageType, String sessionId) {
+        if (routePattern == null || routePattern.isBlank()) {
+            return false;
+        }
+        String[] parts = routePattern.split(":", 3);
+        if (parts.length != 3) {
+            return false;
+        }
+        boolean matchPlatform = "*".equals(parts[0]) || parts[0].equalsIgnoreCase(platformId);
+        boolean matchType = "*".equals(parts[1]) || parts[1].equalsIgnoreCase(messageType);
+        boolean matchSession = "*".equals(parts[2]) || parts[2].equalsIgnoreCase(sessionId);
+        return matchPlatform && matchType && matchSession;
+    }
+
+    private String resolveValidPersonaId(String candidatePersonaId) {
+        if (candidatePersonaId != null && !candidatePersonaId.isBlank() && personaMap.containsKey(candidatePersonaId.trim())) {
+            return candidatePersonaId.trim();
+        }
+        if (properties.getDefaultPersonaId() != null && personaMap.containsKey(properties.getDefaultPersonaId())) {
+            return properties.getDefaultPersonaId();
+        }
+        if (!personaMap.isEmpty()) {
+            return personaMap.keySet().iterator().next();
+        }
+        return "dior_luxury_stylist";
+    }
+
+    private boolean isExtensionEnabled(String extensionName, MutableSessionState sessionState) {
+        if (sessionState != null && sessionState.disabledPlugins != null
+                && sessionState.disabledPlugins.contains(extensionName)) {
+            return false;
+        }
+        AstrBotExtensionDto ext = extensionMap.get(extensionName);
+        return ext == null || ext.enabled();
     }
 
     private ParsedWebhookEvent extractWebhookEvent(MutableBotInstance inst, JsonNode root) {
@@ -1497,6 +1853,19 @@ public class AstrBotService {
                 }
             }
             MutableBotInstance bot = botInstances.get(platformId);
+            RouteBindingDto route = resolveRouteBinding(platformId, messageType, sessionId);
+            String initialPersona = firstNonBlank(
+                    route != null ? route.personaId() : null,
+                    bot != null ? bot.defaultPersonaId : null,
+                    properties.getDefaultPersonaId());
+            String initialScenario = firstNonBlank(
+                    route != null ? route.scenario() : null,
+                    bot != null ? bot.defaultScenario : null,
+                    properties.getDefaultScenario());
+            String initialProfile = firstNonBlank(
+                    route != null ? route.configId() : null,
+                    bot != null ? bot.fallbackProfileId : null,
+                    properties.getDefaultFallbackProfileId());
             return new MutableSessionState(
                     umo,
                     platformId,
@@ -1505,9 +1874,9 @@ public class AstrBotService {
                     sessionId,
                     senderId,
                     senderName,
-                    bot != null ? bot.defaultPersonaId : properties.getDefaultPersonaId(),
-                    bot != null ? bot.defaultScenario : properties.getDefaultScenario(),
-                    bot != null ? bot.fallbackProfileId : properties.getDefaultFallbackProfileId(),
+                    resolveValidPersonaId(initialPersona),
+                    initialScenario,
+                    initialProfile,
                     Math.max(4, properties.getSessionMaxTurns())
             );
         });
@@ -1522,7 +1891,7 @@ public class AstrBotService {
         }
         List<RouteBindingDto> routes = new ArrayList<>();
         for (RouteBindingDto r : umoRouteMap.values()) {
-            if (r.umo() != null && r.umo().startsWith(inst.id + ":")) {
+            if (r.umo() != null && (r.umo().startsWith(inst.id + ":") || r.umo().startsWith("*:"))) {
                 routes.add(r);
             }
         }
@@ -1588,6 +1957,127 @@ public class AstrBotService {
             return evolutionService != null ? evolutionService.getStatus() : null;
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    public synchronized void saveStateToDiskIfEnabled() {
+        if (properties == null || !properties.isPersistToDisk()) {
+            return;
+        }
+        String filePath = properties.getStateFilePath();
+        if (filePath == null || filePath.isBlank()) {
+            return;
+        }
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(filePath);
+            if (path.getParent() != null) {
+                java.nio.file.Files.createDirectories(path.getParent());
+            }
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            snapshot.put("bots", listBots(null, null));
+            snapshot.put("routes", new ArrayList<>(umoRouteMap.values()));
+            snapshot.put("personas", listPersonas());
+            snapshot.put("providers", listProviders());
+            snapshot.put("cron_jobs", listCronJobs());
+            snapshot.put("extensions", listExtensions());
+            objectMapper.writerWithDefaultPrettyPrinter().writeValue(path.toFile(), snapshot);
+        } catch (Exception e) {
+            log.warn("Failed to persist AstrBot state to {}: {}", filePath, e.getMessage());
+        }
+    }
+
+    public synchronized void loadStateFromDisk() {
+        if (properties == null || !properties.isPersistToDisk()) {
+            return;
+        }
+        String filePath = properties.getStateFilePath();
+        if (filePath == null || filePath.isBlank()) {
+            return;
+        }
+        java.nio.file.Path path = java.nio.file.Paths.get(filePath);
+        if (!java.nio.file.Files.exists(path)) {
+            return;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(path.toFile());
+            if (root == null || !root.isObject()) {
+                return;
+            }
+            if (root.has("personas") && root.path("personas").isArray()) {
+                for (JsonNode n : root.path("personas")) {
+                    AstrBotPersonaDto p = objectMapper.treeToValue(n, AstrBotPersonaDto.class);
+                    if (p != null && p.id() != null) {
+                        personaMap.put(p.id(), p);
+                    }
+                }
+            }
+            if (root.has("providers") && root.path("providers").isArray()) {
+                for (JsonNode n : root.path("providers")) {
+                    AstrBotProviderDto pr = objectMapper.treeToValue(n, AstrBotProviderDto.class);
+                    if (pr != null && pr.id() != null) {
+                        providerMap.put(pr.id(), pr);
+                    }
+                }
+            }
+            if (root.has("routes") && root.path("routes").isArray()) {
+                for (JsonNode n : root.path("routes")) {
+                    RouteBindingDto r = objectMapper.treeToValue(n, RouteBindingDto.class);
+                    if (r != null && r.umo() != null) {
+                        umoRouteMap.put(r.umo(), r);
+                    }
+                }
+            }
+            if (root.has("cron_jobs") && root.path("cron_jobs").isArray()) {
+                for (JsonNode n : root.path("cron_jobs")) {
+                    AstrBotCronJobDto c = objectMapper.treeToValue(n, AstrBotCronJobDto.class);
+                    if (c != null && c.jobId() != null) {
+                        cronJobMap.put(c.jobId(), c);
+                    }
+                }
+            }
+            if (root.has("extensions") && root.path("extensions").isArray()) {
+                for (JsonNode n : root.path("extensions")) {
+                    AstrBotExtensionDto ext = objectMapper.treeToValue(n, AstrBotExtensionDto.class);
+                    if (ext != null && ext.name() != null) {
+                        extensionMap.put(ext.name(), ext);
+                    }
+                }
+            }
+            if (root.has("bots") && root.path("bots").isArray()) {
+                for (JsonNode n : root.path("bots")) {
+                    AstrBotInstanceDto dto = objectMapper.treeToValue(n, AstrBotInstanceDto.class);
+                    if (dto != null && dto.id() != null) {
+                        Map<String, Object> cfg = dto.config() != null ? new LinkedHashMap<>(dto.config()) : new LinkedHashMap<>();
+                        MutableBotInstance inst = new MutableBotInstance(
+                                dto.id(),
+                                dto.type(),
+                                dto.displayName(),
+                                dto.enable(),
+                                dto.status(),
+                                dto.startedAt(),
+                                dto.unifiedWebhook(),
+                                dto.webhookUuid(),
+                                dto.fallbackProfileId(),
+                                dto.defaultPersonaId(),
+                                dto.defaultScenario(),
+                                cfg
+                        );
+                        inst.errorCount = dto.errorCount();
+                        inst.lastError = dto.lastError();
+                        inst.hasQrPayload = dto.hasQrPayload();
+                        inst.qrStatus = dto.qrStatus();
+                        inst.qrCodeImgContent = dto.qrCodeImgContent();
+                        inst.messageCount.set(dto.messageCount());
+                        botInstances.put(inst.id, inst);
+                        if (!botOrder.contains(inst.id)) {
+                            botOrder.add(inst.id);
+                        }
+                    }
+                }
+            }
+            appendLog("INFO", "system", "StateLoader", "Đã nạp cấu hình AstrBot từ " + filePath, false);
+        } catch (Exception e) {
+            log.warn("Failed to load AstrBot state from {}: {}", filePath, e.getMessage());
         }
     }
 

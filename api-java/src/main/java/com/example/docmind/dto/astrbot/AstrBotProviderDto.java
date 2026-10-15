@@ -1,5 +1,6 @@
 package com.example.docmind.dto.astrbot;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.List;
@@ -8,6 +9,7 @@ import java.util.List;
  * Cấu hình nguồn nhà cung cấp mô hình (Chat Completion, Embedding, Rerank, TTS, STT)
  * theo thiết kế ProviderPage / ProviderConfigService của AstrBot.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AstrBotProviderDto(
         @JsonProperty("id") String id,

@@ -542,6 +542,7 @@ export async function clearAstrBotErrors(botId) {
       method: 'POST',
       headers: { Accept: 'application/json' }
     })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return await res.json()
   } catch {
     const bot = mockAstrBotState.bots.find((b) => b.id === botId)
@@ -561,6 +562,7 @@ export async function registerAstrBotQr(botType, payload) {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload || {})
     })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
     return await res.json()
   } catch {
     if (payload?.action === 'poll') {

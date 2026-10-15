@@ -514,6 +514,11 @@
                         <span class="badge badge-emerald">EvoGen #{{ msg.evo_generation }}</span>
                         <span class="latency-tag">{{ msg.latency_ms }}ms</span>
                       </div>
+                      <div v-if="msg.stages?.length" class="trace-stages">
+                        <span v-for="(st, sIdx) in msg.stages" :key="st" class="stage-pill">
+                          ✓ {{ st }}<span v-if="sIdx < msg.stages.length - 1" class="stage-arrow">→</span>
+                        </span>
+                      </div>
                       <div class="bubble-text markdown-pre">{{ msg.reply_sent }}</div>
 
                       <div v-if="msg.citations?.length" class="sim-citations">
@@ -1054,6 +1059,11 @@
                       <span class="badge badge-cyan">{{ tr.scenario }}</span>
                       <span class="badge badge-emerald">{{ tr.latency_ms }}ms</span>
                     </div>
+                    <div v-if="tr.stages?.length" class="trace-stages">
+                      <span v-for="(st, sIdx) in tr.stages" :key="st" class="stage-pill">
+                        ✓ {{ st }}<span v-if="sIdx < tr.stages.length - 1" class="stage-arrow">→</span>
+                      </span>
+                    </div>
                     <div class="trace-q"><strong>Khách ({{ tr.sender_name }}):</strong> {{ tr.question }}</div>
                     <div class="trace-a"><strong>Bot ({{ tr.persona_id }}):</strong> {{ tr.reply_excerpt }}</div>
                   </div>
@@ -1272,7 +1282,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import {
   getAstrBotOverview,
   createAstrBotBot,
@@ -1387,7 +1397,11 @@ const starCommands = [
   { label: 'status', text: '/status', desc: 'Trạng thái Bot & EvoAgentX' },
   { label: 'whoami', text: '/whoami', desc: 'Kiểm tra định danh UMO' },
   { label: 'evolve', text: '/evolve', desc: 'Chạy tối ưu TextGrad + MIPRO' },
-  { label: 'persona', text: '/persona dior_luxury_advisor', desc: 'Gắn Persona Dior' },
+  { label: 'persona', text: '/persona dior_luxury_stylist', desc: 'Gắn Persona Dior' },
+  { label: 'provider', text: '/provider', desc: 'Kiểm tra LLM Provider' },
+  { label: 'kb', text: '/kb Dior Sauvage', desc: 'Tra cứu kho tri thức Dior' },
+  { label: 'tts', text: '/tts', desc: 'Bật/tắt giọng nói TTS' },
+  { label: 'guidelines', text: '/guidelines', desc: 'Quy tắc vàng EvoAgentX' },
   { label: 'reset', text: '/reset', desc: 'Làm mới phiên UMO' }
 ]
 
@@ -1412,7 +1426,7 @@ const sampleQuestions = [
   },
   {
     label: '🟢 LINE Concierge: Kiểm tra ưu đãi gói quà Art of Gifting',
-    botId: 'line_official_concierge',
+    botId: 'line_official_vip',
     scenario: 'ORDER_BILLING',
     text: 'Đặt mua combo Dior Prestige có được miễn phí gói quà Art of Gifting và khắc tên lên vỏ son không ạ?'
   }
@@ -1842,8 +1856,31 @@ async function clearLogsHandler() {
   notify('Đã làm sạch bộ đệm Console Logs.')
 }
 
+function handleSubmodalEscape(e) {
+  if (e.key === 'Escape') {
+    if (showAddPlatformModal.value) {
+      showAddPlatformModal.value = false
+      e.stopImmediatePropagation()
+      e.preventDefault()
+    } else if (qrModalState.open) {
+      qrModalState.open = false
+      e.stopImmediatePropagation()
+      e.preventDefault()
+    } else if (webhookInspectBot.value) {
+      webhookInspectBot.value = null
+      e.stopImmediatePropagation()
+      e.preventDefault()
+    }
+  }
+}
+
 onMounted(() => {
   fetchOverview()
+  window.addEventListener('keydown', handleSubmodalEscape, true)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleSubmodalEscape, true)
 })
 </script>
 
@@ -3097,6 +3134,31 @@ onMounted(() => {
   background: rgba(244, 63, 94, 0.12);
   border: 1px solid rgba(244, 63, 94, 0.35);
   color: #fda4af;
+}
+
+.trace-stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 4px 0 6px;
+}
+
+.stage-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.65rem;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.12);
+  border: 1px solid rgba(16, 185, 129, 0.28);
+  color: #6ee7b7;
+  font-family: var(--font-mono, monospace);
+}
+
+.stage-arrow {
+  color: #64748b;
+  margin-left: 2px;
 }
 
 .mt-2 {

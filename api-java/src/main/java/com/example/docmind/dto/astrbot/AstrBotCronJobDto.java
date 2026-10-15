@@ -1,11 +1,13 @@
 package com.example.docmind.dto.astrbot;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Tác vụ lập lịch chủ động (Cron Job / Proactive Task) theo thiết kế CronJobPage của AstrBot.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record AstrBotCronJobDto(
         @JsonProperty("job_id") String jobId,
