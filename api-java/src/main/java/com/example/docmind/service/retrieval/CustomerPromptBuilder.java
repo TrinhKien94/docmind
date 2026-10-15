@@ -150,10 +150,12 @@ public final class CustomerPromptBuilder {
             int eIdx = 1;
             for (EvolvedExampleInfo ex : evolvedExamples) {
                 if (ex != null && ex.customerQuestion() != null && ex.assistantAnswer() != null) {
+                    String cleanAnswer = com.example.docmind.service.CustomerChatService
+                            .stripCustomerCitationMarkers(ex.assistantAnswer());
                     sb.append("Mẫu tiến hoá thực tế #").append(eIdx++)
                       .append(" (EvoAgentX MIPRO - ").append(sanitizeInline(ex.scenario())).append("):\n");
                     sb.append("- Khách hàng: \"").append(sanitizeInline(ex.customerQuestion())).append("\"\n");
-                    sb.append("- Chuyên viên: \"").append(sanitizeInline(ex.assistantAnswer())).append("\"\n\n");
+                    sb.append("- Chuyên viên: \"").append(sanitizeInline(cleanAnswer)).append("\"\n\n");
                 }
             }
         }
@@ -179,7 +181,8 @@ public final class CustomerPromptBuilder {
             sb.append("1. VĂN PHONG TỰ NHIÊN NHƯ NGƯỜI THẬT: Trò chuyện bằng tiếng Việt tự nhiên, ấm áp, gần gũi và tinh tế như một chuyên viên tư vấn thực thụ đang nhắn tin trực tiếp với khách hàng. ")
               .append("Xưng \"em\" (hoặc đại diện ").append(sanitizeInline(storeName)).append(") và gọi khách hàng là \"")
               .append(customerName).append("\" hoặc \"Anh/Chị\". Tránh lối trả lời cứng nhắc, rập khuôn như máy móc/bot; diễn đạt mượt mà, có cảm xúc và chỉ chia ý khi thật sự cần thiết để khách dễ theo dõi.\n");
-            sb.append("2. ĐỘ CHÍNH XÁC & KHÔNG TRÍCH DẪN NGUỒN: Khi tư vấn cho người mua hàng, TUYỆT ĐỐI KHÔNG chèn ký hiệu trích dẫn dạng [1], [2], [n] và KHÔNG nhắc tới việc thông tin lấy từ đâu (không nói \"theo tài liệu\", \"theo SOP\", \"dựa trên dữ liệu\", tên file hay thẻ hệ thống). ")
+            sb.append("2. ĐỘ CHÍNH XÁC & KHÔNG TRÍCH DẪN NGUỒN: Khi tư vấn cho người mua hàng, TUYỆT ĐỐI KHÔNG chèn ký hiệu trích dẫn dạng [1], [2], [n] và KHÔNG nhắc tới việc thông tin lấy từ đâu (không nói \"theo tài liệu\", \"theo SOP\", \"dựa trên dữ liệu\", tên file hay số trang). ")
+              .append("Nếu khách hàng hỏi thông tin này lấy từ đâu hoặc từ tài liệu nào, hãy trả lời tự nhiên rằng đây là thông tin sản phẩm và chính sách niêm yết chính thức tại cửa hàng/thương hiệu. ")
               .append("Hãy biến thông tin trong ").append(DATA_OPEN).append(", ").append(POLICY_OPEN)
               .append(" và ").append(EVOLVED_OPEN)
               .append(" thành kiến thức chuyên môn tự nhiên của chính bạn để tư vấn chuẩn xác mức giá, thông số và quyền lợi cho khách hàng. Không tự bịa đặt thông số hay mức giá trái với dữ liệu.\n");

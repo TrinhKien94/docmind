@@ -426,21 +426,37 @@ public class CustomerChatService {
                 ? customerProps.getStoreName().strip()
                 : "DocMind Store & Digital Services";
 
+        String question = request.resolvedQuestion();
+        String normQ = CustomerScenario.normalizeWordsPadded(question);
+        boolean asksSource = normQ.contains(" tai lieu nao ")
+                || normQ.contains(" nguon nao ")
+                || normQ.contains(" lay thong tin ")
+                || normQ.contains(" trich dan ");
+
         StringBuilder sb = new StringBuilder();
-        sb.append("Dạ em chào ").append(customerName).append(" ạ! Cảm ơn ").append(customerName)
-          .append(" đã quan tâm đến sản phẩm và dịch vụ của **").append(storeName).append("**.\n\n");
-        sb.append("Về thắc mắc của ").append(customerName).append(" (\"")
-          .append(request.resolvedQuestion()).append("\"), em xin chia sẻ thông tin chi tiết để mình dễ tham khảo nhé:\n\n");
+        sb.append("Dạ em chào ").append(customerName).append(" ạ! Rất vui được hỗ trợ ").append(customerName)
+          .append(" tại **").append(storeName).append("** hôm nay.\n\n");
+        if (asksSource) {
+            sb.append("Dạ toàn bộ thông tin về sản phẩm, bảng giá và quyền lợi chăm sóc khách hàng mà em chia sẻ đều là thông tin niêm yết chính thức tại hệ thống **")
+              .append(storeName).append("** để ").append(customerName).append(" hoàn toàn yên tâm tham khảo và lựa chọn ạ.\n\n");
+        } else {
+            sb.append("Về nhu cầu của ").append(customerName).append(" (\"")
+              .append(question).append("\"), em xin chia sẻ thông tin chi tiết để mình tiện tham khảo nhé:\n\n");
+        }
 
         if (fused != null && !fused.isEmpty()) {
             for (ReciprocalRankFusion.FusedChunk fc : fused) {
-                sb.append("- ").append(snippet(fc.chunk().text())).append("\n");
+                String cleanLine = cleanChunkForCustomerFallback(fc.chunk().text());
+                if (!cleanLine.isBlank()) {
+                    sb.append("- ").append(snippet(cleanLine)).append("\n");
+                }
             }
             sb.append("\n");
         }
 
         if (customerProps.getDefaultPolicyContext() != null && !customerProps.getDefaultPolicyContext().isBlank()) {
-            sb.append("Ngoài ra, bên em luôn áp dụng các quyền lợi chăm sóc và hỗ trợ tại **").append(storeName).append("**:\n")
+            sb.append("Bên cạnh đó, **").append(storeName).append("** luôn dành tặng ").append(customerName)
+              .append(" các quyền lợi chăm sóc và hỗ trợ chính hãng:\n")
               .append(customerProps.getDefaultPolicyContext().strip()).append("\n\n");
         }
 
@@ -451,18 +467,50 @@ public class CustomerChatService {
         return sb.toString();
     }
 
+    private String cleanChunkForCustomerFallback(String rawText) {
+        if (rawText == null || rawText.isBlank()) {
+            return "";
+        }
+        StringBuilder cleaned = new StringBuilder();
+        for (String line : rawText.split("\\R")) {
+            String trimmed = line.strip();
+            if (trimmed.isEmpty() || trimmed.startsWith("#") || trimmed.startsWith("---") || trimmed.startsWith("|---")) {
+                continue;
+            }
+            String lower = trimmed.toLowerCase(java.util.Locale.ROOT);
+            if (lower.contains("clienteling sop")
+                    || lower.contains("chuyên viên tuyệt đối")
+                    || lower.contains("kịch bản mẫu")
+                    || lower.contains("ghi chú vận hành")) {
+                continue;
+            }
+            trimmed = trimmed.replaceFirst("^[-*•+]\\s+", "");
+            if (!trimmed.isEmpty()) {
+                if (!cleaned.isEmpty()) {
+                    cleaned.append(' ');
+                }
+                cleaned.append(trimmed);
+            }
+        }
+        return stripCustomerCitationMarkers(cleaned.isEmpty() ? rawText.strip() : cleaned.toString());
+    }
+
     /**
      * Loại bỏ các ký hiệu trích dẫn số học dạng [1], [2], [1, 2] hoặc chú thích nguồn tài liệu nội bộ
      * khỏi câu trả lời dành cho người mua hàng để giữ văn phong tự nhiên như chuyên viên tư vấn thật.
      */
-    static String stripCustomerCitationMarkers(String answer) {
+    public static String stripCustomerCitationMarkers(String answer) {
         if (answer == null || answer.isBlank()) {
             return answer;
         }
         String cleaned = answer
-                // Xoá các cụm trích dẫn dạng [1], [2], [1, 2], [1][2]
-                .replaceAll("(?m)\\s*(?:\\[\\d{1,2}(?:\\s*[,;-]\\s*\\d{1,2})*])+(?=\\s*[.,;!?):\\n]|\\s*$)", "")
-                .replaceAll("(?:\\[\\d{1,2}(?:\\s*[,;-]\\s*\\d{1,2})*])+", "")
+                // Xoá các cụm trích dẫn dạng [1], [2], [1, 2], [1-3], [1][2]
+                .replaceAll("(?m)\\s*(?:\\[\\d{1,3}(?:\\s*[,;-]\\s*\\d{1,3})*])+(?=\\s*[.,;!?):\\n]|\\s*$)", "")
+                .replaceAll("(?:\\[\\d{1,3}(?:\\s*[,;-]\\s*\\d{1,3})*])+", "")
+                // Xoá chú thích nguồn tài liệu/số trang dạng (Nguồn: ...), [Nguồn: ...], (Theo tài liệu ...), (Trang 2), (Tr. 2)
+                .replaceAll("(?iu)\\s*[(\\[](?:nguồn|theo\\s+tài\\s+liệu|tài\\s+liệu\\s+sop|trích\\s+từ|trang|tr\\.)\\s*[:\\s][^)\\]\\n]{1,90}[)\\]]", "")
+                // Xoá các cụm mở đầu máy móc kiểu RAG ("Dựa trên tài liệu được cung cấp, ", "Theo đoạn trích tài liệu: ")
+                .replaceAll("(?iu)\\b(?:dựa\\s+trên|theo|căn\\s+cứ\\s+vào)\\s+(?:các\\s+)?(?:đoạn\\s+trích\\s+)?(?:tài\\s+liệu(?:\\s+sop)?|đoạn\\s+trích|ngữ\\s+cảnh|văn\\s+bản(?:\\s+nguồn)?)(?:\\s+được\\s+cung\\s+cấp|\\s+đã\\s+tải\\s+lên|\\s+nội\\s+bộ|\\s+đính\\s+kèm)?\\s*[,:]\\s*", "")
                 // Xoá khoảng trắng thừa trước dấu câu do việc gỡ [n] để lại
                 .replaceAll(" +([.,;!?])", "$1")
                 .replaceAll("(?m)[ \\t]{2,}", " ");

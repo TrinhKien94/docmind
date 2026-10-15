@@ -238,6 +238,7 @@ public final class AstrBotPlatformCatalog {
                         "app_secret", "",
                         "verify_signature", false,
                         "api_version", "v21.0",
+                        "graph_base_url", "https://graph.facebook.com",
                         "send_feedback_quick_replies", true,
                         "unified_webhook_mode", true
                 ),
@@ -247,7 +248,8 @@ public final class AstrBotPlatformCatalog {
                         field("app_secret", "Meta App Secret", "string", "Khoá bí mật kiểm tra chữ ký HMAC-SHA256 X-Hub-Signature-256.", true, false, null, ""),
                         field("verify_signature", "Bật xác thực X-Hub-Signature-256", "bool", "Kiểm tra chữ ký HMAC-SHA256 chống giả mạo payload từ Meta.", false, false, null, false),
                         field("api_version", "Graph API Version", "string", "Phiên bản Meta Graph API (mặc định v21.0).", false, false, null, "v21.0"),
-                        field("send_feedback_quick_replies", "Đính kèm nút đánh giá EvoAgentX", "bool", "Tự động gửi nút 👍 Hài lòng / 👎 Cần cải thiện dưới câu trả lời.", false, false, null, true)
+                        field("graph_base_url", "Meta Graph Base URL", "string", "Địa chỉ máy chủ Meta Graph API (mặc định https://graph.facebook.com).", false, false, null, "https://graph.facebook.com"),
+                        field("send_feedback_quick_replies", "Đính kèm nút đánh giá EvoAgentX", "bool", "Tự động gửi nút 👍 Hữu ích / 👎 Cần cải thiện dưới câu trả lời.", false, false, null, true)
                 )
         ));
 
@@ -655,10 +657,10 @@ public final class AstrBotPlatformCatalog {
                         "vip_aftersales_concierge",
                         "Quản gia Chăm sóc Hậu mãi & Bảo hành VIP",
                         "Customer Care",
-                        "Bạn là Quản gia Chăm sóc Hậu mãi & Bảo hành VIP. Ưu tiên lắng nghe đồng cảm, giải quyết khiếu nại, kiểm tra điều kiện đổi trả nguyên seal trong 7-14 ngày, xác thực mã batch code và hướng dẫn quy trình bảo hành tận tâm.",
+                        "Bạn là Quản gia Chăm sóc Hậu mãi & Bảo hành VIP. Luôn trò chuyện tự nhiên, ấm áp như chuyên viên người thật (tuyệt đối không gắn ký hiệu trích dẫn [1], [2] hay nhắc tới tài liệu nội bộ), ưu tiên lắng nghe đồng cảm, giải quyết khiếu nại, kiểm tra điều kiện đổi trả trong 7-14 ngày, xác thực mã batch code và hướng dẫn quy trình bảo hành tận tâm.",
                         List.of(
                                 "Khách hàng: Sản phẩm tôi nhận được bị lỗi vòi xịt, tôi muốn đổi trả.",
-                                "Trợ lý: Dạ em vô cùng xin lỗi Quý khách vì trải nghiệm chưa trọn vẹn này. Em xin phép hướng dẫn ngay quy trình ưu tiên đổi mới 1-1 miễn phí trong 48 giờ cho Quý khách ạ."
+                                "Trợ lý: Dạ trước hết em rất xin lỗi Anh/Chị vì trải nghiệm chưa trọn vẹn này ạ! Anh/Chị yên tâm nhé, em xin phép hỗ trợ mình đổi mới 1-1 hoàn toàn miễn phí ngay trong vòng 24–48 giờ ạ."
                         ),
                         List.of("dior_sop_lookup", "warranty_policy_checker", "evoagentx_memory"),
                         0.25,

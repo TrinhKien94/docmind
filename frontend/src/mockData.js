@@ -718,19 +718,36 @@ export const mockAstrBotPlatformTypes = [
   },
   {
     type: 'facebook_messenger',
+    default_id: 'messenger_dior_page',
     display_name: 'Facebook Messenger (Meta Graph API)',
     category: 'Global Messaging',
-    description: 'Kết nối trực tiếp với cổng Facebook Messenger Webhook & Christian Dior Luxury KB có sẵn trong DocMind.',
-    doc_url: 'https://developers.facebook.com/docs/messenger-platform/webhooks',
+    description: 'Tích hợp trực tiếp Fanpage Facebook Messenger qua Meta Graph API v21.0, hỗ trợ X-Hub-Signature-256, Quick Replies & phản hồi EvoAgentX.',
+    doc_url: 'https://developers.facebook.com/docs/messenger-platform',
     support_unified_webhook: true,
     support_qr_login: false,
     recommended_regions: ['Vietnam', 'Global'],
-    supported_events: ['PrivateMessage', 'Postback', 'QuickReply'],
-    default_config: { id: 'facebook_dior_flagship', type: 'facebook_messenger', enable: true, page_id: 'dior.vietnam.official', verify_token: 'docmind_fb_verify_token', page_access_token: '', unified_webhook_mode: true },
+    supported_events: ['PrivateMessage', 'Postback', 'QuickReply', 'Reaction'],
+    default_config: {
+      id: 'messenger_dior_page',
+      type: 'facebook_messenger',
+      enable: true,
+      page_access_token: '',
+      verify_token: 'docmind-messenger-token',
+      app_secret: '',
+      verify_signature: false,
+      api_version: 'v21.0',
+      graph_base_url: 'https://graph.facebook.com',
+      send_feedback_quick_replies: true,
+      unified_webhook_mode: true
+    },
     fields: [
-      { key: 'page_id', label: 'Facebook Page ID', type: 'string', required: true, placeholder: '10492837465...', description: 'ID Fanpage Facebook kết nối với DocMind', default_value: 'dior.vietnam.official' },
-      { key: 'verify_token', label: 'Webhook Verify Token', type: 'string', required: true, placeholder: 'docmind_fb_verify_token', description: 'Chuỗi xác thực GET hub.verify_token từ Meta', default_value: 'docmind_fb_verify_token' },
-      { key: 'page_access_token', label: 'Page Access Token', type: 'password', required: true, placeholder: 'EAAGm0PX4ZCps...', description: 'Token gửi tin nhắn qua Send API v19.0', default_value: '' }
+      { key: 'page_access_token', label: 'Page Access Token', type: 'password', required: false, secret: true, placeholder: 'EAAGm0PX4ZCps...', description: 'Token truy cập Fanpage dùng gọi Graph Send API.', default_value: '' },
+      { key: 'verify_token', label: 'Webhook Verify Token', type: 'string', required: true, secret: true, placeholder: 'docmind-messenger-token', description: 'Token đối chiếu khi Meta gọi GET hub.challenge.', default_value: 'docmind-messenger-token' },
+      { key: 'app_secret', label: 'Meta App Secret', type: 'password', required: false, secret: true, placeholder: '••••••••', description: 'Khoá bí mật kiểm tra chữ ký HMAC-SHA256 X-Hub-Signature-256.', default_value: '' },
+      { key: 'verify_signature', label: 'Bật xác thực X-Hub-Signature-256', type: 'bool', required: false, secret: false, placeholder: '', description: 'Kiểm tra chữ ký HMAC-SHA256 chống giả mạo payload từ Meta.', default_value: false },
+      { key: 'api_version', label: 'Graph API Version', type: 'string', required: false, secret: false, placeholder: 'v21.0', description: 'Phiên bản Meta Graph API (mặc định v21.0).', default_value: 'v21.0' },
+      { key: 'graph_base_url', label: 'Meta Graph Base URL', type: 'string', required: false, secret: false, placeholder: 'https://graph.facebook.com', description: 'Địa chỉ máy chủ Meta Graph API (mặc định https://graph.facebook.com).', default_value: 'https://graph.facebook.com' },
+      { key: 'send_feedback_quick_replies', label: 'Đính kèm nút đánh giá EvoAgentX', type: 'bool', required: false, secret: false, placeholder: '', description: 'Tự động gửi nút 👍 Hữu ích / 👎 Cần cải thiện dưới câu trả lời.', default_value: true }
     ]
   },
   {
@@ -806,26 +823,38 @@ export const mockAstrBotState = {
       umo_routes: []
     },
     {
-      id: 'facebook_dior_flagship',
+      id: 'messenger_dior_page',
       type: 'facebook_messenger',
       display_name: 'Facebook Messenger (Meta Graph API)',
       enable: true,
       status: 'running',
       started_at: '2026-10-15T01:10:00Z',
       unified_webhook: true,
-      webhook_uuid: 'wh_facebook_dior_flagship_e5f6',
-      webhook_url: '/api/astrbot/webhooks/platforms/wh_facebook_dior_flagship_e5f6',
+      webhook_uuid: 'wh_messenger_dior_page_e5f6',
+      webhook_url: '/api/astrbot/webhooks/platforms/wh_messenger_dior_page_e5f6',
       error_count: 0,
       last_error: null,
       message_count: 68,
       active_sessions: 4,
       fallback_profile_id: 'dior_luxury_default',
       default_persona_id: 'dior_luxury_advisor',
-      default_scenario: 'SALES',
+      default_scenario: 'AUTO',
       has_qr_payload: false,
       qr_status: null,
       qr_code_img_content: null,
-      config: { id: 'facebook_dior_flagship', type: 'facebook_messenger', enable: true, page_id: 'dior.vietnam.official', verify_token: 'docmind_fb_verify_token', page_access_token: 'EAAGm0PX••••', unified_webhook_mode: true },
+      config: {
+        id: 'messenger_dior_page',
+        type: 'facebook_messenger',
+        enable: true,
+        page_access_token: '',
+        verify_token: 'docmind-messenger-token',
+        app_secret: '',
+        verify_signature: false,
+        api_version: 'v21.0',
+        graph_base_url: 'https://graph.facebook.com',
+        send_feedback_quick_replies: true,
+        unified_webhook_mode: true
+      },
       umo_routes: []
     },
     {
@@ -1020,10 +1049,10 @@ export const mockAstrBotState = {
       id: 'dior_luxury_advisor',
       name: 'Christian Dior Luxury Beauty & Couture Advisor',
       folder: 'Luxury Retail',
-      system_prompt: 'Bạn là Chuyên viên Tư vấn Cao cấp chính thức của thương hiệu Christian Dior (Parfums & Couture). Luôn xưng hô trang nhã (Dạ / Quý khách), chẩn đoán nhu cầu tinh tế theo SOP 5 bước của Dior, trích dẫn chính xác thành phần, nốt hương, giá tham khảo và chính sách gói quà Art of Gifting.',
+      system_prompt: 'Bạn là Chuyên viên Tư vấn Cao cấp chính thức của thương hiệu Christian Dior (Parfums & Couture). Luôn trò chuyện tự nhiên, ấm áp và tinh tế như người thật (xưng em - gọi Anh/Chị hoặc Quý khách), tư vấn chuẩn xác thành phần, nốt hương, giá bán và đặc quyền gói quà Art of Gifting mà tuyệt đối không gắn ký hiệu trích dẫn [1], [2] hay nhắc tới tài liệu nội bộ.',
       begin_dialogs: [
         'Xin chào, tư vấn giúp mình sản phẩm Dior phù hợp nhé!',
-        'Dạ Christian Dior xin kính chào Quý khách! Em rất hân hạnh được đồng hành cùng Quý khách lựa chọn tuyệt tác Nước hoa, Trang điểm, Dưỡng da và Thời trang Dior phù hợp nhất ạ.'
+        'Dạ em chào Anh/Chị ạ! Rất vui được đồng hành cùng mình lựa chọn các dòng Nước hoa, Trang điểm và Dưỡng da Dior ưng ý nhất hôm nay ạ.'
       ],
       tools: ['dior_product_kb_search', 'rag_hybrid_search', 'evoagentx_guideline_lookup', 'order_gift_check'],
       temperature: 0.3,
@@ -1312,6 +1341,14 @@ export function mockSimulateAstrBotMessage(payload = {}) {
   const scenario = payload.scenario && payload.scenario !== 'AUTO' ? payload.scenario : bot.default_scenario || 'SALES'
 
   const isCommand = text.startsWith('/')
+  const upperText = text.toUpperCase()
+  const isFeedbackReply =
+    !isCommand &&
+    (upperText.startsWith('FEEDBACK_HELPFUL') ||
+      upperText.startsWith('FEEDBACK_UNHELPFUL') ||
+      text === '👍 Hữu ích' ||
+      text === '👍 Hài lòng' ||
+      text === '👎 Cần cải thiện')
   let replySent = ''
   let citations = []
   let quickReplies = ['✨ Tư vấn nước hoa Dior', '💄 Bảng màu Rouge Dior 999', '🛡️ Chính sách đổi trả', '/status']
@@ -1332,18 +1369,51 @@ export function mockSimulateAstrBotMessage(payload = {}) {
     } else {
       replySent = `✅ AstrBot đã thực thi lệnh \`${text}\` trên phiên \`${umo}\`.`
     }
+  } else if (isFeedbackReply) {
+    const helpful = !upperText.startsWith('FEEDBACK_UNHELPFUL') && !text.startsWith('👎')
+    mockRecordEvolutionFeedback({
+      interaction_id: `msgr-${senderId}`,
+      question: 'Tư vấn qua Facebook Messenger',
+      answer: 'Phản hồi tư vấn Christian Dior & DocMind',
+      scenario,
+      rating: helpful ? 5 : 2,
+      helpful,
+      comment: `AstrBot Quick Reply Feedback: ${text}`
+    })
+    replySent = helpful
+      ? 'Dạ cảm ơn Anh/Chị đã đánh giá tích cực ạ! 💖 Hệ thống AI Tư vấn của shop đã ghi nhận vào bộ nhớ EvoAgentX để phục vụ mình ngày càng tốt hơn.'
+      : 'Dạ cảm ơn góp ý của Anh/Chị ạ 🙏 Hệ thống tự tiến hoá EvoAgentX đã ghi nhận phản hồi này và cập nhật quy tắc tư vấn (TextGrad + MIPRO) để cải thiện chất lượng câu trả lời ngay lập tức!'
   } else {
-    const simChat = mockSimulateReply(senderId, text, scenario)
-    replySent = `Dạ Christian Dior & DocMind [${bot.display_name}] xin kính chào ${senderName}!\n\n${simChat.reply_sent}`
-    citations = [
-      {
-        document_id: 'doc-dior-sop-01',
-        filename: 'Christian_Dior_Luxury_Clienteling_SOP.pdf',
-        page_number: 1,
-        snippet: 'Chẩn đoán nhu cầu cá nhân hoá & đề xuất tuyệt tác Dior.'
-      }
-    ]
-    quickReplies = (simChat.quick_replies || []).slice(0, 4)
+    const isTechnicalRag = personaId === 'docmind_rag_expert' || personaId === 'docmind_rag_architect'
+    if (isTechnicalRag) {
+      replySent = sampleQA['kiến trúc'].answer
+      citations = sampleQA['kiến trúc'].citations.map((c) => ({
+        document_id: c.document_id,
+        filename: 'DocMind-Architecture-Specification.pdf',
+        page_number: c.page,
+        snippet: c.snippet
+      }))
+      quickReplies = ['Kiến trúc Hybrid RAG?', 'Luồng xử lý tài liệu PDF?', '/status']
+    } else {
+      replySent = `Dạ em chào ${senderName} ạ! Em rất vui được tư vấn cho mình hôm nay. Với nhu cầu "${text}", bên em gợi ý dòng **Miss Dior Eau de Parfum (50ml: 3.750.000 VNĐ)** hoặc **J'adore Eau de Parfum (50ml: 3.850.000 VNĐ)** giữ hương bền 8–12 giờ, đi kèm hộp quà Couture và khắc tên miễn phí tối đa 12 ký tự. ${senderName} đang tìm mùi hương thanh lịch hay ngọt ngào ấm áp để em tư vấn chi tiết hơn nhé ạ?`
+      citations = []
+      quickReplies = ['✨ Tư vấn nước hoa Dior', '💄 Bảng màu Rouge Dior 999', '🛡️ Chính sách đổi trả', '/status']
+    }
+  }
+
+  if (bot.type === 'facebook_messenger') {
+    const includeFb = !isFeedbackReply && bot.config?.send_feedback_quick_replies !== false
+    const formatted = (quickReplies || [])
+      .filter((q) => q && String(q).trim())
+      .map((q) => {
+        const s = String(q).trim()
+        return s.length > 20 ? `${s.slice(0, 19)}…` : s
+      })
+      .slice(0, includeFb ? 3 : 5)
+    if (includeFb) {
+      formatted.push('👍 Hữu ích', '👎 Cần cải thiện')
+    }
+    quickReplies = formatted
   }
 
   bot.message_count = (bot.message_count || 0) + 1

@@ -28,7 +28,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -69,6 +71,7 @@ public class AstrBotService {
     private final CustomerChatService customerChatService;
     private final CustomerSelfEvolutionService evolutionService;
     private final ObjectMapper objectMapper;
+    private final RestClient restClient;
 
     private final List<AstrBotPlatformTypeDto> platformTypes;
     private final Map<String, AstrBotPlatformTypeDto> platformTypeMap = new ConcurrentHashMap<>();
@@ -98,6 +101,7 @@ public class AstrBotService {
         this.evolutionService = evolutionService;
         this.objectMapper = new ObjectMapper()
                 .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
+        this.restClient = RestClient.create();
 
         this.platformTypes = AstrBotPlatformCatalog.buildPlatformTypes();
         for (AstrBotPlatformTypeDto pt : this.platformTypes) {
@@ -693,14 +697,19 @@ public class AstrBotService {
             return "OK";
         }
         if (queryParams.containsKey("hub.challenge")) {
-            if (queryParams.containsKey("hub.mode") || queryParams.containsKey("hub.verify_token")) {
+            String expectedToken = asString(inst.config.get("verify_token"));
+            boolean requiresMetaVerification = (expectedToken != null && !expectedToken.isBlank())
+                    || "facebook_messenger".equalsIgnoreCase(inst.type)
+                    || queryParams.containsKey("hub.mode")
+                    || queryParams.containsKey("hub.verify_token");
+            if (requiresMetaVerification) {
                 String mode = queryParams.get("hub.mode");
                 String verifyToken = queryParams.get("hub.verify_token");
-                if (mode != null && !"subscribe".equals(mode)) {
+                if (!"subscribe".equals(mode)) {
                     throw new SecurityException("Forbidden: hub.mode must be subscribe");
                 }
-                String expectedToken = asString(inst.config.get("verify_token"));
-                if (verifyToken == null || (expectedToken != null && !expectedToken.isBlank() && !expectedToken.equals(verifyToken))) {
+                if (verifyToken == null || verifyToken.isBlank()
+                        || (expectedToken != null && !expectedToken.isBlank() && !expectedToken.equals(verifyToken))) {
                     throw new SecurityException("Forbidden: Token verification failed");
                 }
             }
@@ -729,7 +738,8 @@ public class AstrBotService {
         }
         String appSecret = asString(inst.config.get("app_secret"));
         if (appSecret == null || appSecret.isBlank()) {
-            return true;
+            log.warn("verify_signature=true cho [{}] nhưng chưa cấu hình app_secret; từ chối request", inst.id);
+            return false;
         }
         if (signatureHeader == null || !signatureHeader.startsWith("sha256=") || rawPayload == null) {
             return false;
@@ -848,7 +858,7 @@ public class AstrBotService {
      * Xử lý chuyên sâu cấu trúc sự kiện Meta Facebook Messenger (object="page", entry[].messaging[]):
      * - Bỏ qua delivery, read receipts và echo messages (is_echo=true)
      * - Ánh xạ Reaction (👍, ❤️, 👎, 😠...) và Quick Reply / Postback FEEDBACK_HELPFUL_* / FEEDBACK_UNHELPFUL_* vào EvoAgentX
-     * - Định tuyến tin nhắn văn bản / postback / quick reply qua luồng AstrBot UMO Pipeline.
+     * - Định tuyến tin nhắn văn bản / postback / quick reply qua luồng AstrBot UMO Pipeline và gửi phản hồi qua Meta Graph Send API.
      */
     private Map<String, Object> handleMetaMessengerWebhookPayload(MutableBotInstance inst, JsonNode root) {
         String objectType = root.path("object").asText("");
@@ -868,6 +878,7 @@ public class AstrBotService {
         }
 
         Map<String, Object> lastResult = null;
+        int processedEvents = 0;
         for (JsonNode entry : entries) {
             JsonNode messagingList = entry.path("messaging");
             if (!messagingList.isArray()) {
@@ -902,7 +913,9 @@ public class AstrBotService {
                     );
                     Boolean helpful = classifyMessengerReaction(reactionVal);
                     if (helpful != null) {
-                        recordMessengerSessionFeedback(inst, umo, senderId, helpful, helpful ? 5 : 2, "Messenger Reaction: " + reactionVal);
+                        String resolvedFeedbackId = recordMessengerSessionFeedback(
+                                inst, umo, senderId, null, helpful, helpful ? 5 : 2, "Messenger Reaction: " + reactionVal);
+                        processedEvents++;
                         Map<String, Object> fbOut = new LinkedHashMap<>();
                         fbOut.put("status", "ok");
                         fbOut.put("event_received", true);
@@ -911,23 +924,25 @@ public class AstrBotService {
                         fbOut.put("umo", umo);
                         fbOut.put("feedback_recorded", true);
                         fbOut.put("helpful", helpful);
+                        fbOut.put("interaction_id", resolvedFeedbackId);
                         lastResult = fbOut;
                     }
                     continue;
                 }
 
-                // 3. Feedback Quick Reply or Postback (FEEDBACK_HELPFUL_* / FEEDBACK_UNHELPFUL_*)
+                // 3. Feedback Quick Reply or Postback (FEEDBACK_HELPFUL_* / FEEDBACK_UNHELPFUL_* or 👍 Hữu ích / 👎 Cần cải thiện)
                 String qrPayload = messaging.path("message").path("quick_reply").path("payload").asText(null);
                 String pbPayload = messaging.path("postback").path("payload").asText(null);
-                String feedbackPayload = null;
-                if (qrPayload != null && (qrPayload.startsWith("FEEDBACK_HELPFUL_") || qrPayload.startsWith("FEEDBACK_UNHELPFUL_"))) {
-                    feedbackPayload = qrPayload;
-                } else if (pbPayload != null && (pbPayload.startsWith("FEEDBACK_HELPFUL_") || pbPayload.startsWith("FEEDBACK_UNHELPFUL_"))) {
-                    feedbackPayload = pbPayload;
-                }
-                if (feedbackPayload != null) {
-                    boolean helpful = feedbackPayload.startsWith("FEEDBACK_HELPFUL_");
-                    recordMessengerSessionFeedback(inst, umo, senderId, helpful, helpful ? 5 : 2, "Messenger Feedback: " + feedbackPayload);
+                String msgText = messaging.path("message").path("text").asText(null);
+                String feedbackToken = firstFeedbackToken(qrPayload, pbPayload, msgText);
+                if (feedbackToken != null) {
+                    boolean helpful = isHelpfulFeedbackText(feedbackToken);
+                    String explicitInteractionId = extractFeedbackInteractionId(feedbackToken);
+                    String resolvedFeedbackId = recordMessengerSessionFeedback(
+                            inst, umo, senderId, explicitInteractionId, helpful, helpful ? 5 : 2, "Messenger Feedback: " + feedbackToken);
+                    String thankYou = buildFeedbackThankYouMessage(helpful);
+                    Map<String, Object> dispatchInfo = dispatchMessengerGraphApiMessage(inst, senderId, thankYou, List.of(), resolvedFeedbackId);
+                    processedEvents++;
                     Map<String, Object> fbOut = new LinkedHashMap<>();
                     fbOut.put("status", "ok");
                     fbOut.put("event_received", true);
@@ -936,6 +951,10 @@ public class AstrBotService {
                     fbOut.put("umo", umo);
                     fbOut.put("feedback_recorded", true);
                     fbOut.put("helpful", helpful);
+                    fbOut.put("interaction_id", resolvedFeedbackId);
+                    fbOut.put("reply", thankYou);
+                    fbOut.put("delivery_mode", dispatchInfo.get("delivery_mode"));
+                    fbOut.put("dispatched", dispatchInfo.get("dispatched"));
                     lastResult = fbOut;
                     continue;
                 }
@@ -943,7 +962,7 @@ public class AstrBotService {
                 // 4. Customer Consultation Message (text, quick_reply, or postback)
                 String userText = firstNonBlank(
                         qrPayload,
-                        messaging.path("message").path("text").asText(null),
+                        msgText,
                         pbPayload,
                         messaging.path("postback").path("title").asText(null)
                 );
@@ -962,6 +981,9 @@ public class AstrBotService {
                         null,
                         null
                 ));
+                Map<String, Object> dispatchInfo = dispatchMessengerGraphApiMessage(
+                        inst, senderId, simResp.replySent(), simResp.quickReplies(), simResp.interactionId());
+                processedEvents++;
                 Map<String, Object> out = new LinkedHashMap<>();
                 out.put("status", "ok");
                 out.put("event_received", true);
@@ -971,11 +993,17 @@ public class AstrBotService {
                 out.put("reply", simResp.replySent());
                 out.put("interaction_id", simResp.interactionId());
                 out.put("quick_replies", simResp.quickReplies());
+                out.put("delivery_mode", dispatchInfo.get("delivery_mode"));
+                out.put("dispatched", dispatchInfo.get("dispatched"));
+                if (dispatchInfo.containsKey("message_id")) {
+                    out.put("message_id", dispatchInfo.get("message_id"));
+                }
                 lastResult = out;
             }
         }
 
         if (lastResult != null) {
+            lastResult.put("processed_events", processedEvents);
             return lastResult;
         }
         Map<String, Object> ignored = new LinkedHashMap<>();
@@ -1003,17 +1031,80 @@ public class AstrBotService {
         return null;
     }
 
-    private void recordMessengerSessionFeedback(
+    private static String firstFeedbackToken(String... candidates) {
+        if (candidates == null) {
+            return null;
+        }
+        for (String c : candidates) {
+            if (isFeedbackQuickReply(c)) {
+                return c.strip();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isFeedbackQuickReply(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String norm = text.strip();
+        String upper = norm.toUpperCase(Locale.ROOT);
+        if (upper.startsWith("FEEDBACK_HELPFUL") || upper.startsWith("FEEDBACK_UNHELPFUL")) {
+            return true;
+        }
+        return "👍 Hữu ích".equalsIgnoreCase(norm)
+                || "👍 Hài lòng".equalsIgnoreCase(norm)
+                || "👎 Cần cải thiện".equalsIgnoreCase(norm);
+    }
+
+    private static boolean isHelpfulFeedbackText(String text) {
+        if (text == null) {
+            return true;
+        }
+        String norm = text.strip();
+        String upper = norm.toUpperCase(Locale.ROOT);
+        if (upper.startsWith("FEEDBACK_UNHELPFUL") || norm.startsWith("👎")) {
+            return false;
+        }
+        return true;
+    }
+
+    private static String extractFeedbackInteractionId(String token) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        String norm = token.strip();
+        if (norm.startsWith("FEEDBACK_HELPFUL_")) {
+            String suffix = norm.substring("FEEDBACK_HELPFUL_".length()).strip();
+            return suffix.isEmpty() ? null : suffix;
+        }
+        if (norm.startsWith("FEEDBACK_UNHELPFUL_")) {
+            String suffix = norm.substring("FEEDBACK_UNHELPFUL_".length()).strip();
+            return suffix.isEmpty() ? null : suffix;
+        }
+        return null;
+    }
+
+    private static String buildFeedbackThankYouMessage(boolean helpful) {
+        return helpful
+                ? "Dạ cảm ơn Anh/Chị đã đánh giá tích cực ạ! 💖 Hệ thống AI Tư vấn của shop đã ghi nhận vào bộ nhớ EvoAgentX để phục vụ mình ngày càng tốt hơn."
+                : "Dạ cảm ơn góp ý của Anh/Chị ạ 🙏 Hệ thống tự tiến hoá EvoAgentX đã ghi nhận phản hồi này và cập nhật quy tắc tư vấn (TextGrad + MIPRO) để cải thiện chất lượng câu trả lời ngay lập tức!";
+    }
+
+    private String recordMessengerSessionFeedback(
             MutableBotInstance inst,
             String umo,
             String senderId,
+            String explicitInteractionId,
             boolean helpful,
             int rating,
             String comment) {
         MutableSessionState sess = sessionMap.get(umo);
-        String interactionId = sess != null && sess.lastInteractionId != null
-                ? sess.lastInteractionId
-                : "msgr-" + senderId;
+        String interactionId = firstNonBlank(
+                explicitInteractionId,
+                sess != null ? sess.lastInteractionId : null,
+                "msgr-" + senderId
+        );
         String question = sess != null && !sess.lastMessage.isBlank()
                 ? sess.lastMessage
                 : "Tư vấn qua Facebook Messenger";
@@ -1036,7 +1127,123 @@ public class AstrBotService {
             ));
         }
         appendLog("INFO", inst.id, "EvoAgentXFeedbackBridge",
-                "Đã đồng bộ đánh giá từ [" + umo + "] (helpful=" + helpful + ", rating=" + rating + ") sang EvoAgentX.", false);
+                "Đã đồng bộ đánh giá từ [" + umo + "] (interactionId=" + interactionId + ", helpful=" + helpful + ", rating=" + rating + ") sang EvoAgentX.", false);
+        return interactionId;
+    }
+
+    /**
+     * Gửi tin nhắn phản hồi tới khách hàng qua Meta Graph Send API ({graph_base_url}/{api_version}/me/messages).
+     * Khi chưa cấu hình page_access_token, tự động chạy ở chế độ SIMULATED an toàn.
+     */
+    private Map<String, Object> dispatchMessengerGraphApiMessage(
+            MutableBotInstance inst,
+            String recipientPsid,
+            String text,
+            List<String> quickReplies,
+            String interactionId) {
+        String safeText = truncateMetaText(text != null ? text : "", 2000);
+        List<Map<String, Object>> metaQuickReplies = new ArrayList<>();
+        if (quickReplies != null) {
+            String fbSuffix = firstNonBlank(interactionId, "latest");
+            for (String qr : quickReplies) {
+                if (qr == null || qr.isBlank()) {
+                    continue;
+                }
+                String trimmed = qr.strip();
+                String title = truncateMetaText(trimmed, 20);
+                String payload;
+                if (isFeedbackQuickReply(trimmed)) {
+                    payload = (isHelpfulFeedbackText(trimmed) ? "FEEDBACK_HELPFUL_" : "FEEDBACK_UNHELPFUL_") + fbSuffix;
+                } else {
+                    payload = truncateMetaText(trimmed, 1000);
+                }
+                metaQuickReplies.add(Map.of(
+                        "content_type", "text",
+                        "title", title,
+                        "payload", payload
+                ));
+                if (metaQuickReplies.size() >= 13) {
+                    break;
+                }
+            }
+        }
+
+        String pageAccessToken = asString(inst.config.get("page_access_token"));
+        if (pageAccessToken == null || pageAccessToken.isBlank()) {
+            appendLog("INFO", inst.id, "MetaGraphSendApi",
+                    "[SIMULATED] Đã chuẩn bị phản hồi Messenger cho PSID=" + recipientPsid + " (chưa cấu hình page_access_token).", false);
+            Map<String, Object> sim = new LinkedHashMap<>();
+            sim.put("dispatched", false);
+            sim.put("delivery_mode", "SIMULATED");
+            sim.put("recipient_id", recipientPsid);
+            sim.put("quick_replies_payload", metaQuickReplies);
+            return sim;
+        }
+
+        Map<String, Object> messageNode = new LinkedHashMap<>();
+        messageNode.put("text", safeText);
+        if (!metaQuickReplies.isEmpty()) {
+            messageNode.put("quick_replies", metaQuickReplies);
+        }
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("recipient", Map.of("id", recipientPsid));
+        body.put("messaging_type", "RESPONSE");
+        body.put("message", messageNode);
+
+        String baseUrl = firstNonBlank(asString(inst.config.get("graph_base_url")), "https://graph.facebook.com")
+                .replaceAll("/+$", "");
+        String apiVersion = firstNonBlank(asString(inst.config.get("api_version")), "v21.0")
+                .replaceAll("^/+|/+$", "");
+        String endpoint = baseUrl + "/" + apiVersion + "/me/messages";
+
+        try {
+            String rawResponse = restClient.post()
+                    .uri(endpoint)
+                    .header("Authorization", "Bearer " + pageAccessToken)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
+
+            String msgId = "mid.graph_ok";
+            String recId = recipientPsid;
+            if (rawResponse != null && !rawResponse.isBlank()) {
+                JsonNode respNode = objectMapper.readTree(rawResponse);
+                msgId = respNode.path("message_id").asText(msgId);
+                recId = respNode.path("recipient_id").asText(recId);
+            }
+            appendLog("INFO", inst.id, "MetaGraphSendApi",
+                    "Đã gửi tin nhắn qua Meta Graph Send API (" + apiVersion + ") tới PSID=" + recId + " (message_id=" + msgId + ").", false);
+            Map<String, Object> sent = new LinkedHashMap<>();
+            sent.put("dispatched", true);
+            sent.put("delivery_mode", "GRAPH_API");
+            sent.put("recipient_id", recId);
+            sent.put("message_id", msgId);
+            sent.put("quick_replies_payload", metaQuickReplies);
+            return sent;
+        } catch (Exception e) {
+            log.warn("Lỗi gọi Meta Graph Send API ({}) cho [{}] tới PSID={}: {}", endpoint, inst.id, recipientPsid, e.getMessage());
+            appendLog("WARN", inst.id, "MetaGraphSendApi",
+                    "Lỗi gọi Meta Graph Send API tới PSID=" + recipientPsid + ": " + e.getMessage(), false);
+            Map<String, Object> err = new LinkedHashMap<>();
+            err.put("dispatched", false);
+            err.put("delivery_mode", "GRAPH_API_ERROR");
+            err.put("recipient_id", recipientPsid);
+            err.put("error", String.valueOf(e.getMessage()));
+            err.put("quick_replies_payload", metaQuickReplies);
+            return err;
+        }
+    }
+
+    private static String truncateMetaText(String text, int maxChars) {
+        if (text == null) {
+            return "";
+        }
+        String trimmed = text.strip();
+        if (trimmed.length() <= maxChars) {
+            return trimmed;
+        }
+        return trimmed.substring(0, Math.max(0, maxChars - 1)) + "…";
     }
 
     /**
@@ -1100,6 +1307,7 @@ public class AstrBotService {
         boolean isCommand = properties.isEnableStarCommands()
                 && isExtensionEnabled("star-builtin-commands", session)
                 && incomingText.startsWith(properties.getCommandPrefix());
+        boolean isFeedbackReply = !isCommand && isFeedbackQuickReply(incomingText);
 
         String replyText;
         List<Citation> citations = List.of();
@@ -1112,6 +1320,17 @@ public class AstrBotService {
             replyText = executeStarCommand(incomingText, session, bot, resolvedPersonaId, resolvedScenario);
             resolvedPersonaId = resolveValidPersonaId(firstNonBlank(session.personaId, resolvedPersonaId));
             resolvedScenario = firstNonBlank(session.scenario, resolvedScenario);
+            CustomerEvolutionStatusResponse evoStatus = safeGetEvolutionStatus();
+            if (evoStatus != null) {
+                evoGen = evoStatus.evolutionGeneration();
+                evoScore = evoStatus.averageQualityScore();
+            }
+        } else if (isFeedbackReply) {
+            boolean helpful = isHelpfulFeedbackText(incomingText);
+            String explicitInteractionId = extractFeedbackInteractionId(incomingText);
+            chatInteractionId = recordMessengerSessionFeedback(
+                    bot, umo, senderId, explicitInteractionId, helpful, helpful ? 5 : 2, "AstrBot Quick Reply Feedback: " + incomingText);
+            replyText = buildFeedbackThankYouMessage(helpful);
             CustomerEvolutionStatusResponse evoStatus = safeGetEvolutionStatus();
             if (evoStatus != null) {
                 evoGen = evoStatus.evolutionGeneration();
@@ -1158,11 +1377,16 @@ public class AstrBotService {
         }
 
         if ("facebook_messenger".equalsIgnoreCase(platformType)) {
-            quickReplies = formatMessengerQuickReplies(quickReplies, asBoolean(bot.config.get("send_feedback_quick_replies"), true));
+            quickReplies = formatMessengerQuickReplies(
+                    quickReplies,
+                    !isFeedbackReply && asBoolean(bot.config.get("send_feedback_quick_replies"), true)
+            );
         }
 
         String interactionId = firstNonBlank(chatInteractionId, "astr-" + UUID.randomUUID().toString().substring(0, 8));
-        session.lastInteractionId = interactionId;
+        if (!isFeedbackReply) {
+            session.lastInteractionId = interactionId;
+        }
         session.recordTurn(incomingText, replyText);
         bot.messageCount.incrementAndGet();
         totalMessagesProcessed.incrementAndGet();

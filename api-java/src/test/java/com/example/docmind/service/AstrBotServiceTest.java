@@ -603,4 +603,155 @@ class AstrBotServiceTest {
         assertEquals(true, reactRes.get("helpful"));
         verify(evolutionService).recordFeedbackAndEvolve(any());
     }
+
+    @Test
+    @DisplayName("Bảo mật GET hub.challenge & X-Hub-Signature-256: chặn mọi hành vi bỏ qua hub.mode / hub.verify_token hoặc thiếu app_secret khi verify_signature=true")
+    void webhookSecurityRejectsMissingModeOrVerifyTokenAndFailsClosedOnMissingSecret() {
+        AstrBotInstanceDto msgrBot = astrBotService.getBot("messenger_dior_page");
+        String uuid = msgrBot.webhookUuid();
+
+        // Bypass attempt 1: omitting both hub.mode and hub.verify_token on a bot with verify_token configured
+        assertThrows(SecurityException.class, () -> astrBotService.verifyUnifiedWebhookGet(uuid, Map.of(
+                "hub.challenge", "bypass_attempt_01"
+        )));
+
+        // Bypass attempt 2: omitting hub.mode while supplying valid hub.verify_token
+        assertThrows(SecurityException.class, () -> astrBotService.verifyUnifiedWebhookGet(uuid, Map.of(
+                "hub.verify_token", "docmind-messenger-token",
+                "hub.challenge", "bypass_attempt_02"
+        )));
+
+        // Bypass attempt 3: omitting hub.verify_token while supplying hub.mode=subscribe
+        assertThrows(SecurityException.class, () -> astrBotService.verifyUnifiedWebhookGet(uuid, Map.of(
+                "hub.mode", "subscribe",
+                "hub.challenge", "bypass_attempt_03"
+        )));
+
+        // Bypass attempt 4: wrong hub.mode=unsubscribe
+        assertThrows(SecurityException.class, () -> astrBotService.verifyUnifiedWebhookGet(uuid, Map.of(
+                "hub.mode", "unsubscribe",
+                "hub.verify_token", "docmind-messenger-token",
+                "hub.challenge", "bypass_attempt_04"
+        )));
+
+        // Fail-closed signature check: verify_signature=true with blank app_secret must reject POST
+        astrBotService.updateBot("messenger_dior_page", Map.of(
+                "config", Map.of(
+                        "verify_token", "docmind-messenger-token",
+                        "app_secret", "",
+                        "verify_signature", true
+                )
+        ));
+        assertThrows(SecurityException.class, () -> astrBotService.handleUnifiedWebhookPost(
+                uuid, "sha256=anything", "{\"object\":\"page\",\"entry\":[]}"
+        ));
+    }
+
+    @Test
+    @DisplayName("Outbound Meta Graph Send API (/v21.0/me/messages) gửi Bearer token, cắt ngắn text <= 2000 ký tự, đính kèm FEEDBACK_HELPFUL_<id> và xử lý Batch Multi-Entry UTF-8")
+    void outboundMetaGraphSendApiAndMultiEntryUtf8BatchAndSimulatorFeedback() throws Exception {
+        java.util.concurrent.atomic.AtomicReference<String> capturedAuth = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> capturedPath = new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<String> capturedBody = new java.util.concurrent.atomic.AtomicReference<>();
+
+        com.sun.net.httpserver.HttpServer mockGraphServer = com.sun.net.httpserver.HttpServer.create(new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        mockGraphServer.createContext("/v21.0/me/messages", exchange -> {
+            capturedAuth.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            capturedPath.set(exchange.getRequestURI().getPath());
+            String reqBody = new String(exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+            capturedBody.set(reqBody);
+            byte[] respBytes = "{\"recipient_id\":\"psid_utf8_99\",\"message_id\":\"mid.live_graph_777\"}".getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, respBytes.length);
+            exchange.getResponseBody().write(respBytes);
+            exchange.close();
+        });
+        mockGraphServer.start();
+
+        try {
+            int port = mockGraphServer.getAddress().getPort();
+            String secret = "dior_utf8_secret_2026";
+            astrBotService.updateBot("messenger_dior_page", Map.of(
+                    "config", Map.of(
+                            "page_access_token", "EAAG_LIVE_TOKEN_99",
+                            "verify_token", "docmind-messenger-token",
+                            "app_secret", secret,
+                            "verify_signature", true,
+                            "api_version", "v21.0",
+                            "graph_base_url", "http://127.0.0.1:" + port,
+                            "send_feedback_quick_replies", true
+                    )
+            ));
+
+            String uuid = astrBotService.getBot("messenger_dior_page").webhookUuid();
+
+            // Multi-entry batch payload with Vietnamese UTF-8 + emojis + delivery + message + reaction + explicit feedback postback
+            String batchedPayload = """
+                    {
+                      "object": "page",
+                      "entry": [
+                        {
+                          "id": "page_1",
+                          "messaging": [
+                            { "sender": { "id": "psid_utf8_99" }, "delivery": { "mids": ["m0"] } },
+                            {
+                              "sender": { "id": "psid_utf8_99" },
+                              "message": { "mid": "m1", "text": "Tư vấn nước hoa J'adore L'Or 50ml chính hãng 💎🌸 tiếng Việt có dấu" }
+                            }
+                          ]
+                        },
+                        {
+                          "id": "page_1",
+                          "messaging": [
+                            {
+                              "sender": { "id": "psid_utf8_99" },
+                              "postback": { "title": "👎 Cần cải thiện", "payload": "FEEDBACK_UNHELPFUL_int-explicit-999" }
+                            }
+                          ]
+                        }
+                      ]
+                    }
+                    """;
+
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+            String sig = "sha256=" + java.util.HexFormat.of().formatHex(mac.doFinal(batchedPayload.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+            Map<String, Object> batchRes = astrBotService.handleUnifiedWebhookPost(uuid, sig, batchedPayload);
+            assertEquals("ok", batchRes.get("status"));
+            assertEquals(2, batchRes.get("processed_events"));
+            assertEquals("int-explicit-999", batchRes.get("interaction_id"));
+            assertEquals("GRAPH_API", batchRes.get("delivery_mode"));
+            assertEquals(true, batchRes.get("dispatched"));
+
+            assertEquals("Bearer EAAG_LIVE_TOKEN_99", capturedAuth.get());
+            assertEquals("/v21.0/me/messages", capturedPath.get());
+            assertNotNull(capturedBody.get());
+
+            ArgumentCaptor<com.example.docmind.dto.CustomerFeedbackRequest> fbCaptor =
+                    ArgumentCaptor.forClass(com.example.docmind.dto.CustomerFeedbackRequest.class);
+            verify(evolutionService).recordFeedbackAndEvolve(fbCaptor.capture());
+            assertEquals("int-explicit-999", fbCaptor.getValue().interactionId());
+            assertFalse(fbCaptor.getValue().helpful());
+            assertEquals(2, fbCaptor.getValue().rating());
+
+            // Also verify Live Simulator feedback quick reply ("👍 Hữu ích") triggers EvoAgentX feedback instead of product chat
+            AstrBotSimulateResponse simTurn1 = astrBotService.simulateOrProcessMessage(new AstrBotSimulateRequest(
+                    "messenger_dior_page", "facebook_messenger", "PrivateMessage",
+                    "sim_user_01", "sim_user_01", "Khách Simulator",
+                    "Tư vấn kem dưỡng Dior Capture Totale", null, null
+            ));
+            assertTrue(simTurn1.quickReplies().contains("👍 Hữu ích"));
+
+            AstrBotSimulateResponse simFeedback = astrBotService.simulateOrProcessMessage(new AstrBotSimulateRequest(
+                    "messenger_dior_page", "facebook_messenger", "PrivateMessage",
+                    "sim_user_01", "sim_user_01", "Khách Simulator",
+                    "👍 Hữu ích", null, null
+            ));
+            assertTrue(simFeedback.replySent().contains("EvoAgentX"));
+            assertFalse(simFeedback.quickReplies().contains("👍 Hữu ích"), "Feedback acknowledgment should not re-append feedback buttons");
+        } finally {
+            mockGraphServer.stop(0);
+        }
+    }
 }

@@ -919,10 +919,11 @@ public class CustomerSelfEvolutionService {
         if (secondaryScenarios != null && !secondaryScenarios.isEmpty()) {
             String secCodes = String.join(", ", secondaryScenarios.stream().map(CustomerScenario::code).toList());
             return "Khi khách hàng hỏi kết hợp " + scenario.code() + " và [" + secCodes
-                    + "], cần chia mục rõ ràng để giải đáp trọn vẹn cả nhu cầu chính lẫn chính sách liên quan trong cùng một câu trả lời.";
+                    + "], hãy tư vấn liền mạch, tự nhiên như người thật để giải đáp trọn vẹn cả nhu cầu chính lẫn chính sách liên quan trong cùng một câu trả lời.";
         }
         if (textualGradient != null && !textualGradient.isBlank()
-                && !textualGradient.startsWith("Duy trì phong cách")) {
+                && !textualGradient.startsWith("Duy trì phong cách")
+                && !textualGradient.startsWith("Duy trì văn phong")) {
             return truncate(sanitizeRuleText(textualGradient), 240);
         }
         return scenario.defaultEvolutionGuideline(customerProps, hasRagChunks);
@@ -1004,7 +1005,10 @@ public class CustomerSelfEvolutionService {
 
     private void upsertExemplar(String scenarioCode, String question, String answer, double qualityScore) {
         String cleanQ = sanitizeRuleText(question);
-        String cleanA = truncate(sanitizeRuleText(answer), 360);
+        String cleanA = truncate(
+                sanitizeRuleText(com.example.docmind.service.CustomerChatService.stripCustomerCitationMarkers(answer)),
+                960
+        );
         if (cleanQ.isBlank() || cleanA.isBlank()) {
             return;
         }
@@ -1156,13 +1160,14 @@ public class CustomerSelfEvolutionService {
         if (s == null) {
             return "";
         }
-        return s.replaceAll("(?iu)<\\s*/?\\s*(document_context|store_policy_context|conversation_history|evolved_guidelines|evolved_guideline)[^>]*>?", "")
+        String cleaned = s.replaceAll("(?iu)<\\s*/?\\s*(document_context|store_policy_context|conversation_history|evolved_guidelines|evolved_guideline)[^>]*>?", "")
                 .replaceAll("(?iu)#+\\s*(vai\\s+trò|quy\\s+tắc|kịch\\s+bản|mẫu\\s+hội\\s+thoại|câu\\s+hỏi|tri\\s+thức)", "")
                 .replaceAll("(?iu)câu\\s+hỏi\\s*:", "nội dung hỏi:")
                 .replace('\n', ' ')
                 .replace('\r', ' ')
                 .replaceAll("\\s+", " ")
                 .strip();
+        return com.example.docmind.service.CustomerChatService.stripCustomerCitationMarkers(cleaned);
     }
 
     private static String truncate(String s, int maxLen) {
@@ -1170,7 +1175,17 @@ public class CustomerSelfEvolutionService {
             return "";
         }
         String t = s.strip();
-        return t.length() <= maxLen ? t : t.substring(0, maxLen) + "…";
+        if (t.length() <= maxLen) {
+            return t;
+        }
+        int lastPunct = Math.max(
+                t.lastIndexOf(". ", maxLen),
+                Math.max(t.lastIndexOf("! ", maxLen), t.lastIndexOf("? ", maxLen))
+        );
+        if (lastPunct >= maxLen * 2 / 3) {
+            return t.substring(0, lastPunct + 1).strip();
+        }
+        return t.substring(0, maxLen) + "…";
     }
 
     private enum ImplicitSignal {

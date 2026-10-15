@@ -25,9 +25,9 @@ public enum CustomerScenario {
             "Tư vấn chọn sản phẩm/gói dịch vụ phù hợp nhu cầu, báo giá chi tiết, thông tin khuyến mãi và hướng dẫn đặt mua.",
             """
             - Khách hàng đang có nhu cầu TÌM HIỂU MUA HÀNG hoặc ĐĂNG KÝ DỊCH VỤ.
-            - Phân tích nhu cầu của khách hàng, giới thiệu sản phẩm/gói dịch vụ phù hợp nhất kèm lợi ích thực tế.
-            - Cung cấp thông tin giá cả, ưu đãi và quyền lợi một cách minh bạch, rõ ràng dựa trên dữ liệu tài liệu/chính sách.
-            - Kết thúc bằng lời gợi ý nhẹ nhàng (Call-to-Action) giúp khách hàng dễ dàng lựa chọn hoặc đặt mua ngay.""",
+            - Trò chuyện tự nhiên, ấm áp và gần gũi như một chuyên viên tư vấn người thật: lắng nghe nhu cầu của khách hàng, giới thiệu sản phẩm/gói dịch vụ phù hợp nhất kèm lợi ích thực tế.
+            - Chia sẻ thông tin giá cả, ưu đãi và quyền lợi một cách minh bạch, rõ ràng như kiến thức chuyên môn của bạn (tuyệt đối không gắn ký hiệu trích dẫn [1], [2] hay nhắc tới tài liệu nguồn).
+            - Kết thúc bằng lời gợi mở nhẹ nhàng, tự nhiên giúp khách hàng dễ dàng lựa chọn hoặc đặt mua ngay.""",
             List.of(
                     "Các gói dịch vụ hiện tại có mức giá và ưu đãi như thế nào?",
                     "Tôi nên chọn gói sản phẩm/dịch vụ nào phù hợp với nhu cầu cá nhân hoặc doanh nghiệp?",
@@ -61,9 +61,9 @@ public enum CustomerScenario {
             "Hướng dẫn sử dụng tính năng, kích hoạt tài khoản, cấu hình dịch vụ và xử lý sự cố kỹ thuật trong quá trình sử dụng.",
             """
             - Khách hàng đang SỬ DỤNG DỊCH VỤ hoặc cần HỖ TRỢ KỸ THUẬT / HƯỚNG DẪN THAO TÁC.
-            - Trình bày hướng dẫn từng bước (Step-by-step) mạch lạc, dễ thực hiện theo.
+            - Hướng dẫn mạch lạc, gần gũi và dễ hiểu như đang trực tiếp chỉ dẫn cho khách hàng (tuyệt đối không gắn ký hiệu trích dẫn [1], [2] hay nhắc tới tài liệu nội bộ).
             - Nếu khách hàng gặp vướng mắc hoặc lỗi dịch vụ, giải thích nguyên nhân ngắn gọn và đưa ra giải pháp khắc phục ngay.
-            - Chủ động hỏi thăm xem khách hàng đã thao tác thành công chưa và sẵn sàng hỗ trợ chuyên sâu.""",
+            - Chủ động hỏi thăm ân cần xem khách hàng đã thao tác thuận lợi chưa và sẵn sàng hỗ trợ thêm.""",
             List.of(
                     "Hướng dẫn tôi các bước bắt đầu sử dụng dịch vụ sau khi đăng ký?",
                     "Làm thế nào để tích hợp hoặc nâng cấp gói dịch vụ đang sử dụng?",
@@ -94,8 +94,8 @@ public enum CustomerScenario {
             "Giải đáp chính sách bảo hành, điều kiện đổi trả/hoàn tiền và tiếp nhận xử lý khiếu nại về chất lượng sản phẩm/dịch vụ.",
             """
             - Khách hàng đang hỏi về BẢO HÀNH, ĐỔI TRẢ, HOÀN TIỀN hoặc PHẢN ÁNH CHẤT LƯỢNG sản phẩm/dịch vụ.
-            - Thể hiện sự đồng cảm, cầu thị và xin lỗi chân thành nếu khách hàng gặp bất tiện trong quá trình mua hàng hoặc sử dụng dịch vụ.
-            - Giải thích rõ ràng điều kiện, thời hạn bảo hành/đổi trả và quy trình xử lý từng bước minh bạch.
+            - Thể hiện sự đồng cảm chân thành, trấn an khách hàng bằng giọng văn ấm áp, cầu thị nếu khách hàng gặp bất tiện.
+            - Giải thích tự nhiên, rõ ràng điều kiện, thời hạn bảo hành/đổi trả và quy trình hỗ trợ (tuyệt đối không gắn ký hiệu trích dẫn [1], [2] hay nhắc tới tài liệu nguồn).
             - Khẳng định cam kết bảo vệ quyền lợi chính đáng của khách hàng.""",
             List.of(
                     "Điều kiện và thời hạn bảo hành chính hãng của sản phẩm/dịch vụ là bao lâu?",
@@ -125,7 +125,7 @@ public enum CustomerScenario {
             "Hỗ trợ tra cứu trạng thái đơn hàng, phương thức thanh toán, xuất hóa đơn VAT và thời gian giao nhận/bàn giao.",
             """
             - Khách hàng đang quan tâm đến ĐƠN HÀNG, THANH TOÁN, HÓA ĐƠN VAT hoặc VẬN CHUYỂN / BÀN GIAO.
-            - Hướng dẫn chi tiết các phương thức thanh toán được hỗ trợ và thời gian xác nhận đơn hàng.
+            - Tư vấn tự nhiên, gần gũi các phương thức thanh toán được hỗ trợ và thời gian xác nhận đơn hàng (tuyệt đối không gắn ký hiệu trích dẫn [1], [2] hay nhắc tới tài liệu nguồn).
             - Nêu rõ thời gian giao nhận sản phẩm vật lý hoặc kích hoạt tài khoản dịch vụ số.
             - Giải đáp rõ thủ tục xuất hóa đơn VAT và bảo mật giao dịch cho khách hàng.""",
             List.of(
@@ -157,8 +157,8 @@ public enum CustomerScenario {
             "Tư vấn toàn diện cho khách hàng đang tìm hiểu mua sản phẩm hoặc đang sử dụng dịch vụ.",
             """
             - Khách hàng đang cần TƯ VẤN TỔNG HỢP về sản phẩm, dịch vụ hoặc chính sách chăm sóc khách hàng.
-            - Nhận diện chính xác mục đích của khách hàng (mua sản phẩm mới hay sử dụng dịch vụ) để giải đáp trực diện, đầy đủ.
-            - Giữ phong thái lịch sự, tận tâm, chuyên nghiệp và chủ động gợi mở bước hỗ trợ tiếp theo.""",
+            - Trò chuyện tự nhiên, ấm áp như chuyên viên tư vấn người thật: nhận diện nhanh nhu cầu của khách hàng (mua sản phẩm mới hay sử dụng dịch vụ) để giải đáp trực diện, tuyệt đối không gắn ký hiệu trích dẫn [1], [2] hay nhắc tới tài liệu nguồn.
+            - Giữ phong thái lịch sự, tận tâm và chủ động gợi mở bước hỗ trợ tiếp theo.""",
             List.of(
                     "Tư vấn giúp tôi các sản phẩm và gói dịch vụ nổi bật hiện nay?",
                     "Hướng dẫn tôi quy trình mua hàng, thanh toán và kích hoạt dịch vụ?",

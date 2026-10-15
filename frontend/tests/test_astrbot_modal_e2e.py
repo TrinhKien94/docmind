@@ -107,7 +107,7 @@ def run_tests():
         assert turns.count() >= 1, "Expected at least 1 simulated turn after /status"
         print("  [PASS] Executed AstrBot Star Slash Command '/status' in Simulator")
 
-        # Execute sample multi-platform Dior customer question
+        # Execute sample multi-platform Dior customer question (Telegram)
         page.locator("[data-testid='astrbot-sample-0']").click()
         for _ in range(120):
             if turns.count() >= 2:
@@ -115,6 +115,23 @@ def run_tests():
             page.wait_for_timeout(500)
         assert turns.count() >= 2, "Expected at least 2 turns after sample customer query"
         print("  [PASS] Simulated multi-platform Telegram VIP customer RAG + Dior KB conversation")
+
+        # Execute Facebook Messenger sample preset & click 👍 Hữu ích feedback quick reply
+        page.locator("[data-testid='astrbot-sample-1']").click()
+        for _ in range(120):
+            if turns.count() >= 3:
+                break
+            page.wait_for_timeout(500)
+        assert turns.count() >= 3, "Expected at least 3 turns after Messenger sample query"
+        fb_qr_btn = page.locator(".qr-pill-btn:has-text('👍 Hữu ích')").last
+        assert fb_qr_btn.is_visible(), "Messenger reply must include '👍 Hữu ích' feedback quick reply button"
+        fb_qr_btn.click()
+        for _ in range(120):
+            if turns.count() >= 4:
+                break
+            page.wait_for_timeout(500)
+        assert turns.count() >= 4, "Expected feedback acknowledgment turn after clicking 👍 Hữu ích"
+        print("  [PASS] Simulated Facebook Messenger consultation & EvoAgentX '👍 Hữu ích' feedback quick reply")
 
         # 6. Switch to Tab 3: UMO Sessions & Custom Rules
         page.locator("[data-testid='astrbot-tab-sessions']").click()

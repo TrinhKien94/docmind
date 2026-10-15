@@ -57,12 +57,10 @@ def test_modal_adversarial():
         print("[PASS] Modal backdrop z-index is strictly greater than mobile drawer (1100 > 1000)")
 
         # Step 3: Trigger toast while modal is open, verify toast z-index >= 1200
-        # Trigger quick toast by clicking messenger or feedback button
         page.evaluate("() => { window.dispatchEvent(new CustomEvent('test-toast')); }")
-        # In App.vue: let's click header messenger button which calls showToast
-        msg_btn = page.locator("button:has-text('Messenger')")
-        if msg_btn.count() > 0:
-            # Note: msg_btn is behind modal backdrop on mobile, which is correct!
+        astrbot_btn = page.locator("[data-testid='open-astrbot-btn']")
+        if astrbot_btn.count() > 0:
+            # Note: astrbot_btn is behind modal backdrop on mobile, which is correct!
             pass
 
         # Check toast style defined in stylesheet / scoped element

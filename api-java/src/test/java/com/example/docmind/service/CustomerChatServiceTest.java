@@ -743,6 +743,66 @@ class CustomerChatServiceTest {
         assertThat(CustomerChatService.stripCustomerCitationMarkers(
                 "[stub-llm] Câu trả lời giữ nguyên nhãn không phải số."
         )).isEqualTo("[stub-llm] Câu trả lời giữ nguyên nhãn không phải số.");
+        assertThat(CustomerChatService.stripCustomerCitationMarkers(
+                "Dựa trên tài liệu được cung cấp, Dạ mẫu Sauvage Elixir 60ml có giá 4.500.000 VNĐ (Nguồn: Dior_Catalog_2026.pdf) (Trang 2)."
+        )).isEqualTo("Dạ mẫu Sauvage Elixir 60ml có giá 4.500.000 VNĐ.");
+        assertThat(CustomerChatService.stripCustomerCitationMarkers(
+                "Theo đoạn trích tài liệu: Chính sách đổi trả hỗ trợ trong 7 ngày [Nguồn: SOP trang 4]."
+        )).isEqualTo("Chính sách đổi trả hỗ trợ trong 7 ngày.");
+
+        // Kiểm tra few-shot exemplars có chứa ký hiệu [1] cũ cũng được làm sạch khi đưa vào prompt
+        List<CustomerEvolutionStatusResponse.EvolvedExampleInfo> dirtyExamples = List.of(
+                new CustomerEvolutionStatusResponse.EvolvedExampleInfo(
+                        "ex-1",
+                        "SALES",
+                        "Giá Sauvage Elixir bao nhiêu?",
+                        "Dạ Sauvage Elixir 60ml có giá 4.500.000 VNĐ ạ [1] (Nguồn: Bảng giá Dior).",
+                        0.95,
+                        1,
+                        "hash-1",
+                        "2026-03-31T00:00:00Z"
+                )
+        );
+        String promptWithExamples = CustomerPromptBuilder.build(req, CustomerScenario.SALES, props, List.of(), List.of(), dirtyExamples);
+        assertThat(promptWithExamples)
+                .contains("Dạ Sauvage Elixir 60ml có giá 4.500.000 VNĐ ạ.")
+                .doesNotContain("4.500.000 VNĐ ạ [1]")
+                .doesNotContain("(Nguồn: Bảng giá Dior)");
+    }
+
+    @Test
+    void fallbackAnswerHandlesSourceOriginQuestionNaturallyAndStripsInternalSopHeaders() {
+        NineRouterProperties routerProps = new NineRouterProperties();
+        routerProps.setBaseUrl("http://127.0.0.1:1/v1");
+        routerProps.setApiKey("invalid");
+        routerProps.setModel("codex/gpt-6-astra");
+        routerProps.setTimeoutMs(200);
+
+        NineRouterLlmClient offlineLlm = new NineRouterLlmClient(routerProps, new ObjectMapper());
+        CustomerSupportProperties props = new CustomerSupportProperties();
+        props.getEvolution().setPersistToDisk(false);
+        CustomerChatService service = new CustomerChatService(null, null, offlineLlm, props);
+
+        CustomerChatRequest req = new CustomerChatRequest(
+                "Cho mình hỏi giá Miss Dior Parfum 50ml và thông tin này bạn lấy từ tài liệu nào vậy?",
+                null, null,
+                "Chị Lan",
+                "Khách mua nước hoa",
+                "SALES",
+                null,
+                3,
+                null,
+                null
+        );
+
+        CustomerChatResponse resp = service.chat(req);
+        assertThat(resp.answer())
+                .isNotBlank()
+                .contains("niêm yết chính thức")
+                .doesNotContain("[1]")
+                .doesNotContain("# ")
+                .doesNotContain("Clienteling SOP")
+                .doesNotContain("Chuyên viên tuyệt đối");
     }
 
     private static boolean isPortListening(String host, int port) {

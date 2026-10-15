@@ -521,7 +521,7 @@
                       </div>
                       <div class="bubble-text markdown-pre">{{ msg.reply_sent }}</div>
 
-                      <div v-if="msg.citations?.length" class="sim-citations">
+                      <div v-if="msg.citations?.length && (msg.persona_id === 'docmind_rag_expert' || msg.persona_id === 'docmind_rag_architect')" class="sim-citations">
                         <span
                           v-for="(cit, cIdx) in msg.citations"
                           :key="cIdx"
@@ -1411,6 +1411,12 @@ const sampleQuestions = [
     botId: 'telegram_dior_concierge',
     scenario: 'SALES',
     text: 'Mình muốn tìm nước hoa Dior nữ sang trọng, lưu hương trên 8 tiếng để đi tiệc tối, tư vấn giúp mình nhé!'
+  },
+  {
+    label: '💙 Messenger Fanpage: Tư vấn son Rouge Dior 999 & hộp quà',
+    botId: 'messenger_dior_page',
+    scenario: 'SALES',
+    text: 'Shop tư vấn giúp mình son Rouge Dior 999 bản Velvet hay Satin hợp làm quà tặng sinh nhật hơn ạ?'
   },
   {
     label: '💬 Discord Tech: Kiến trúc Hybrid RAG & RRF trong DocMind',

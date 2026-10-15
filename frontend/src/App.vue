@@ -383,8 +383,8 @@ const handleAskQuestion = async ({ question, documentIds, topK, mode = 'customer
   if (!isConnected.value) {
     // Trả lời trên demo mode
     setTimeout(() => {
-      let matched = sampleQA['default']
-      if (question.toLowerCase().includes('kiến trúc') || question.toLowerCase().includes('thành phần') || question.toLowerCase().includes('cổng')) {
+      let matched = mode === 'customer' ? sampleQA['dior'] : sampleQA['default']
+      if (mode !== 'customer' && (question.toLowerCase().includes('kiến trúc') || question.toLowerCase().includes('thành phần') || question.toLowerCase().includes('cổng'))) {
         matched = sampleQA['kiến trúc']
       }
 
@@ -393,7 +393,7 @@ const handleAskQuestion = async ({ question, documentIds, topK, mode = 'customer
         content: matched.answer,
         question: mode === 'customer' ? question : undefined,
         scenario: mode === 'customer' ? (scenario === 'AUTO' ? 'SALES' : scenario) : undefined,
-        citations: matched.citations,
+        citations: mode === 'customer' ? [] : matched.citations,
         feedbackSubmitted: null
       })
 
@@ -424,7 +424,7 @@ const handleAskQuestion = async ({ question, documentIds, topK, mode = 'customer
         evolutionGeneration: res.evolution_generation,
         appliedGuidelines: res.applied_learned_guidelines || 0,
         suggestedQuestions: res.suggested_questions || [],
-        citations: res.citations || [],
+        citations: [],
         feedbackSubmitted: null
       })
       if (typeof res.evolution_generation === 'number') {
