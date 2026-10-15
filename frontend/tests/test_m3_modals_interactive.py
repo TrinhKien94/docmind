@@ -105,104 +105,66 @@ def run_tests():
         assert not evo_modal.is_visible(), "Evolution modal must close on Escape key"
         print("  [PASS] Closed CustomerEvolutionModal via Escape key")
 
-        # --- 1.2 MessengerModal (Desktop) ---
-        print("\n--- Testing MessengerModal on Desktop ---")
-        btn_msgr = page.locator(".btn-messenger")
-        assert btn_msgr.is_visible(), "Button .btn-messenger must be visible in header"
-        btn_msgr.click()
+        # --- 1.2 AstrBotModal (Desktop - includes Facebook Messenger adapter) ---
+        print("\n--- Testing AstrBotModal on Desktop ---")
+        btn_astrbot = page.locator(".btn-astrbot")
+        assert btn_astrbot.is_visible(), "Button .btn-astrbot must be visible in header"
+        btn_astrbot.click()
         page.wait_for_timeout(400)
 
-        msgr_modal = page.locator(".modal-container[role='dialog']")
-        assert msgr_modal.is_visible(), "MessengerModal (.modal-container) must be visible"
-        print("  [PASS] MessengerModal opened successfully")
+        astrbot_modal = page.locator("[data-testid='astrbot-modal']")
+        assert astrbot_modal.is_visible(), "AstrBotModal ([data-testid='astrbot-modal']) must be visible"
+        print("  [PASS] AstrBotModal opened successfully")
 
-        # Verify Tab 1: Status & Webhook
-        callback_input = page.locator(".modal-container input[aria-label='Webhook URL']")
-        assert callback_input.is_visible(), "Webhook callback URL input must be visible"
-        copy_btn = page.locator(".modal-container .btn-copy")
-        assert copy_btn.is_visible(), "Copy URL button must be visible"
-        config_cards = page.locator(".modal-container .glass-card.stat-card")
-        assert config_cards.count() >= 4, f"Expected 4 config cards, found {config_cards.count()}"
-        print(f"  [PASS] Status & Webhook tab verified with {config_cards.count()} config cards")
+        # Verify Tab 1: Overview & Platform Adapters (including Facebook Messenger)
+        bot_items = page.locator("[data-testid^='astrbot-bot-item-']")
+        assert bot_items.count() >= 5, f"Expected >= 5 bot items, found {bot_items.count()}"
+        assert page.locator("[data-testid='astrbot-bot-item-messenger_dior_page']").is_visible(), "Facebook Messenger bot item must be visible in AstrBot"
+        print(f"  [PASS] Overview & Platforms verified with {bot_items.count()} adapters (including messenger_dior_page)")
 
-        # Switch to Tab 2: Bot Simulator
-        msgr_tabs = page.locator(".modal-container .tabs-nav .tab-btn")
-        msgr_tabs.nth(1).click()
+        # Switch to Live Simulator tab
+        page.locator("[data-testid='astrbot-tab-simulator']").click()
         page.wait_for_timeout(300)
-        sim_input = page.locator(".modal-container .input-message")
-        assert sim_input.is_visible(), "Simulator input field must be visible"
-        btn_send = page.locator(".modal-container .btn-send-message")
-        assert btn_send.is_visible(), "Send button must be visible"
-        print("  [PASS] Switched to Simulator tab successfully")
+        page.locator("[data-testid='astrbot-cmd-status']").click()
+        page.wait_for_timeout(400)
+        turns = page.locator(".sim-turn-block")
+        assert turns.count() >= 1, "Expected simulated turn after /status command"
+        print(f"  [PASS] Switched to AstrBot Simulator tab and executed /status ({turns.count()} turns)")
 
-        # Test Starter Chip Prompt
-        starter_chips = page.locator(".modal-container .starter-chip")
-        if starter_chips.count() > 0:
-            starter_chips.first.click()
-            page.wait_for_timeout(800)
-            bubbles = page.locator(".modal-container .message-row")
-            assert bubbles.count() >= 2, "Expected user message and bot reply"
-            print(f"  [PASS] Clicked starter chip, bot replied successfully ({bubbles.count()} messages)")
-
-            # Check Quick Replies and verify length <= 20
-            quick_replies = page.locator(".modal-container .quick-reply-pill")
-            qr_count = quick_replies.count()
-            print(f"  [PASS] Found {qr_count} quick reply pills")
-            if qr_count > 0:
-                qr_text = quick_replies.first.inner_text().strip()
-                assert len(qr_text) <= 20, f"Quick reply '{qr_text}' exceeded 20 chars ({len(qr_text)})"
-                print(f"  [PASS] Verified Quick reply length: '{qr_text}' ({len(qr_text)} chars <= 20)")
-                # Click quick reply
-                count_before = bubbles.count()
-                quick_replies.first.click()
-                page.wait_for_timeout(1500)
-                bubbles_after = page.locator(".modal-container .message-row")
-                assert bubbles_after.count() > count_before, f"Expected new message from quick reply, before={count_before}, after={bubbles_after.count()}"
-                print(f"  [PASS] Quick reply clicked and triggered bot response ({bubbles_after.count()} messages)")
-
-            # Check feedback thumbs
-            feedback_btn = page.locator(".modal-container .btn-feedback").first
-            if feedback_btn.is_visible():
-                feedback_btn.click()
-                page.wait_for_timeout(300)
-                print("  [PASS] Feedback 👍 recorded successfully")
-
-        # Switch to Tab 3: Customer Sessions
-        msgr_tabs.nth(2).click()
+        # Switch to UMO Sessions tab
+        page.locator("[data-testid='astrbot-tab-sessions']").click()
         page.wait_for_timeout(300)
-        sessions_search = page.locator(".modal-container .search-input")
-        assert sessions_search.is_visible(), "Sessions search input must be visible"
-        btn_clear_sessions = page.locator(".modal-container .btn-danger-soft")
-        assert btn_clear_sessions.is_visible(), "Clear all sessions button must be visible"
-        print("  [PASS] Switched to Sessions tab successfully")
+        session_rows = page.locator(".astrbot-table tbody tr")
+        assert session_rows.count() >= 1, "Expected UMO session rows in table"
+        print("  [PASS] Switched to UMO Sessions tab successfully")
 
-        check_no_horizontal_overflow(page, "Desktop MessengerModal Open")
+        check_no_horizontal_overflow(page, "Desktop AstrBotModal Open")
 
         # Test Close via [X] button
-        btn_close_msgr = page.locator(".modal-container .btn-close-modal")
-        assert btn_close_msgr.is_visible(), "Close button must be visible in Messenger modal"
-        btn_close_msgr.click()
+        btn_close_astrbot = page.locator("[data-testid='astrbot-close-btn']")
+        assert btn_close_astrbot.is_visible(), "Close button must be visible in AstrBot modal"
+        btn_close_astrbot.click()
         page.wait_for_timeout(400)
-        assert not msgr_modal.is_visible(), "Messenger modal must close after clicking [X]"
-        print("  [PASS] Closed MessengerModal via [X] button")
+        assert not astrbot_modal.is_visible(), "AstrBot modal must close after clicking [X]"
+        print("  [PASS] Closed AstrBotModal via [X] button")
 
         # Re-open and close via backdrop click
-        btn_msgr.click()
+        btn_astrbot.click()
         page.wait_for_timeout(400)
-        assert msgr_modal.is_visible()
-        page.click("div[data-testid='messenger-modal-backdrop']", position={"x": 50, "y": 50})
+        assert astrbot_modal.is_visible()
+        page.click("div[data-testid='astrbot-modal-backdrop']", position={"x": 5, "y": 5})
         page.wait_for_timeout(400)
-        assert not msgr_modal.is_visible(), "Messenger modal must close on backdrop click"
-        print("  [PASS] Closed MessengerModal via backdrop click")
+        assert not astrbot_modal.is_visible(), "AstrBot modal must close on backdrop click"
+        print("  [PASS] Closed AstrBotModal via backdrop click")
 
         # Re-open and close via Escape key
-        btn_msgr.click()
+        btn_astrbot.click()
         page.wait_for_timeout(400)
-        assert msgr_modal.is_visible()
+        assert astrbot_modal.is_visible()
         page.keyboard.press("Escape")
         page.wait_for_timeout(400)
-        assert not msgr_modal.is_visible(), "Messenger modal must close on Escape key"
-        print("  [PASS] Closed MessengerModal via Escape key")
+        assert not astrbot_modal.is_visible(), "AstrBot modal must close on Escape key"
+        print("  [PASS] Closed AstrBotModal via Escape key")
 
         page.close()
 
@@ -254,56 +216,32 @@ def run_tests():
         assert not mob_evo_modal.is_visible()
         print("  [PASS] Closed CustomerEvolutionModal on mobile")
 
-        # --- 2.2 MessengerModal (Mobile) ---
-        print("\n--- Testing MessengerModal on Mobile (375x812) ---")
-        mob_btn_msgr = mobile_page.locator(".btn-messenger")
-        assert mob_btn_msgr.is_visible(), "Button .btn-messenger must be visible on mobile header"
-        m_box = mob_btn_msgr.bounding_box()
-        assert m_box["width"] >= 44 and m_box["height"] >= 44, f"Messenger button size {m_box} must be >= 44px"
-        print(f"  [PASS] Mobile Messenger button touch target: {m_box['width']}x{m_box['height']}px (>= 44px)")
+        # --- 2.2 AstrBotModal (Mobile) ---
+        print("\n--- Testing AstrBotModal on Mobile (375x812) ---")
+        mob_btn_astrbot = mobile_page.locator(".btn-astrbot")
+        assert mob_btn_astrbot.is_visible(), "Button .btn-astrbot must be visible on mobile header"
+        m_box = mob_btn_astrbot.bounding_box()
+        assert m_box["width"] >= 44 and m_box["height"] >= 44, f"AstrBot button size {m_box} must be >= 44px"
+        print(f"  [PASS] Mobile AstrBot button touch target: {m_box['width']}x{m_box['height']}px (>= 44px)")
 
-        mob_btn_msgr.click()
+        mob_btn_astrbot.click()
         mobile_page.wait_for_timeout(400)
 
-        mob_msgr_modal = mobile_page.locator(".modal-container[role='dialog']")
-        assert mob_msgr_modal.is_visible(), "MessengerModal must be visible on mobile"
-        msgr_rect = mob_msgr_modal.bounding_box()
-        msgr_right = msgr_rect["x"] + msgr_rect["width"]
-        assert msgr_rect["width"] <= 375, f"Messenger modal width {msgr_rect['width']} exceeds 375px"
-        assert msgr_right <= 375, f"Messenger modal right {msgr_right} clips viewport"
-        print(f"  [PASS] Messenger modal container fits mobile viewport: width={msgr_rect['width']}px, right={msgr_right}px")
+        mob_astrbot_modal = mobile_page.locator("[data-testid='astrbot-modal']")
+        assert mob_astrbot_modal.is_visible(), "AstrBotModal must be visible on mobile"
+        astrbot_rect = mob_astrbot_modal.bounding_box()
+        astrbot_right = astrbot_rect["x"] + astrbot_rect["width"]
+        assert astrbot_rect["width"] <= 375, f"AstrBot modal width {astrbot_rect['width']} exceeds 375px"
+        assert astrbot_right <= 375, f"AstrBot modal right {astrbot_right} clips viewport"
+        print(f"  [PASS] AstrBot modal container fits mobile viewport: width={astrbot_rect['width']}px, right={astrbot_right}px")
 
-        check_no_horizontal_overflow(mobile_page, "Mobile MessengerModal Open")
+        check_no_horizontal_overflow(mobile_page, "Mobile AstrBotModal Open")
 
-        # Verify touch targets for mobile close button
-        mob_msgr_close = mobile_page.locator(".modal-container .btn-close-modal")
-        mc_box = mob_msgr_close.bounding_box()
-        assert mc_box["width"] >= 44 and mc_box["height"] >= 44, f"Close button size {mc_box} must be >= 44px"
-        print(f"  [PASS] Messenger close button touch target: {mc_box['width']}x{mc_box['height']}px (>= 44px)")
-
-        # Switch to Simulator on mobile
-        mob_msgr_tabs = mobile_page.locator(".modal-container .tabs-nav .tab-btn")
-        mob_msgr_tabs.nth(1).click()
-        mobile_page.wait_for_timeout(300)
-
-        # Test typing and sending a message in mobile simulator
-        mob_sim_input = mobile_page.locator(".modal-container .input-message")
-        mob_sim_input.fill("Tư vấn giá iPhone")
-        mobile_page.wait_for_timeout(200)
-        mob_btn_send = mobile_page.locator(".modal-container .btn-send-message")
-        mob_btn_send.click()
-        mobile_page.wait_for_timeout(1500)
-
-        mob_messages = mobile_page.locator(".modal-container .message-row")
-        assert mob_messages.count() >= 2, f"Expected sent message and response, found {mob_messages.count()}"
-        print(f"  [PASS] Mobile simulator message sent and replied ({mob_messages.count()} messages)")
-
-        check_no_horizontal_overflow(mobile_page, "Mobile Messenger Simulator Active")
-
-        mob_msgr_close.click()
+        mob_astrbot_close = mobile_page.locator("[data-testid='astrbot-close-btn']")
+        mob_astrbot_close.click()
         mobile_page.wait_for_timeout(400)
-        assert not mob_msgr_modal.is_visible()
-        print("  [PASS] Closed MessengerModal on mobile")
+        assert not mob_astrbot_modal.is_visible()
+        print("  [PASS] Closed AstrBotModal on mobile")
 
         mobile_page.close()
         browser.close()

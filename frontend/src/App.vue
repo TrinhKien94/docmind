@@ -53,7 +53,6 @@
         @clear-chat="handleClearChat"
         @toggle-sidebar="toggleMobileSidebar"
         @open-evolution="handleOpenEvolution"
-        @open-messenger="handleOpenMessenger"
         @open-astrbot="handleOpenAstrBot"
       />
     </div>
@@ -74,15 +73,6 @@
       @evolved="handleEvolutionUpdated"
     />
 
-    <!-- Facebook Messenger Integration & Simulator Modal (Milestone 3) -->
-    <MessengerModal 
-      v-if="isMessengerModalOpen"
-      :is-open="isMessengerModalOpen"
-      @close="handleCloseMessenger"
-      @open-astrbot="handleSwitchMessengerToAstrBot"
-      @session-updated="syncCustomerBackendConfig"
-    />
-
     <!-- AstrBot Multi-Platform Integration & Management Dashboard Modal -->
     <AstrBotModal
       v-if="isAstrBotModalOpen"
@@ -99,7 +89,6 @@ import DocumentSidebar from './components/DocumentSidebar.vue'
 import ChatArea from './components/ChatArea.vue'
 import DocumentDetailModal from './components/DocumentDetailModal.vue'
 import CustomerEvolutionModal from './components/CustomerEvolutionModal.vue'
-import MessengerModal from './components/MessengerModal.vue'
 import AstrBotModal from './components/AstrBotModal.vue'
 
 const documents = ref([])
@@ -117,9 +106,8 @@ const customerScenarios = ref([])
 const defaultCustomerRole = ref('Khách hàng mua hàng hoặc sử dụng dịch vụ')
 const isMobileSidebarOpen = ref(false)
 
-// Modals State (Milestone 3 + AstrBot Hub)
+// Modals State (EvoAgentX + AstrBot Multi-Platform Hub)
 const isEvolutionModalOpen = ref(false)
-const isMessengerModalOpen = ref(false)
 const isAstrBotModalOpen = ref(false)
 
 const pollingTimers = new Map()
@@ -512,7 +500,7 @@ const closeMobileSidebar = () => {
   isMobileSidebarOpen.value = false
 }
 
-// Modal open/close handlers (Milestone 3)
+// Modal open/close handlers
 const handleOpenEvolution = () => {
   isEvolutionModalOpen.value = true
 }
@@ -521,25 +509,12 @@ const handleCloseEvolution = () => {
   isEvolutionModalOpen.value = false
 }
 
-const handleOpenMessenger = () => {
-  isMessengerModalOpen.value = true
-}
-
-const handleCloseMessenger = () => {
-  isMessengerModalOpen.value = false
-}
-
 const handleOpenAstrBot = () => {
   isAstrBotModalOpen.value = true
 }
 
 const handleCloseAstrBot = () => {
   isAstrBotModalOpen.value = false
-}
-
-const handleSwitchMessengerToAstrBot = () => {
-  isMessengerModalOpen.value = false
-  isAstrBotModalOpen.value = true
 }
 
 const handleEvolutionUpdated = (newGen) => {
@@ -556,8 +531,6 @@ const handleKeydown = (e) => {
       handleCloseAstrBot()
     } else if (isEvolutionModalOpen.value) {
       handleCloseEvolution()
-    } else if (isMessengerModalOpen.value) {
-      handleCloseMessenger()
     } else if (inspectingDoc.value) {
       inspectingDoc.value = null
     } else if (isMobileSidebarOpen.value) {

@@ -137,4 +137,25 @@ class AstrBotControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.cleared_count").value(5));
     }
+
+    @Test
+    @DisplayName("GET & POST /api/astrbot/webhooks/platforms/{uuid} trả về HTTP 403 khi verify_token hoặc X-Hub-Signature-256 không hợp lệ")
+    void unifiedWebhookReturns403OnSecurityException() throws Exception {
+        when(astrBotService.verifyUnifiedWebhookGet(eq("messenger_dior_page"), any()))
+                .thenThrow(new SecurityException("Forbidden: Token verification failed"));
+        when(astrBotService.handleUnifiedWebhookPost(eq("messenger_dior_page"), eq("sha256=bad"), any()))
+                .thenThrow(new SecurityException("Forbidden: Invalid X-Hub-Signature-256 signature"));
+
+        mockMvc.perform(get("/api/astrbot/webhooks/platforms/messenger_dior_page")
+                        .param("hub.mode", "subscribe")
+                        .param("hub.verify_token", "bad_token")
+                        .param("hub.challenge", "12345"))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/api/astrbot/webhooks/platforms/messenger_dior_page")
+                        .header("X-Hub-Signature-256", "sha256=bad")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"object\":\"page\"}"))
+                .andExpect(status().isForbidden());
+    }
 }

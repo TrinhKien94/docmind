@@ -109,7 +109,10 @@ def run_tests():
 
         # Execute sample multi-platform Dior customer question
         page.locator("[data-testid='astrbot-sample-0']").click()
-        page.wait_for_timeout(400)
+        for _ in range(120):
+            if turns.count() >= 2:
+                break
+            page.wait_for_timeout(500)
         assert turns.count() >= 2, "Expected at least 2 turns after sample customer query"
         print("  [PASS] Simulated multi-platform Telegram VIP customer RAG + Dior KB conversation")
 

@@ -501,4 +501,106 @@ class AstrBotServiceTest {
         assertEquals("mattermost", restoredBot.type());
         assertTrue(service2.listPersonas().stream().anyMatch(p -> "persisted_persona".equals(p.id())));
     }
+
+    @Test
+    @DisplayName("Facebook Messenger trong AstrBot: xác minh hub.verify_token, kiểm tra chữ ký HMAC-SHA256, xử lý page entry[].messaging[], phản hồi Quick Reply <= 20 ký tự và đồng bộ Reaction/Postback sang EvoAgentX")
+    void facebookMessengerUnifiedAdapterFullFlowAndEvoAgentXFeedback() throws Exception {
+        AstrBotInstanceDto msgrBot = astrBotService.getBot("messenger_dior_page");
+        String uuid = msgrBot.webhookUuid();
+
+        // 1. Valid Meta GET challenge verification
+        String challenge = astrBotService.verifyUnifiedWebhookGet(uuid, Map.of(
+                "hub.mode", "subscribe",
+                "hub.verify_token", "docmind-messenger-token",
+                "hub.challenge", "meta_challenge_2026"
+        ));
+        assertEquals("meta_challenge_2026", challenge);
+
+        // 2. Invalid verify_token throws SecurityException
+        assertThrows(SecurityException.class, () -> astrBotService.verifyUnifiedWebhookGet(uuid, Map.of(
+                "hub.mode", "subscribe",
+                "hub.verify_token", "wrong-token",
+                "hub.challenge", "meta_challenge_2026"
+        )));
+
+        // 3. Enable HMAC-SHA256 signature check with app_secret
+        String secret = "dior_meta_app_secret_key";
+        astrBotService.updateBot("messenger_dior_page", Map.of(
+                "config", Map.of(
+                        "verify_token", "docmind-messenger-token",
+                        "app_secret", secret,
+                        "verify_signature", true,
+                        "send_feedback_quick_replies", true
+                )
+        ));
+
+        String pageMsgPayload = """
+                {
+                  "object": "page",
+                  "entry": [
+                    {
+                      "id": "page_dior_vn",
+                      "messaging": [
+                        {
+                          "sender": { "id": "psid_vip_77" },
+                          "recipient": { "id": "page_dior_vn" },
+                          "message": { "mid": "m_01", "text": "Tư vấn nước hoa Miss Dior Blooming Bouquet" }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+
+        // Missing or wrong signature rejected with SecurityException
+        assertThrows(SecurityException.class, () -> astrBotService.handleUnifiedWebhookPost(uuid, "sha256=deadbeef", pageMsgPayload));
+
+        // Compute valid HMAC-SHA256 signature
+        javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+        mac.init(new javax.crypto.spec.SecretKeySpec(secret.getBytes(java.nio.charset.StandardCharsets.UTF_8), "HmacSHA256"));
+        String validSig = "sha256=" + java.util.HexFormat.of().formatHex(mac.doFinal(pageMsgPayload.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        Map<String, Object> msgRes = astrBotService.handleUnifiedWebhookPost(uuid, validSig, pageMsgPayload);
+        assertEquals("ok", msgRes.get("status"));
+        assertEquals("messenger_dior_page:PrivateMessage:psid_vip_77", msgRes.get("umo"));
+        @SuppressWarnings("unchecked")
+        List<String> qrs = (List<String>) msgRes.get("quick_replies");
+        assertNotNull(qrs);
+        assertTrue(qrs.stream().allMatch(q -> q.length() <= 20), "All Messenger quick replies must be <= 20 chars");
+        assertTrue(qrs.contains("👍 Hữu ích"));
+
+        // 4. Echo and delivery receipts are ignored gracefully
+        String echoPayload = """
+                {
+                  "object": "page",
+                  "entry": [{ "messaging": [{ "sender": { "id": "psid_vip_77" }, "message": { "is_echo": true, "text": "echo" } }] }]
+                }
+                """;
+        String echoSig = "sha256=" + java.util.HexFormat.of().formatHex(mac.doFinal(echoPayload.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        Map<String, Object> echoRes = astrBotService.handleUnifiedWebhookPost(uuid, echoSig, echoPayload);
+        assertEquals("ignored", echoRes.get("status"));
+
+        // 5. Reaction event triggers EvoAgentX feedback evolution
+        String reactionPayload = """
+                {
+                  "object": "page",
+                  "entry": [
+                    {
+                      "messaging": [
+                        {
+                          "sender": { "id": "psid_vip_77" },
+                          "reaction": { "action": "react", "reaction": "love", "emoji": "❤️" }
+                        }
+                      ]
+                    }
+                  ]
+                }
+                """;
+        String reactSig = "sha256=" + java.util.HexFormat.of().formatHex(mac.doFinal(reactionPayload.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        Map<String, Object> reactRes = astrBotService.handleUnifiedWebhookPost(uuid, reactSig, reactionPayload);
+        assertEquals("ok", reactRes.get("status"));
+        assertEquals(true, reactRes.get("feedback_recorded"));
+        assertEquals(true, reactRes.get("helpful"));
+        verify(evolutionService).recordFeedbackAndEvolve(any());
+    }
 }

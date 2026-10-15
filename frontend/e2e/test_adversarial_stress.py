@@ -139,10 +139,10 @@ def run_adversarial_tests():
         t3_evo = round(evo_box["width"], 2) >= 44 and round(evo_box["height"], 2) >= 44
         print(f"  EvoAgentX trigger: {evo_box['width']}x{evo_box['height']} (>= 44x44: {t3_evo})")
 
-        messenger_btn = page.locator(".btn-messenger")
-        messenger_box = messenger_btn.bounding_box()
-        t3_messenger = round(messenger_box["width"], 2) >= 44 and round(messenger_box["height"], 2) >= 44
-        print(f"  Messenger trigger: {messenger_box['width']}x{messenger_box['height']} (>= 44x44: {t3_messenger})")
+        astrbot_btn = page.locator(".btn-astrbot")
+        astrbot_box = astrbot_btn.bounding_box()
+        t3_astrbot = round(astrbot_box["width"], 2) >= 44 and round(astrbot_box["height"], 2) >= 44
+        print(f"  AstrBot trigger: {astrbot_box['width']}x{astrbot_box['height']} (>= 44x44: {t3_astrbot})")
 
         settings_btn = page.locator(".btn-settings-toggle")
         settings_box = settings_btn.bounding_box()
@@ -154,7 +154,7 @@ def run_adversarial_tests():
         t3_starter = round(starter_box["height"], 2) >= 44
         print(f"  Starter card height: {starter_box['height']} (>= 44: {t3_starter})")
 
-        t3_all = t3_toggle and t3_close and t3_refresh and t3_pill and t3_evo and t3_messenger and t3_settings and t3_starter
+        t3_all = t3_toggle and t3_close and t3_refresh and t3_pill and t3_evo and t3_astrbot and t3_settings and t3_starter
         if not t3_all:
             stress_passed = False
             print("  [FAIL] Some touch targets are smaller than 44px!")

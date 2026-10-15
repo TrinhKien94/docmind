@@ -5,9 +5,6 @@
  */
 
 import {
-  mockMessengerStatus,
-  mockSimulateReply,
-  mockClearMessengerSessions,
   mockEvolutionData,
   mockTriggerEvolution,
   mockCustomerPrompts,
@@ -284,89 +281,6 @@ export async function triggerCustomerEvolution(scenario) {
   return await triggerEvolution(scenario)
 }
 
-/**
- * =========================================================================
- * FACEBOOK MESSENGER INTEGRATION API
- * =========================================================================
- */
-
-/**
- * Lấy trạng thái tích hợp Messenger và các lượt tương tác gần nhất
- * GET /api/messenger/status
- */
-export async function getMessengerStatus() {
-  try {
-    const res = await fetch(`${API_BASE}/messenger/status`)
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`)
-    }
-    return await res.json()
-  } catch (err) {
-    console.warn('[DocMind API] getMessengerStatus fallback to mock:', err.message)
-    return JSON.parse(JSON.stringify(mockMessengerStatus))
-  }
-}
-
-/**
- * Giả lập gửi tin nhắn khách hàng tới Facebook Messenger Bot
- * POST /api/messenger/simulate
- * @param {Object} payload { sender_id, message, scenario }
- */
-export async function simulateMessengerMessage(payload = {}) {
-  const senderId = payload.sender_id || payload.senderId || 'customer_psid_test'
-  const message = payload.message || payload.incomingText || ''
-  const scenario = payload.scenario || 'AUTO'
-
-  try {
-    const res = await fetch(`${API_BASE}/messenger/simulate`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Accept: 'application/json'
-      },
-      body: JSON.stringify({
-        sender_id: senderId,
-        message,
-        scenario: scenario === 'AUTO' ? undefined : scenario
-      })
-    })
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`)
-    }
-    return await res.json()
-  } catch (err) {
-    console.warn('[DocMind API] simulateMessengerMessage fallback to mock:', err.message)
-    return mockSimulateReply(senderId, message, scenario)
-  }
-}
-
-/**
- * Xóa hoặc đặt lại các phiên hội thoại đa lượt Messenger
- * DELETE /api/messenger/sessions?sender_id=...
- * @param {string} [senderId] Optional PSID của khách hàng
- */
-export async function clearMessengerSessions(senderId) {
-  const url = senderId
-    ? `${API_BASE}/messenger/sessions?sender_id=${encodeURIComponent(senderId)}`
-    : `${API_BASE}/messenger/sessions`
-
-  try {
-    const res = await fetch(url, {
-      method: 'DELETE',
-      headers: { Accept: 'application/json' }
-    })
-
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`)
-    }
-    return await res.json()
-  } catch (err) {
-    console.warn('[DocMind API] clearMessengerSessions fallback to mock:', err.message)
-    return mockClearMessengerSessions(senderId)
-  }
-}
-
 export const api = {
   checkHealth,
   getDocuments,
@@ -379,10 +293,7 @@ export const api = {
   getCustomerEvolution,
   submitCustomerFeedback,
   triggerEvolution,
-  triggerCustomerEvolution,
-  getMessengerStatus,
-  simulateMessengerMessage,
-  clearMessengerSessions
+  triggerCustomerEvolution
 }
 
 // =========================================================================

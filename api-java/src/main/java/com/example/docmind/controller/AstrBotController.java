@@ -193,6 +193,8 @@ public class AstrBotController {
         try {
             String resp = astrBotService.verifyUnifiedWebhookGet(webhookUuid, queryParams);
             return ResponseEntity.ok(resp);
+        } catch (SecurityException e) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).body(e.getMessage());
         } catch (IllegalArgumentException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(e.getMessage());
         }
@@ -201,9 +203,15 @@ public class AstrBotController {
     @PostMapping("/webhooks/platforms/{webhookUuid}")
     public ResponseEntity<?> handleWebhookPost(
             @PathVariable("webhookUuid") String webhookUuid,
+            @org.springframework.web.bind.annotation.RequestHeader(value = "X-Hub-Signature-256", required = false) String signatureHeader,
             @RequestBody(required = false) String rawBody) {
         try {
+            if (signatureHeader != null && !signatureHeader.isBlank()) {
+                return ResponseEntity.ok(astrBotService.handleUnifiedWebhookPost(webhookUuid, signatureHeader, rawBody));
+            }
             return ResponseEntity.ok(astrBotService.handleUnifiedWebhookPost(webhookUuid, rawBody));
+        } catch (SecurityException e) {
+            return errorResponse(HttpStatus.FORBIDDEN, e.getMessage());
         } catch (IllegalArgumentException e) {
             return errorResponse(HttpStatus.BAD_REQUEST, e.getMessage());
         }
