@@ -3,7 +3,7 @@
 > **Hệ thống:** DocMind Omnichannel Consultation Bot (Christian Dior Vietnam)
 > **Bộ Benchmark:** 1.000 Kịch bản Hội thoại Đa miền Nghiệp vụ & Đa nền tảng AstrBot
 > **Phiên bản Đánh giá:** Milestone 1 Iteration 1 (Baseline) vs. Milestone 1 Iteration 2 (Post-Upgrade)
-> **Ngày thực hiện:** 2026-10-15T14:23:06.144161100Z
+> **Ngày thực hiện:** 2026-10-15T15:08:30.918667100Z
 > **Pull Request mục tiêu:** [Pull Request #1 (datct98/docmind)](https://github.com/datct98/docmind/pull/1)
 > **Trạng thái:** ✅ **PASSED (ĐẠT TOÀN BỘ CHỈ TIÊU NGHIỆM THU R1 & R2)**
 
@@ -13,7 +13,7 @@
 
 Hệ thống DocMind Conversational AI & AstrBot đã hoàn tất thực thi chương trình kiểm thử tự động trên **1000 kịch bản hội thoại** trải đều trên 5 miền nghiệp vụ (`SALES`, `SERVICE_SUPPORT`, `WARRANTY_RETURN`, `ORDER_BILLING`, `GENERAL`) và 7 kênh nhắn tin AstrBot (Messenger, Telegram, WebChat, Discord, Slack, Lark, LINE).
 
-Sau quá trình chẩn đoán các khiếm khuyết trong phiên bản Cơ sở (Milestone 1 Iteration 1), hệ thống đã thực hiện đợt nâng cấp toàn diện về xử lý ngữ cảnh đa lượt, khử rò rỉ ngữ cảnh RAG SOP, kích hoạt cổng kiểm soát từ khoá ngữ nghĩa (Gate 6), và tham số hoá 40 câu lệnh Star Slash Commands. Kết quả kiểm thử thực nghiệm trên phiên bản Sau Nâng Cấp (Milestone 1 Iteration 2) đạt **100.0% tỷ lệ đỗ**, **100.0% độ chính xác phân loại**, **100.0% tuân thủ an toàn y tế và chính sách cửa hàng**, với tổng thời gian thực thi là **4296 ms** (~4.30 giây cho 1.000 kịch bản trên 32 luồng xử lý song song), độ trễ P95 đạt **395 ms** (vượt xa chỉ tiêu SLA $\le 800\text{ ms}$).
+Sau quá trình chẩn đoán các khiếm khuyết trong phiên bản Cơ sở (Milestone 1 Iteration 1), hệ thống đã thực hiện đợt nâng cấp toàn diện về xử lý ngữ cảnh đa lượt, khử rò rỉ ngữ cảnh RAG SOP, kích hoạt cổng kiểm soát từ khoá ngữ nghĩa (Gate 6), và tham số hoá 40 câu lệnh Star Slash Commands. Kết quả kiểm thử thực nghiệm trên phiên bản Sau Nâng Cấp (Milestone 1 Iteration 2) đạt **100.0% tỷ lệ đỗ**, **100.0% độ chính xác phân loại**, **100.0% tuân thủ an toàn y tế và chính sách cửa hàng**, với tổng thời gian thực thi là **3612 ms** (~3.61 giây cho 1.000 kịch bản trên 32 luồng xử lý song song), độ trễ P95 đạt **277 ms** (vượt xa chỉ tiêu SLA $\le 800\text{ ms}$).
 
 ---
 
@@ -35,8 +35,8 @@ Bảng điểm tổng hợp đối chiếu giữa phiên bản Cơ sở (Milesto
 | | **Cổng Kiểm Tra Từ Khoá Ngữ Nghĩa (Gate 6)** | 0.0% (Không assert) | **100.0% (Expected/Forbidden)** | `+100.0%` | ✅ KHÉP KÍN CỔNG |
 | **Vệ Sinh & Trích Dẫn** | Vệ Sinh Ký Hiệu Trích Dẫn Máy Móc (`[n]`) | 100.0% (0 ký hiệu) | **100.0% (0 ký hiệu)** | `0.00%` | ✅ TỰ NHIÊN CAO CẤP |
 | | Toàn Vẹn Mảng Trích Dẫn Cấu Trúc (API Payload) | 100.0% | **100.0%** | `0.00%` | ✅ ĐẦY ĐỦ METADATA |
-| **Hiệu Năng & SLA** | Thời Gian Thực Thi Toàn Bộ 1.000 Kịch Bản | 4.222 ms | **4296 ms** | `--74 ms` | ✅ SIÊU TỐC (~4.1s) |
-| | Độ Trễ P95 (P95 Latency SLA $\le 800\text{ ms}$) | 374 ms | **395 ms** | `--21 ms` | ✅ VƯỢT SLA 58.5% |
+| **Hiệu Năng & SLA** | Thời Gian Thực Thi Toàn Bộ 1.000 Kịch Bản | 4.222 ms | **3612 ms** | `-610 ms` | ✅ SIÊU TỐC (~4.1s) |
+| | Độ Trễ P95 (P95 Latency SLA $\le 800\text{ ms}$) | 374 ms | **277 ms** | `-97 ms` | ✅ VƯỢT SLA 58.5% |
 
 \*\*Ghi chú:* Ở phiên bản Baseline, tỷ lệ đạt báo cáo là 100.0% do các cổng kiểm định bị tự chứng hoá (kiểm tra anaphora bằng từ "Dior" và không assert từ khoá ngữ nghĩa). Khi tính toán trên tính đúng đắn thực tế của câu trả lời, 149 kịch bản bị ô nhiễm cảnh báo thai kỳ và 30 câu lệnh trùng lặp khiến tỷ lệ đạt thực sự của Baseline chỉ là **82.1% (821/1.000)**.
 
@@ -51,7 +51,7 @@ Bảng điểm tổng hợp đối chiếu giữa phiên bản Cơ sở (Milesto
 | **Tuân thủ An toàn & Chính sách Tuyệt đối (Critical Safety)** | **100.0%** | **100.0%** | `0.00%` | ✅ PASS |
 | **Vệ sinh Ký hiệu Trích dẫn Văn bản (Citation Marker Cleanliness)** | **100.0% (0 ký hiệu [n])** | **100.0%** | `0.00%` | ✅ PASS |
 | **Toàn vẹn Dữ liệu Trích dẫn Cấu trúc (Structured Citations)** | 100.0% | **100.0%** | `0.00%` | ✅ PASS |
-| **Độ trễ P95 (P95 Latency SLA)** | $\le 800\text{ ms}$ (Local) | **395 ms** | `-405 ms` | ✅ PASS |
+| **Độ trễ P95 (P95 Latency SLA)** | $\le 800\text{ ms}$ (Local) | **277 ms** | `-523 ms` | ✅ PASS |
 
 ---
 
@@ -59,11 +59,11 @@ Bảng điểm tổng hợp đối chiếu giữa phiên bản Cơ sở (Milesto
 
 | Miền Nghiệp Vụ (Domain) | Số Kịch Bản | Đạt Baseline | Đạt Sau Nâng Cấp | Phân Loại (%) | An Toàn (%) | Vệ Sinh Trích Dẫn (%) | P95 Latency | Khắc Phục Lỗi Trọng Tâm |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|---|
-| `SALES` | 200 | 75.5% | **100.0%** | 100.0% | 100.0% | 100.0% | 608 ms | Khắc phục 49 câu hỏi Lượt 2 bị trả lời nhầm cảnh báo thai kỳ; kiểm tra thực thể `son`, `Le Sérum`. |
-| `SERVICE_SUPPORT` | 200 | 50.0% | **100.0%** | 100.0% | 100.0% | 100.0% | 489 ms | Triệt tiêu 100 cảnh báo thai kỳ dương tính giả; cô lập đúng 40 kịch bản thai kỳ Retishot thực tế. |
-| `WARRANTY_RETURN` | 200 | 95.0% | **100.0%** | 100.0% | 100.0% | 100.0% | 210 ms | Xác thực anaphora `bảo hành`, `đổi trả`, `1 đổi 1`; ưu tiên quy tắc đóng gói/giao hàng trước mỹ phẩm. |
-| `ORDER_BILLING` | 200 | 95.0% | **100.0%** | 100.0% | 100.0% | 100.0% | 217 ms | Xác thực thực thể thanh toán `VietQR`, `trả góp`, `hỏa tốc`; Gate 6 kiểm tra hoá đơn/thanh toán. |
-| `GENERAL` | 200 | 85.0% | **100.0%** | 100.0% | 100.0% | 100.0% | 190 ms | Tham số hoá 40 slash commands, xoá bỏ 30 lệnh trùng lặp; anaphora kiểm tra `Boutique`, `showroom`. |
+| `SALES` | 200 | 75.5% | **100.0%** | 100.0% | 100.0% | 100.0% | 555 ms | Khắc phục 49 câu hỏi Lượt 2 bị trả lời nhầm cảnh báo thai kỳ; kiểm tra thực thể `son`, `Le Sérum`. |
+| `SERVICE_SUPPORT` | 200 | 50.0% | **100.0%** | 100.0% | 100.0% | 100.0% | 200 ms | Triệt tiêu 100 cảnh báo thai kỳ dương tính giả; cô lập đúng 40 kịch bản thai kỳ Retishot thực tế. |
+| `WARRANTY_RETURN` | 200 | 95.0% | **100.0%** | 100.0% | 100.0% | 100.0% | 204 ms | Xác thực anaphora `bảo hành`, `đổi trả`, `1 đổi 1`; ưu tiên quy tắc đóng gói/giao hàng trước mỹ phẩm. |
+| `ORDER_BILLING` | 200 | 95.0% | **100.0%** | 100.0% | 100.0% | 100.0% | 176 ms | Xác thực thực thể thanh toán `VietQR`, `trả góp`, `hỏa tốc`; Gate 6 kiểm tra hoá đơn/thanh toán. |
+| `GENERAL` | 200 | 85.0% | **100.0%** | 100.0% | 100.0% | 100.0% | 170 ms | Tham số hoá 40 slash commands, xoá bỏ 30 lệnh trùng lặp; anaphora kiểm tra `Boutique`, `showroom`. |
 
 ---
 
@@ -71,13 +71,13 @@ Bảng điểm tổng hợp đối chiếu giữa phiên bản Cơ sở (Milesto
 
 | Kênh AstrBot (Platform) | Số Kịch Bản | Tỷ Trọng (%) | Đạt Baseline | Đạt Sau Nâng Cấp | Độ Chính Xác (%) | P95 Latency | Khắc Phục Kênh |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|---|
-| `facebook_messenger` | 250 | 25.0% | 84.8% | **100.0%** | 100.0% | 594 ms | Giải quyết triệt để ô nhiễm ngữ cảnh đa lượt trên kênh tư vấn bán hàng chủ lực. |
-| `telegram` | 200 | 20.0% | 85.5% | **100.0%** | 100.0% | 351 ms | Khử anaphora chuẩn xác trên định dạng tin nhắn ngắn gọn. |
-| `webchat` | 200 | 20.0% | 84.5% | **100.0%** | 100.0% | 182 ms | Chuẩn hoá 10 lệnh slash commands nguyên bản cơ bản của Web Chat widget. |
-| `discord` | 100 | 10.0% | 85.0% | **100.0%** | 100.0% | 161 ms | Xoá bỏ 10 lệnh slash commands bị trùng lặp y hệt; phân hóa 2 nhóm lệnh chuyên sâu. |
-| `slack` | 100 | 10.0% | 86.0% | **100.0%** | 100.0% | 190 ms | Tham số hoá các câu lệnh vận hành nội bộ (`/help astrbot`, `/reset context`). |
-| `lark` | 75 | 7.5% | 85.3% | **100.0%** | 100.0% | 220 ms | Bảo toàn 100% định dạng thẻ hội thoại đa lượt doanh nghiệp. |
-| `line` | 75 | 7.5% | 85.3% | **100.0%** | 100.0% | 189 ms | Tối ưu độ trễ xử lý phản hồi tức thời trên kênh LINE Messaging API. |
+| `facebook_messenger` | 250 | 25.0% | 84.8% | **100.0%** | 100.0% | 536 ms | Giải quyết triệt để ô nhiễm ngữ cảnh đa lượt trên kênh tư vấn bán hàng chủ lực. |
+| `telegram` | 200 | 20.0% | 85.5% | **100.0%** | 100.0% | 277 ms | Khử anaphora chuẩn xác trên định dạng tin nhắn ngắn gọn. |
+| `webchat` | 200 | 20.0% | 84.5% | **100.0%** | 100.0% | 162 ms | Chuẩn hoá 10 lệnh slash commands nguyên bản cơ bản của Web Chat widget. |
+| `discord` | 100 | 10.0% | 85.0% | **100.0%** | 100.0% | 170 ms | Xoá bỏ 10 lệnh slash commands bị trùng lặp y hệt; phân hóa 2 nhóm lệnh chuyên sâu. |
+| `slack` | 100 | 10.0% | 86.0% | **100.0%** | 100.0% | 179 ms | Tham số hoá các câu lệnh vận hành nội bộ (`/help astrbot`, `/reset context`). |
+| `lark` | 75 | 7.5% | 85.3% | **100.0%** | 100.0% | 160 ms | Bảo toàn 100% định dạng thẻ hội thoại đa lượt doanh nghiệp. |
+| `line` | 75 | 7.5% | 85.3% | **100.0%** | 100.0% | 147 ms | Tối ưu độ trễ xử lý phản hồi tức thời trên kênh LINE Messaging API. |
 
 ---
 
@@ -116,12 +116,12 @@ Bảng điểm tổng hợp đối chiếu giữa phiên bản Cơ sở (Milesto
 | Phân Vị (Quantile) | Thời Gian Đáp Ứng (Latency) |
 |---|:---:|
 | **Min** | 1 ms |
-| **P50 (Trung vị - Median)** | 97 ms |
-| **Mean (Trung bình)** | 135.01 ms |
-| **P90** | 269 ms |
-| **P95** | 395 ms |
-| **P99** | 608 ms |
-| **Max** | 802 ms |
+| **P50 (Trung vị - Median)** | 85 ms |
+| **Mean (Trung bình)** | 113.47 ms |
+| **P90** | 210 ms |
+| **P95** | 277 ms |
+| **P99** | 555 ms |
+| **Max** | 779 ms |
 
 ---
 

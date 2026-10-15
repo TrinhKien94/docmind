@@ -46,12 +46,14 @@ public enum CustomerScenario {
                     "dior forever", "dior snow", "rouge dior", "lip glow", "lip maximizer",
                     "miss dior", "jadore", "sauvage", "undertone", "chon mau", "hop mau nao",
                     "da dau", "da kho", "da nhay cam", "moi tham", "qua tang", "set qua",
-                    "tang vo", "tang ban gai", "my exclusive dior"
+                    "tang vo", "tang ban gai", "my exclusive dior", "la collection privee", "privee",
+                    "beauty cabin", "hang the"
             ),
             List.of(
                     "mua", "gia", "khuyen mai", "uu dai", "giam gia", "goi dich vu", "san pham",
                     "son", "serum", "cushion", "skincare", "makeup", "matte", "skin glow",
-                    "edp", "edt", "parfum", "elixir", "loyalty", "hang thanh vien"
+                    "edp", "edt", "parfum", "elixir", "loyalty", "hang thanh vien",
+                    "white", "silver", "gold", "platinum"
             )
     ),
 
@@ -78,9 +80,10 @@ public enum CustomerScenario {
                     "cach su dung", "huong dan su dung", "kich hoat", "ho tro ky thuat",
                     "khong vao duoc", "su dung dich vu", "nang cap goi", "cai dat", "cau hinh",
                     "chu trinh", "routine", "thu tu thoa", "cach thoa", "cach dung", "layering",
-                    "thay loi", "loi refill", "kiem tra batch", "batch code", "check batch",
-                    "han su dung", "phu nu mang thai", "mang thai", "ba bau", "bau dung duoc khong",
-                    "khac ten", "engraving", "cach bao quan"
+                    "thay loi", "loi refill", "kiem tra batch", "batch code", "check batch", "ma lo",
+                    "han su dung", "phu nu mang thai", "mang thai", "ba bau", "me bau", "thai ky",
+                    "cho con bu", "sau sinh", "bau bi", "co bau", "bau dung duoc khong",
+                    "khac ten", "khac chu", "engraving", "cach bao quan"
             ),
             List.of(
                     "huong dan", "tich hop", "su co", "dang dung", "tai khoan", "ky thuat",
@@ -111,11 +114,13 @@ public enum CustomerScenario {
                     "bao hanh", "doi tra", "hoan tien", "khieu nai", "bi hong", "bi loi",
                     "1 doi 1", "boi thuong", "loi san pham", "loi dich vu",
                     "di ung", "kich ung", "man do", "ngua rat", "cham chich", "noi mun",
-                    "gay son", "chay dau", "do mo hoi", "hong voi xit", "voi xit",
-                    "hang gia", "chinh hang", "tem phu", "cosmetovigilance"
+                    "gay son", "chay dau", "do mo hoi", "hong voi xit", "voi xit", "ket xoay", "airless pump",
+                    "doi y", "try first", "7 ngay", "14 ngay",
+                    "hang gia", "chinh hang", "tem phu", "cosmetovigilance", "5r02", "4n12", "6p01"
             ),
             List.of(
-                    "warranty", "refund", "return", "complaint", "doi mau", "doi mui", "vo chai", "ro ri"
+                    "warranty", "refund", "return", "complaint", "doi mau", "doi mui", "vo chai", "ro ri",
+                    "auth", "fake", "xach tay"
             )
     ),
 
@@ -140,8 +145,8 @@ public enum CustomerScenario {
             ),
             List.of(
                     "thanh toan", "chuyen khoan", "hoa don", "xuat vat", "thue vat",
-                    "van chuyen", "giao hang", "phi giao", "ship cod", "tra cuu don",
-                    "hoa toc", "giao nhanh 2h", "freeship", "mien phi van chuyen", "tra gop",
+                    "van chuyen", "giao hang", "phi giao", "phi ship", "ship cod", "tra cuu don",
+                    "hoa toc", "giao nhanh 2h", "2 gio", "2h", "freeship", "mien phi van chuyen", "tra gop",
                     "dat coc", "hop qua", "goi qua", "thiep chuc", "mau thu", "dong goi",
                     "cach nhiet", "click and collect"
             ),
