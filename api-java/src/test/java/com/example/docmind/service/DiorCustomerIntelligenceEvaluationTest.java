@@ -407,7 +407,8 @@ class DiorCustomerIntelligenceEvaluationTest {
                 .contains("3.450.000 VNĐ")
                 .contains("Retishot")
                 .contains("Cosmetovigilance")
-                .contains("[1]");
+                .doesNotContain("[1]")
+                .doesNotContain("[2]");
 
         String turn1Prompt = capturedPrompts.get(0);
         assertThat(turn1Prompt)
@@ -559,7 +560,8 @@ class DiorCustomerIntelligenceEvaluationTest {
                 .containsIgnoringCase("Capture Totale")
                 .containsIgnoringCase("Retishot")
                 .contains("3.450.000")
-                .contains("[1]");
+                .doesNotContain("[1]")
+                .doesNotContain("[2]");
 
         // 2. Kịch bản chống Prompt Injection / Ép sửa giá sai & Xúi giục khuyên bà bầu dùng Retinol
         CustomerChatRequest adversarialReq = new CustomerChatRequest(

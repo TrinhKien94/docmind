@@ -118,11 +118,11 @@ public class CustomerSupportProperties {
 
     /** Dòng nhắc cuối prompt yêu cầu chuyên viên trả lời. */
     private String answerPromptSuffix =
-            "Trả lời tư vấn cho khách hàng (kèm trích dẫn [n] nếu dùng tài liệu):";
+            "Trả lời tư vấn cho khách hàng (văn phong tự nhiên, gần gũi như người thật, tuyệt đối không kèm ký hiệu trích dẫn nguồn hay tên tài liệu):";
 
     /**
      * Mẫu quy tắc cốt lõi (# QUY TẮC) tuỳ chỉnh trong CustomerPromptBuilder.
-     * Khi để trống sẽ sử dụng bộ 4 quy tắc chuẩn (Thái độ, Trích dẫn, Bảo mật, Chống tiêm lệnh).
+     * Khi để trống sẽ sử dụng bộ 4 quy tắc chuẩn (Văn phong tự nhiên, Không trích dẫn nguồn, Bảo mật, Chống tiêm lệnh).
      */
     private String coreRulesTemplate = "";
 
@@ -145,12 +145,12 @@ public class CustomerSupportProperties {
             new FewShotExample(
                     "Mẫu 1 (Khách hàng hỏi mua hàng / tư vấn gói dịch vụ)",
                     "Chào shop, mình muốn tìm gói dịch vụ cho nhóm khoảng 10 người dùng thì nên chọn gói nào?",
-                    "Dạ em chào Anh/Chị ạ! Với quy mô nhóm khoảng 10 thành viên, Anh/Chị nên lựa chọn **Gói Pro (Chuyên nghiệp)** vì gói này tối ưu cho nhóm làm việc, hỗ trợ tốc độ xử lý ưu tiên và tính năng tra cứu chuyên sâu. Nếu có trích dẫn từ bảng giá tài liệu, em xin phép đính kèm tại [1]. Anh/Chị có muốn em gửi báo giá chi tiết và hướng dẫn đăng ký dùng thử ngay không ạ?"
+                    "Dạ em chào Anh/Chị ạ! Với quy mô nhóm khoảng 10 thành viên dùng chung thì mình chọn **Gói Pro (Chuyên nghiệp)** là hợp lý nhất đó ạ. Gói này bên em thiết kế tối ưu cho nhóm làm việc nên tốc độ xử lý rất nhanh, lại hỗ trợ sẵn OCR đa ngôn ngữ và tra cứu chuyên sâu. Không biết nhóm mình đang cần xử lý loại tài liệu nào là chính để em gửi báo giá chi tiết và mở tài khoản dùng thử cho mình trải nghiệm ngay nhé ạ?"
             ),
             new FewShotExample(
                     "Mẫu 2 (Khách hàng hỏi sử dụng dịch vụ / bảo hành đổi trả)",
                     "Mình mới thanh toán xong thì bao lâu dùng được? Nếu dịch vụ lỗi có được đổi trả không?",
-                    "Dạ cảm ơn Anh/Chị đã tin tưởng sử dụng dịch vụ! Ngay sau khi hệ thống xác nhận thanh toán, tài khoản dịch vụ số sẽ được **kích hoạt ngay lập tức** để Anh/Chị sử dụng. Về quyền lợi bảo hành, bên em cam kết bảo hành 12 tháng và hỗ trợ **1 đổi 1 hoặc hoàn tiền trong 7 ngày đầu** nếu phát sinh lỗi từ nhà sản xuất hoặc không đúng cam kết. Anh/Chị cần hỗ trợ kích hoạt bước nào em hướng dẫn chi tiết ngay nhé ạ!"
+                    "Dạ em cảm ơn Anh/Chị đã tin tưởng lựa chọn dịch vụ bên em nhé! Ngay sau khi thanh toán thành công là hệ thống sẽ kích hoạt tài khoản tự động để mình vào dùng được liền luôn ạ. Về quyền lợi sử dụng thì Anh/Chị hoàn toàn yên tâm nha, bên em bảo hành xuyên suốt 12 tháng và hỗ trợ **1 đổi 1 hoặc hoàn tiền trong 7 ngày đầu** nếu có bất kỳ lỗi nào từ nhà sản xuất hoặc không đúng cam kết. Anh/Chị đã nhận được thông tin kích hoạt chưa để em hướng dẫn mình bước đăng nhập đầu tiên luôn ạ?"
             )
     ));
 

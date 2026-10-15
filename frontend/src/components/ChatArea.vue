@@ -71,33 +71,12 @@
             class="header-action-btn btn-astrbot"
             data-testid="open-astrbot-btn"
             type="button"
-            title="Mở Trung tâm Điều khiển Đa Nền tảng AstrBot (19 Platform Adapters, UMO Sessions, Star Commands)"
+            title="Mở Trung tâm Điều khiển Đa Nền tảng AstrBot (19 Platform Adapters gồm Facebook Messenger, UMO Sessions, Star Commands)"
             @click="emit('open-astrbot')"
           >
             <span class="action-icon">🛰️</span>
             <span class="action-label astrbot-text">AstrBot Hub</span>
-            <span class="messenger-dot" title="19 Platform Adapters Ready"></span>
-          </button>
-
-          <!-- Facebook Messenger Modal Trigger -->
-          <button
-            class="header-action-btn btn-messenger"
-            type="button"
-            title="Tích hợp Facebook Messenger & Trình giả lập Chat"
-            @click="emit('open-messenger')"
-          >
-            <svg class="messenger-svg" xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none">
-              <path d="M12 2C6.477 2 2 6.145 2 11.258c0 2.91 1.454 5.512 3.736 7.185V22l3.418-1.875c.905.251 1.861.387 2.846.387 5.523 0 10-4.145 10-9.254C22 6.145 17.523 2 12 2Z" fill="url(#messenger-grad-header)"/>
-              <path d="m6.5 13.5 3.5-3.75 2.5 2.5 4.5-4.75-3.5 3.75-2.5-2.5-4.5 4.75Z" fill="#ffffff"/>
-              <defs>
-                <linearGradient id="messenger-grad-header" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
-                  <stop stop-color="#00C6FF"/>
-                  <stop offset="1" stop-color="#0078FF"/>
-                </linearGradient>
-              </defs>
-            </svg>
-            <span class="action-label messenger-text">Messenger</span>
-            <span class="messenger-dot" title="Sẵn sàng kết nối"></span>
+            <span class="messenger-dot" title="19 Platform Adapters Ready (Messenger, Telegram, Discord...)"></span>
           </button>
 
           <!-- Settings Toggle Button (Mobile & Tablet) -->
@@ -184,7 +163,7 @@
         <h2 class="hero-title">Chào mừng đến với DocMind</h2>
         <p class="hero-desc">
           <template v-if="chatMode === 'customer'">
-            Trợ lý AI sử dụng <strong>Prompt được huấn luyện sẵn</strong> để tư vấn và giải đáp cho bạn trong vai trò <strong>khách hàng mua hàng hoặc sử dụng dịch vụ</strong>.
+            Trò chuyện tự nhiên, gần gũi cùng <strong>chuyên viên tư vấn</strong> — giải đáp tận tâm mọi thắc mắc khi bạn <strong>mua hàng hoặc sử dụng dịch vụ</strong>.
           </template>
           <template v-else>
             Hệ thống trả lời câu hỏi <strong>chính xác 100%</strong> dựa trên tài liệu đã upload, kèm số trang và trích dẫn kiểm chứng nguồn.
@@ -236,8 +215,8 @@
               <!-- Answer Body -->
               <div class="markdown-body" v-html="renderMarkdown(msg.content)"></div>
 
-              <!-- Citations Section -->
-              <div v-if="msg.citations && msg.citations.length > 0" class="citations-section">
+              <!-- Citations Section (ẩn hoàn toàn khi ở chế độ Khách hàng mua hàng) -->
+              <div v-if="chatMode !== 'customer' && !msg.scenario && msg.citations && msg.citations.length > 0" class="citations-section">
                 <div class="citations-header-row">
                   <span class="citations-label">
                     <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -312,7 +291,9 @@
                 <span></span>
                 <span></span>
               </div>
-              <span class="loading-label">Đang thực hiện Dense Embedding + BM25 Hybrid Retrieval...</span>
+              <span class="loading-label">
+                {{ chatMode === 'customer' ? 'Chuyên viên đang soạn phản hồi tư vấn cho bạn...' : 'Đang thực hiện Dense Embedding + BM25 Hybrid Retrieval...' }}
+              </span>
             </div>
           </div>
         </div>
@@ -395,7 +376,6 @@ const emit = defineEmits([
   'clear-chat',
   'toggle-sidebar',
   'open-evolution',
-  'open-messenger',
   'open-astrbot'
 ])
 
@@ -491,7 +471,10 @@ const canSend = computed(() => {
 
 const renderMarkdown = (text) => {
   if (!text) return ''
-  return marked.parse(text)
+  const cleaned = chatMode.value === 'customer'
+    ? text.replace(/\s*(?:\[\d{1,2}(?:\s*[,;-]\s*\d{1,2})*\])+/g, '')
+    : text
+  return marked.parse(cleaned)
 }
 
 const getDocName = (docId) => {
@@ -783,19 +766,6 @@ defineExpose({ scrollToBottom })
 .btn-astrbot:hover {
   background: linear-gradient(135deg, rgba(99, 102, 241, 0.28), rgba(139, 92, 246, 0.24));
   border-color: rgba(99, 102, 241, 0.7);
-  transform: translateY(-1px);
-}
-
-.btn-messenger {
-  background: rgba(0, 198, 255, 0.1);
-  border: 1px solid rgba(0, 198, 255, 0.3);
-  color: #67e8f9;
-  box-shadow: 0 0 12px rgba(0, 198, 255, 0.12);
-}
-
-.btn-messenger:hover {
-  background: rgba(0, 198, 255, 0.18);
-  border-color: rgba(0, 198, 255, 0.55);
   transform: translateY(-1px);
 }
 
@@ -1378,9 +1348,8 @@ textarea::placeholder {
   }
 
   .astrbot-text,
-  .messenger-text,
   .settings-text {
-    display: none; /* Icon-only on mobile for AstrBot, Messenger and Settings */
+    display: none; /* Icon-only on mobile for AstrBot and Settings */
   }
 
   .header-secondary-row {

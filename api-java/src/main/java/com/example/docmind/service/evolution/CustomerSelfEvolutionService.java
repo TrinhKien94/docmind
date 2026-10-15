@@ -649,16 +649,16 @@ public class CustomerSelfEvolutionService {
             gradients.add("Khi khách hỏi bảo hành/đổi trả/kích ứng, cần thể hiện sự đồng cảm và nêu rõ thời hạn đổi trả 7 ngày, lỗi vận chuyển/kích ứng 14 ngày.");
         }
 
-        // 2. Độ chính xác & Trích dẫn tài liệu (Grounding & Citations)
+        // 2. Độ chính xác nội dung & Diễn đạt tự nhiên (Natural Grounding — không dùng ký hiệu trích dẫn máy móc)
         double groundingScore = 0.85;
         if (retrievedChunkCount > 0) {
             Matcher m = CITATION_MARKER_PATTERN.matcher(safeAnswer);
             if (m.find()) {
+                groundingScore = 0.70;
+                critiques.add("Câu trả lời cho khách mua hàng vẫn còn chứa ký hiệu trích dẫn tài liệu dạng [n].");
+                gradients.add("Khi tư vấn cho người mua hàng, tuyệt đối không gắn ký hiệu trích dẫn [1], [2] hay nhắc tới tài liệu nguồn; hãy lồng ghép thông tin tự nhiên như kiến thức của chuyên viên.");
+            } else if (safeAnswer.length() >= 40) {
                 groundingScore = 1.0;
-            } else {
-                groundingScore = 0.55;
-                critiques.add("Có " + retrievedChunkCount + " đoạn tài liệu RAG nhưng câu trả lời chưa đính kèm trích dẫn [n].");
-                gradients.add("Bắt buộc trích dẫn số hiệu đoạn tài liệu [1], [2]... ngay sau thông tin giá bán hoặc thông số lấy từ tài liệu.");
             }
         }
 
@@ -775,10 +775,10 @@ public class CustomerSelfEvolutionService {
         score = Math.round(Math.max(0.0, Math.min(1.0, score)) * 1000.0) / 1000.0;
 
         String lossCritique = critiques.isEmpty()
-                ? "Câu trả lời đạt chuẩn tư vấn khách hàng trên cả 4 tiêu chí (Thái độ, Trích dẫn, Độ đầy đủ, Call-to-Action)."
+                ? "Câu trả lời đạt chuẩn tư vấn khách hàng trên cả 4 tiêu chí (Văn phong tự nhiên, Độ chính xác, Độ đầy đủ, Gợi mở hỗ trợ)."
                 : String.join(" ", critiques);
         String textualGradient = gradients.isEmpty()
-                ? "Duy trì phong cách tư vấn lịch sự, trích dẫn chính xác [n] và gợi mở bước tiếp theo cho kịch bản " + scenario.code() + "."
+                ? "Duy trì văn phong tư vấn tự nhiên như người thật, thân thiện, chuẩn xác thông tin (không trích dẫn nguồn) và gợi mở bước tiếp theo cho kịch bản " + scenario.code() + "."
                 : String.join(" ", gradients);
 
         return new EvaluationResult(score, lossCritique, textualGradient);

@@ -293,16 +293,16 @@ public enum CustomerScenario {
         }
         return switch (this) {
             case SALES -> hasRagChunks
-                    ? "Khi tư vấn báo giá (SALES) có tài liệu RAG, luôn nêu rõ tên gói dịch vụ, mức giá cụ thể kèm trích dẫn [n] và gợi ý khách hàng đăng ký dùng thử."
-                    : "Khi tư vấn mua hàng (SALES), hãy phân loại rõ Gói Basic, Gói Pro và Gói Enterprise theo quy mô người dùng để khách hàng dễ lựa chọn.";
+                    ? "Khi tư vấn báo giá (SALES), luôn chia sẻ tự nhiên tên sản phẩm/gói dịch vụ, mức giá cụ thể và quyền lợi đi kèm như một chuyên viên thực thụ (không trích dẫn nguồn tài liệu), đồng thời gợi mở nhẹ nhàng để khách hàng dễ lựa chọn."
+                    : "Khi tư vấn mua hàng (SALES), hãy phân loại rõ Gói Basic, Gói Pro và Gói Enterprise theo quy mô người dùng bằng giọng văn gần gũi để khách hàng dễ lựa chọn.";
             case SERVICE_SUPPORT ->
-                    "Khi hướng dẫn sử dụng dịch vụ hoặc xử lý kỹ thuật (SERVICE_SUPPORT), luôn trình bày theo từng bước đánh số (Bước 1, Bước 2...) và hỏi xác nhận kết quả thao tác.";
+                    "Khi hướng dẫn sử dụng dịch vụ hoặc xử lý kỹ thuật (SERVICE_SUPPORT), luôn chỉ dẫn từng bước mạch lạc, dễ hiểu và hỏi thăm xem khách hàng đã thao tác thuận lợi chưa.";
             case WARRANTY_RETURN ->
-                    "Khi giải đáp bảo hành & đổi trả (WARRANTY_RETURN), luôn mở đầu bằng sự đồng cảm, nêu rõ hạn bảo hành 12 tháng và điều kiện 1 đổi 1 / hoàn tiền trong 7 ngày đầu.";
+                    "Khi giải đáp bảo hành & đổi trả (WARRANTY_RETURN), luôn mở đầu bằng sự đồng cảm chân thành, nêu rõ hạn bảo hành 12 tháng và quyền lợi 1 đổi 1 / hoàn tiền trong 7 ngày đầu.";
             case ORDER_BILLING ->
-                    "Khi tư vấn đơn hàng & thanh toán (ORDER_BILLING), luôn thông tin rõ các phương thức thanh toán (QR Pay, Visa/Mastercard, COD), thời gian kích hoạt và hỗ trợ xuất hóa đơn VAT.";
+                    "Khi tư vấn đơn hàng & thanh toán (ORDER_BILLING), luôn chia sẻ rõ các phương thức thanh toán (QR Pay, Visa/Mastercard, COD), thời gian kích hoạt và hỗ trợ xuất hóa đơn VAT.";
             case GENERAL ->
-                    "Luôn xác định nhanh mục đích mua sản phẩm mới hay hỗ trợ dịch vụ đang dùng để cá nhân hoá câu trả lời và cung cấp Hotline/Email hỗ trợ khi cần.";
+                    "Luôn nắm bắt nhanh nhu cầu mua sản phẩm mới hay hỗ trợ dịch vụ đang dùng để trò chuyện tự nhiên, cá nhân hoá câu trả lời và cung cấp Hotline/Email hỗ trợ khi cần.";
         };
     }
 

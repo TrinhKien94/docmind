@@ -236,6 +236,7 @@ public final class AstrBotPlatformCatalog {
                         "page_access_token", "",
                         "verify_token", "docmind-messenger-token",
                         "app_secret", "",
+                        "verify_signature", false,
                         "api_version", "v21.0",
                         "send_feedback_quick_replies", true,
                         "unified_webhook_mode", true
@@ -244,6 +245,7 @@ public final class AstrBotPlatformCatalog {
                         field("page_access_token", "Page Access Token", "string", "Token truy cập Fanpage dùng gọi Graph Send API.", true, false, null, ""),
                         field("verify_token", "Webhook Verify Token", "string", "Token đối chiếu khi Meta gọi GET hub.challenge.", true, true, null, "docmind-messenger-token"),
                         field("app_secret", "Meta App Secret", "string", "Khoá bí mật kiểm tra chữ ký HMAC-SHA256 X-Hub-Signature-256.", true, false, null, ""),
+                        field("verify_signature", "Bật xác thực X-Hub-Signature-256", "bool", "Kiểm tra chữ ký HMAC-SHA256 chống giả mạo payload từ Meta.", false, false, null, false),
                         field("api_version", "Graph API Version", "string", "Phiên bản Meta Graph API (mặc định v21.0).", false, false, null, "v21.0"),
                         field("send_feedback_quick_replies", "Đính kèm nút đánh giá EvoAgentX", "bool", "Tự động gửi nút 👍 Hài lòng / 👎 Cần cải thiện dưới câu trả lời.", false, false, null, true)
                 )
@@ -625,10 +627,10 @@ public final class AstrBotPlatformCatalog {
                         "dior_luxury_advisor",
                         "Chuyên gia Tư vấn Christian Dior Couture & Parfums",
                         "Luxury Retail",
-                        "Bạn là Chuyên gia Tư vấn Cao cấp (Senior Client Advisor) của Christian Dior. Luôn xưng hô lịch thiệp, sang trọng, trích dẫn chuẩn xác tài liệu SOP Dior (Skincare Capture Totale / Prestige, Makeup Forever / Rouge Dior, Nước hoa Sauvage / Miss Dior / J'adore, Chính sách VIP & Đổi trả) và tuyệt đối tuân thủ quy tắc an toàn thai kỳ.",
+                        "Bạn là Chuyên gia Tư vấn Cao cấp (Senior Client Advisor) của Christian Dior. Luôn trò chuyện tự nhiên, ấm áp, tinh tế như một chuyên viên người thật (không trả lời cứng nhắc như bot, tuyệt đối không gắn ký hiệu trích dẫn [1], [2] hay nhắc tên tài liệu SOP), nắm vững kiến thức sản phẩm (Skincare Capture Totale / Prestige, Makeup Forever / Rouge Dior, Nước hoa Sauvage / Miss Dior / J'adore, Chính sách VIP & Đổi trả) và tuân thủ quy tắc an toàn thai kỳ.",
                         List.of(
                                 "Khách hàng: Chào shop, tư vấn giúp mình chu trình dưỡng da Dior.",
-                                "Trợ lý: Dạ Christian Dior Maison xin kính chào Quý khách! Em rất hân hạnh được đồng hành tư vấn chu trình dưỡng da chuẩn Haute Couture phù hợp nhất với làn da của Quý khách ạ."
+                                "Trợ lý: Dạ em chào Anh/Chị ạ! Rất vui được tư vấn cho mình hôm nay. Không biết hiện tại làn da của mình thuộc tuýp da dầu, da khô hay hỗn hợp để em gợi ý chu trình dưỡng da Dior phù hợp nhất cho mình nhé?"
                         ),
                         List.of("rag_hybrid_search", "dior_sop_lookup", "evoagentx_memory", "citation_verifier"),
                         0.3,

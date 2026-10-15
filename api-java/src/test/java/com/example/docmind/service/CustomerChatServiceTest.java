@@ -712,8 +712,37 @@ class CustomerChatServiceTest {
 
         assertThat(resp.answer()).isNotBlank();
         assertThat(resp.answer()).doesNotContain("[9router-error]");
+        assertThat(resp.answer()).doesNotContain("[1]");
         assertThat(resp.scenario()).isEqualTo("SALES");
         assertThat(resp.model()).isEqualTo("9router:codex/gpt-6-astra");
+    }
+
+    @Test
+    void customerPromptEnforcesNaturalHumanToneWithoutCitationsAndServiceStripsStrayCitationMarkers() {
+        CustomerSupportProperties props = new CustomerSupportProperties();
+        props.getEvolution().setPersistToDisk(false);
+
+        CustomerChatRequest req = new CustomerChatRequest(
+                "Tư vấn giúp mình gói Pro giá bao nhiêu?",
+                null, null, "Chị Hà", "Khách mua hàng", "SALES", null, 5, null, null
+        );
+        String prompt = CustomerPromptBuilder.build(req, CustomerScenario.SALES, props, List.of());
+
+        assertThat(prompt)
+                .contains("VĂN PHONG TỰ NHIÊN NHƯ NGƯỜI THẬT")
+                .contains("KHÔNG TRÍCH DẪN NGUỒN")
+                .contains("TUYỆT ĐỐI KHÔNG chèn ký hiệu trích dẫn dạng [1], [2], [n]")
+                .doesNotContain("Nếu có trích dẫn từ bảng giá tài liệu, em xin phép đính kèm tại [1]");
+
+        // Kiểm tra hàm làm sạch ký hiệu trích dẫn với các trường hợp biên (null, rỗng, nhiều trích dẫn, dấu câu, thẻ không phải số)
+        assertThat(CustomerChatService.stripCustomerCitationMarkers(null)).isNull();
+        assertThat(CustomerChatService.stripCustomerCitationMarkers("   ")).isEqualTo("   ");
+        assertThat(CustomerChatService.stripCustomerCitationMarkers(
+                "Dạ gói Pro có giá 499.000đ/tháng [1], tặng thêm 2 tháng khi đăng ký năm [1, 2][3]."
+        )).isEqualTo("Dạ gói Pro có giá 499.000đ/tháng, tặng thêm 2 tháng khi đăng ký năm.");
+        assertThat(CustomerChatService.stripCustomerCitationMarkers(
+                "[stub-llm] Câu trả lời giữ nguyên nhãn không phải số."
+        )).isEqualTo("[stub-llm] Câu trả lời giữ nguyên nhãn không phải số.");
     }
 
     private static boolean isPortListening(String host, int port) {

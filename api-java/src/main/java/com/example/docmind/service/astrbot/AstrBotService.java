@@ -5,6 +5,7 @@ import com.example.docmind.dto.Citation;
 import com.example.docmind.dto.CustomerChatRequest;
 import com.example.docmind.dto.CustomerChatResponse;
 import com.example.docmind.dto.CustomerEvolutionStatusResponse;
+import com.example.docmind.dto.CustomerFeedbackRequest;
 import com.example.docmind.dto.astrbot.AstrBotCronJobDto;
 import com.example.docmind.dto.astrbot.AstrBotExtensionDto;
 import com.example.docmind.dto.astrbot.AstrBotInstanceDto;
@@ -29,13 +30,18 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -184,7 +190,7 @@ public class AstrBotService {
         sess2.scenario = "SERVICE_SUPPORT";
         sess2.recordTurn(
                 "Chính sách đổi trả sản phẩm bị lỗi vòi xịt tại Dior áp dụng trong bao nhiêu ngày?",
-                "Dạ theo quy trình SOP Bảo hành & Đổi trả chính hãng Christian Dior (05-dior-authenticity-warranty-return-complaints.md), sản phẩm lỗi kỹ thuật từ nhà sản xuất (như lỗi vòi xịt, nắp hít) được hỗ trợ đổi mới 1-1 miễn phí trong vòng 14 ngày kể từ ngày nhận hàng kèm video unbox và mã batch code.");
+                "Dạ với sản phẩm gặp lỗi kỹ thuật từ nhà sản xuất hoặc quá trình vận chuyển (như lỗi vòi xịt, nắp hít), bên em hỗ trợ đổi mới 1-1 hoàn toàn miễn phí trong vòng 14 ngày kể từ ngày nhận hàng ạ. Anh/Chị chỉ cần gửi kèm video mở hộp và mã batch code để bên em hỗ trợ đổi ngay nhé!");
 
         String nowIso = Instant.now().toString();
         recordTrace(new AstrBotTraceDto(
@@ -197,7 +203,7 @@ public class AstrBotService {
                 "discord_dev_42",
                 "Hoàng Nam (@hoangnam)",
                 "Chính sách đổi trả sản phẩm bị lỗi vòi xịt tại Dior áp dụng trong bao nhiêu ngày?",
-                "Dạ theo quy trình SOP Bảo hành & Đổi trả chính hãng Christian Dior (05-dior-authenticity-warranty-return-complaints.md), sản phẩm lỗi kỹ thuật được hỗ trợ đổi mới 1-1 miễn phí trong vòng 14 ngày...",
+                "Dạ với sản phẩm gặp lỗi kỹ thuật như lỗi vòi xịt hoặc nắp hít, bên em hỗ trợ đổi mới 1-1 hoàn toàn miễn phí trong vòng 14 ngày kể từ ngày nhận hàng ạ...",
                 "SERVICE_SUPPORT",
                 "docmind_rag_specialist",
                 1,
@@ -676,6 +682,7 @@ public class AstrBotService {
 
     /**
      * Xử lý xác minh GET Challenge cho Unified Webhook (/api/astrbot/webhooks/platforms/{webhookUuid}).
+     * Hỗ trợ chuẩn Meta Graph API (hub.mode=subscribe, hub.verify_token, hub.challenge), WeCom/WeChat (echostr) và Lark/Slack (challenge).
      */
     public String verifyUnifiedWebhookGet(String webhookUuid, Map<String, String> queryParams) {
         MutableBotInstance inst = findBotByWebhookUuid(webhookUuid);
@@ -686,6 +693,17 @@ public class AstrBotService {
             return "OK";
         }
         if (queryParams.containsKey("hub.challenge")) {
+            if (queryParams.containsKey("hub.mode") || queryParams.containsKey("hub.verify_token")) {
+                String mode = queryParams.get("hub.mode");
+                String verifyToken = queryParams.get("hub.verify_token");
+                if (mode != null && !"subscribe".equals(mode)) {
+                    throw new SecurityException("Forbidden: hub.mode must be subscribe");
+                }
+                String expectedToken = asString(inst.config.get("verify_token"));
+                if (verifyToken == null || (expectedToken != null && !expectedToken.isBlank() && !expectedToken.equals(verifyToken))) {
+                    throw new SecurityException("Forbidden: Token verification failed");
+                }
+            }
             return queryParams.get("hub.challenge");
         }
         if (queryParams.containsKey("echostr")) {
@@ -698,13 +716,57 @@ public class AstrBotService {
     }
 
     /**
+     * Xác thực chữ ký HMAC-SHA256 trên header X-Hub-Signature-256 chống giả mạo payload và timing attack.
+     */
+    public boolean verifyWebhookSignature(String webhookUuid, String signatureHeader, String rawPayload) {
+        MutableBotInstance inst = findBotByWebhookUuid(webhookUuid);
+        if (inst == null) {
+            return false;
+        }
+        boolean verifySig = asBoolean(inst.config.get("verify_signature"), false);
+        if (!verifySig) {
+            return true;
+        }
+        String appSecret = asString(inst.config.get("app_secret"));
+        if (appSecret == null || appSecret.isBlank()) {
+            return true;
+        }
+        if (signatureHeader == null || !signatureHeader.startsWith("sha256=") || rawPayload == null) {
+            return false;
+        }
+        String providedDigest = signatureHeader.substring("sha256=".length()).strip();
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            SecretKeySpec secretKey = new SecretKeySpec(appSecret.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            mac.init(secretKey);
+            byte[] computedHash = mac.doFinal(rawPayload.getBytes(StandardCharsets.UTF_8));
+            String computedHex = HexFormat.of().formatHex(computedHash);
+            return MessageDigest.isEqual(
+                    computedHex.getBytes(StandardCharsets.UTF_8),
+                    providedDigest.toLowerCase(Locale.ROOT).getBytes(StandardCharsets.UTF_8)
+            );
+        } catch (Exception e) {
+            log.error("Lỗi khi kiểm tra chữ ký HMAC-SHA256 cho [{}]: {}", inst.id, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Tiếp nhận sự kiện POST trên Unified Webhook (/api/astrbot/webhooks/platforms/{webhookUuid}).
-     * Tự động bóc tách định dạng bản tin của Telegram, Discord, Slack, Lark, LINE, WeCom, WeChat, QQ, OneBot...
+     * Tự động bóc tách định dạng bản tin của Telegram, Discord, Slack, Lark, LINE, WeCom, WeChat, QQ, OneBot, Facebook Messenger...
      */
     public Map<String, Object> handleUnifiedWebhookPost(String webhookUuid, String rawBody) {
+        return handleUnifiedWebhookPost(webhookUuid, null, rawBody);
+    }
+
+    public Map<String, Object> handleUnifiedWebhookPost(String webhookUuid, String signatureHeader, String rawBody) {
         MutableBotInstance inst = findBotByWebhookUuid(webhookUuid);
         if (inst == null) {
             throw new IllegalArgumentException("Không tìm thấy nền tảng ứng với webhook_uuid: " + webhookUuid);
+        }
+        if (!verifyWebhookSignature(webhookUuid, signatureHeader, rawBody)) {
+            inst.recordError("Xác thực chữ ký X-Hub-Signature-256 thất bại", "InvalidSignature");
+            throw new SecurityException("Forbidden: Invalid X-Hub-Signature-256 signature");
         }
         if (rawBody != null && rawBody.length() > MAX_WEBHOOK_PAYLOAD_BYTES) {
             inst.recordError("Payload Webhook vượt quá kích thước cho phép (256KB)", "PayloadLength=" + rawBody.length());
@@ -737,6 +799,11 @@ public class AstrBotService {
                 ignored.put("reason", "bot_disabled");
                 ignored.put("message", "Platform Adapter [" + inst.id + "] đang tạm dừng (stopped)");
                 return ignored;
+            }
+
+            // Meta Facebook Messenger Webhook payload: { "object": "page", "entry": [ { "messaging": [...] } ] }
+            if (root.isObject() && root.has("object") && (root.has("entry") || "facebook_messenger".equalsIgnoreCase(inst.type))) {
+                return handleMetaMessengerWebhookPayload(inst, root);
             }
 
             ParsedWebhookEvent parsed = extractWebhookEvent(inst, root);
@@ -775,6 +842,201 @@ public class AstrBotService {
             ignored.put("message", "Payload Webhook không hợp lệ: " + e.getMessage());
             return ignored;
         }
+    }
+
+    /**
+     * Xử lý chuyên sâu cấu trúc sự kiện Meta Facebook Messenger (object="page", entry[].messaging[]):
+     * - Bỏ qua delivery, read receipts và echo messages (is_echo=true)
+     * - Ánh xạ Reaction (👍, ❤️, 👎, 😠...) và Quick Reply / Postback FEEDBACK_HELPFUL_* / FEEDBACK_UNHELPFUL_* vào EvoAgentX
+     * - Định tuyến tin nhắn văn bản / postback / quick reply qua luồng AstrBot UMO Pipeline.
+     */
+    private Map<String, Object> handleMetaMessengerWebhookPayload(MutableBotInstance inst, JsonNode root) {
+        String objectType = root.path("object").asText("");
+        if (!"page".equalsIgnoreCase(objectType)) {
+            Map<String, Object> ignored = new LinkedHashMap<>();
+            ignored.put("status", "ignored");
+            ignored.put("event_received", false);
+            ignored.put("bot_id", inst.id);
+            ignored.put("platform_type", inst.type);
+            ignored.put("reason", "non_page_object");
+            return ignored;
+        }
+
+        JsonNode entries = root.path("entry");
+        if (!entries.isArray() || entries.isEmpty()) {
+            return Map.of("status", "ignored", "event_received", false, "bot_id", inst.id, "platform_type", inst.type, "reason", "empty_entry");
+        }
+
+        Map<String, Object> lastResult = null;
+        for (JsonNode entry : entries) {
+            JsonNode messagingList = entry.path("messaging");
+            if (!messagingList.isArray()) {
+                continue;
+            }
+            for (JsonNode messaging : messagingList) {
+                if (messaging == null || !messaging.isObject()) {
+                    continue;
+                }
+                // 1. Ignore delivery / read receipts & echo messages
+                if (messaging.hasNonNull("delivery") || messaging.hasNonNull("read")
+                        || messaging.path("message").path("is_echo").asBoolean(false)) {
+                    continue;
+                }
+                String senderId = messaging.path("sender").path("id").asText(null);
+                if (senderId == null || senderId.isBlank()) {
+                    continue;
+                }
+                String umo = inst.id + ":PrivateMessage:" + senderId;
+
+                // 2. Reaction event -> EvoAgentX feedback
+                if (messaging.hasNonNull("reaction") && messaging.path("reaction").isObject()) {
+                    JsonNode reactionNode = messaging.path("reaction");
+                    String action = reactionNode.path("action").asText("react");
+                    if ("unreact".equalsIgnoreCase(action)) {
+                        continue;
+                    }
+                    String reactionVal = firstNonBlank(
+                            reactionNode.path("reaction").asText(null),
+                            reactionNode.path("emoji").asText(null),
+                            "like"
+                    );
+                    Boolean helpful = classifyMessengerReaction(reactionVal);
+                    if (helpful != null) {
+                        recordMessengerSessionFeedback(inst, umo, senderId, helpful, helpful ? 5 : 2, "Messenger Reaction: " + reactionVal);
+                        Map<String, Object> fbOut = new LinkedHashMap<>();
+                        fbOut.put("status", "ok");
+                        fbOut.put("event_received", true);
+                        fbOut.put("bot_id", inst.id);
+                        fbOut.put("platform_type", inst.type);
+                        fbOut.put("umo", umo);
+                        fbOut.put("feedback_recorded", true);
+                        fbOut.put("helpful", helpful);
+                        lastResult = fbOut;
+                    }
+                    continue;
+                }
+
+                // 3. Feedback Quick Reply or Postback (FEEDBACK_HELPFUL_* / FEEDBACK_UNHELPFUL_*)
+                String qrPayload = messaging.path("message").path("quick_reply").path("payload").asText(null);
+                String pbPayload = messaging.path("postback").path("payload").asText(null);
+                String feedbackPayload = null;
+                if (qrPayload != null && (qrPayload.startsWith("FEEDBACK_HELPFUL_") || qrPayload.startsWith("FEEDBACK_UNHELPFUL_"))) {
+                    feedbackPayload = qrPayload;
+                } else if (pbPayload != null && (pbPayload.startsWith("FEEDBACK_HELPFUL_") || pbPayload.startsWith("FEEDBACK_UNHELPFUL_"))) {
+                    feedbackPayload = pbPayload;
+                }
+                if (feedbackPayload != null) {
+                    boolean helpful = feedbackPayload.startsWith("FEEDBACK_HELPFUL_");
+                    recordMessengerSessionFeedback(inst, umo, senderId, helpful, helpful ? 5 : 2, "Messenger Feedback: " + feedbackPayload);
+                    Map<String, Object> fbOut = new LinkedHashMap<>();
+                    fbOut.put("status", "ok");
+                    fbOut.put("event_received", true);
+                    fbOut.put("bot_id", inst.id);
+                    fbOut.put("platform_type", inst.type);
+                    fbOut.put("umo", umo);
+                    fbOut.put("feedback_recorded", true);
+                    fbOut.put("helpful", helpful);
+                    lastResult = fbOut;
+                    continue;
+                }
+
+                // 4. Customer Consultation Message (text, quick_reply, or postback)
+                String userText = firstNonBlank(
+                        qrPayload,
+                        messaging.path("message").path("text").asText(null),
+                        pbPayload,
+                        messaging.path("postback").path("title").asText(null)
+                );
+                if (userText == null || userText.isBlank()) {
+                    continue;
+                }
+
+                AstrBotSimulateResponse simResp = simulateOrProcessMessage(new AstrBotSimulateRequest(
+                        inst.id,
+                        inst.type,
+                        "PrivateMessage",
+                        senderId,
+                        senderId,
+                        "Khách hàng Messenger (" + senderId + ")",
+                        userText,
+                        null,
+                        null
+                ));
+                Map<String, Object> out = new LinkedHashMap<>();
+                out.put("status", "ok");
+                out.put("event_received", true);
+                out.put("bot_id", inst.id);
+                out.put("platform_type", inst.type);
+                out.put("umo", simResp.umo());
+                out.put("reply", simResp.replySent());
+                out.put("interaction_id", simResp.interactionId());
+                out.put("quick_replies", simResp.quickReplies());
+                lastResult = out;
+            }
+        }
+
+        if (lastResult != null) {
+            return lastResult;
+        }
+        Map<String, Object> ignored = new LinkedHashMap<>();
+        ignored.put("status", "ignored");
+        ignored.put("event_received", false);
+        ignored.put("bot_id", inst.id);
+        ignored.put("platform_type", inst.type);
+        ignored.put("reason", "delivery_or_read_or_echo");
+        return ignored;
+    }
+
+    private Boolean classifyMessengerReaction(String reaction) {
+        if (reaction == null || reaction.isBlank()) {
+            return null;
+        }
+        String norm = reaction.strip().toLowerCase(Locale.ROOT);
+        if (norm.contains("👍") || norm.contains("❤") || norm.contains("😆") || norm.contains("😮")
+                || "like".equals(norm) || "love".equals(norm) || "haha".equals(norm) || "wow".equals(norm)) {
+            return Boolean.TRUE;
+        }
+        if (norm.contains("👎") || norm.contains("😠") || norm.contains("😢")
+                || "dislike".equals(norm) || "angry".equals(norm) || "sad".equals(norm)) {
+            return Boolean.FALSE;
+        }
+        return null;
+    }
+
+    private void recordMessengerSessionFeedback(
+            MutableBotInstance inst,
+            String umo,
+            String senderId,
+            boolean helpful,
+            int rating,
+            String comment) {
+        MutableSessionState sess = sessionMap.get(umo);
+        String interactionId = sess != null && sess.lastInteractionId != null
+                ? sess.lastInteractionId
+                : "msgr-" + senderId;
+        String question = sess != null && !sess.lastMessage.isBlank()
+                ? sess.lastMessage
+                : "Tư vấn qua Facebook Messenger";
+        String answer = sess != null && !sess.lastReply.isBlank()
+                ? sess.lastReply
+                : "Phản hồi tư vấn Christian Dior & DocMind";
+        String scenario = sess != null && sess.scenario != null
+                ? sess.scenario
+                : inst.defaultScenario;
+
+        if (evolutionService != null) {
+            evolutionService.recordFeedbackAndEvolve(new CustomerFeedbackRequest(
+                    interactionId,
+                    question,
+                    answer,
+                    scenario,
+                    rating,
+                    helpful,
+                    comment
+            ));
+        }
+        appendLog("INFO", inst.id, "EvoAgentXFeedbackBridge",
+                "Đã đồng bộ đánh giá từ [" + umo + "] (helpful=" + helpful + ", rating=" + rating + ") sang EvoAgentX.", false);
     }
 
     /**
@@ -844,6 +1106,7 @@ public class AstrBotService {
         List<String> quickReplies = List.of("✨ Tư vấn sản phẩm", "🛡️ Chính sách đổi trả", "📦 Kiểm tra đơn hàng", "/status");
         int evoGen = 0;
         double evoScore = 1.0;
+        String chatInteractionId = null;
 
         if (isCommand) {
             replyText = executeStarCommand(incomingText, session, bot, resolvedPersonaId, resolvedScenario);
@@ -875,6 +1138,7 @@ public class AstrBotService {
 
             CustomerChatResponse chatResponse = customerChatService.chat(chatRequest);
             replyText = chatResponse.answer();
+            chatInteractionId = chatResponse.interactionId();
             if (session.ttsEnabled) {
                 replyText = replyText + "\n\n🔊 *[Edge Neural TTS · TTS Audio Ready: Đã tổng hợp giọng nói vi-VN-HoaiMyNeural]*";
             }
@@ -893,13 +1157,18 @@ public class AstrBotService {
             }
         }
 
+        if ("facebook_messenger".equalsIgnoreCase(platformType)) {
+            quickReplies = formatMessengerQuickReplies(quickReplies, asBoolean(bot.config.get("send_feedback_quick_replies"), true));
+        }
+
+        String interactionId = firstNonBlank(chatInteractionId, "astr-" + UUID.randomUUID().toString().substring(0, 8));
+        session.lastInteractionId = interactionId;
         session.recordTurn(incomingText, replyText);
         bot.messageCount.incrementAndGet();
         totalMessagesProcessed.incrementAndGet();
 
         long latencyMs = Math.max(1L, (System.nanoTime() - startNs) / 1_000_000L);
         totalLatencyMs.addAndGet(latencyMs);
-        String interactionId = "astr-" + UUID.randomUUID().toString().substring(0, 8);
         String nowIso = Instant.now().toString();
 
         AstrBotTraceDto trace = new AstrBotTraceDto(
@@ -1639,12 +1908,37 @@ public class AstrBotService {
         if (webhookUuid == null || webhookUuid.isBlank()) {
             return null;
         }
+        String key = webhookUuid.trim();
         for (MutableBotInstance b : botInstances.values()) {
-            if (webhookUuid.equals(b.webhookUuid) || webhookUuid.equals(b.id)) {
+            if (key.equals(b.webhookUuid) || key.equals(b.id) || key.equalsIgnoreCase(b.type)) {
                 return b;
             }
         }
         return null;
+    }
+
+    private List<String> formatMessengerQuickReplies(List<String> rawReplies, boolean includeFeedbackReplies) {
+        List<String> out = new ArrayList<>();
+        if (rawReplies != null) {
+            for (String item : rawReplies) {
+                if (item == null || item.isBlank()) {
+                    continue;
+                }
+                String trimmed = item.strip();
+                if (trimmed.length() > 20) {
+                    trimmed = trimmed.substring(0, 19) + "…";
+                }
+                out.add(trimmed);
+                if (out.size() >= (includeFeedbackReplies ? 3 : 5)) {
+                    break;
+                }
+            }
+        }
+        if (includeFeedbackReplies) {
+            out.add("👍 Hữu ích");
+            out.add("👎 Cần cải thiện");
+        }
+        return out;
     }
 
     private MutableBotInstance resolveBotForRequest(AstrBotSimulateRequest req) {
@@ -2249,6 +2543,7 @@ public class AstrBotService {
         volatile List<String> kbNames = List.of("dior_sop_kb", "docmind_hybrid_rag");
         volatile List<String> disabledPlugins = List.of();
         volatile int messageCount = 0;
+        volatile String lastInteractionId = null;
         volatile String lastMessage = "";
         volatile String lastReply = "";
         volatile String lastActiveAt = Instant.now().toString();

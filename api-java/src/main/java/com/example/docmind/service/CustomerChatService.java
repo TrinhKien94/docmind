@@ -149,6 +149,7 @@ public class CustomerChatService {
                     scenario.code());
             answer = buildPretrainedFallbackAnswer(request, scenario, fused);
         }
+        answer = stripCustomerCitationMarkers(answer);
         String modelName = llmClient != null ? llmClient.name() : "pretrained-fallback";
         log.info("stage=customer-chat engine={} scenario={} fused_chunks={} applied_guidelines={}",
                 modelName, scenario.code(), fused.size(), activeGuidelines.size());
@@ -426,30 +427,46 @@ public class CustomerChatService {
                 : "DocMind Store & Digital Services";
 
         StringBuilder sb = new StringBuilder();
-        sb.append("Dạ em chào ").append(customerName).append("! Cảm ơn ").append(customerName)
+        sb.append("Dạ em chào ").append(customerName).append(" ạ! Cảm ơn ").append(customerName)
           .append(" đã quan tâm đến sản phẩm và dịch vụ của **").append(storeName).append("**.\n\n");
-        sb.append("Về câu hỏi của ").append(customerName).append(" (\"")
-          .append(request.resolvedQuestion()).append("\") thuộc kịch bản **")
-          .append(scenario.title(customerProps)).append("**, em xin phép thông tin chi tiết như sau:\n\n");
+        sb.append("Về thắc mắc của ").append(customerName).append(" (\"")
+          .append(request.resolvedQuestion()).append("\"), em xin chia sẻ thông tin chi tiết để mình dễ tham khảo nhé:\n\n");
 
         if (fused != null && !fused.isEmpty()) {
-            int idx = 1;
             for (ReciprocalRankFusion.FusedChunk fc : fused) {
-                sb.append("- ").append(snippet(fc.chunk().text())).append(" [").append(idx++).append("]\n");
+                sb.append("- ").append(snippet(fc.chunk().text())).append("\n");
             }
             sb.append("\n");
         }
 
         if (customerProps.getDefaultPolicyContext() != null && !customerProps.getDefaultPolicyContext().isBlank()) {
-            sb.append("**Chính sách áp dụng tại ").append(storeName).append(":**\n")
+            sb.append("Ngoài ra, bên em luôn áp dụng các quyền lợi chăm sóc và hỗ trợ tại **").append(storeName).append("**:\n")
               .append(customerProps.getDefaultPolicyContext().strip()).append("\n\n");
         }
 
-        sb.append("Nếu cần hỗ trợ trực tiếp hoặc đặt hàng nhanh, ").append(customerName)
-          .append(" vui lòng liên hệ Hotline **").append(customerProps.getHotline())
-          .append("** hoặc Email **").append(customerProps.getSupportEmail())
+        sb.append("Nếu cần em tư vấn kỹ hơn hoặc hỗ trợ đặt hàng nhanh, ").append(customerName)
+          .append(" cứ nhắn trực tiếp tại đây hoặc liên hệ Hotline **").append(customerProps.getHotline())
+          .append("** / Email **").append(customerProps.getSupportEmail())
           .append("** (").append(customerProps.getWorkingHours()).append(") nhé ạ!");
         return sb.toString();
+    }
+
+    /**
+     * Loại bỏ các ký hiệu trích dẫn số học dạng [1], [2], [1, 2] hoặc chú thích nguồn tài liệu nội bộ
+     * khỏi câu trả lời dành cho người mua hàng để giữ văn phong tự nhiên như chuyên viên tư vấn thật.
+     */
+    static String stripCustomerCitationMarkers(String answer) {
+        if (answer == null || answer.isBlank()) {
+            return answer;
+        }
+        String cleaned = answer
+                // Xoá các cụm trích dẫn dạng [1], [2], [1, 2], [1][2]
+                .replaceAll("(?m)\\s*(?:\\[\\d{1,2}(?:\\s*[,;-]\\s*\\d{1,2})*])+(?=\\s*[.,;!?):\\n]|\\s*$)", "")
+                .replaceAll("(?:\\[\\d{1,2}(?:\\s*[,;-]\\s*\\d{1,2})*])+", "")
+                // Xoá khoảng trắng thừa trước dấu câu do việc gỡ [n] để lại
+                .replaceAll(" +([.,;!?])", "$1")
+                .replaceAll("(?m)[ \\t]{2,}", " ");
+        return cleaned.strip();
     }
 
     private static List<Double> toBboxList(double[] bbox) {
