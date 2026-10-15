@@ -31,8 +31,12 @@ dist/
 artifacts/
 debug/
 .codesearch/
-data/
-api-java/data/
+.agents/
+data/*
+!data/customer-evolution-memory.json
+api-java/data/*
+!api-java/data/customer-evolution-memory.json
+!**/data/customer-evolution-memory.json
 
 ### IDE / editor ###
 .idea/

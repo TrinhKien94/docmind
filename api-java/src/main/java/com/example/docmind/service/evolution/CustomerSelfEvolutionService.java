@@ -89,6 +89,17 @@ public class CustomerSelfEvolutionService {
     /** Lịch sử các Textual Gradient gần nhất để quan sát và kiểm toán. */
     private final Deque<TextualGradientInfo> recentGradients = new ArrayDeque<>();
 
+    /** Đường dẫn tệp bộ nhớ tự tiến hoá đã được định vị thành công. */
+    private volatile Path resolvedStoragePath;
+
+    public Path getResolvedStoragePath() {
+        return resolvedStoragePath;
+    }
+
+    public String getResolvedStateFilePath() {
+        return resolvedStoragePath != null ? resolvedStoragePath.toString() : null;
+    }
+
     @Autowired
     public CustomerSelfEvolutionService(CustomerSupportProperties customerProps, LlmClient llmClient) {
         this(customerProps, llmClient, new ObjectMapper().enable(SerializationFeature.INDENT_OUTPUT));
@@ -166,6 +177,10 @@ public class CustomerSelfEvolutionService {
                     .limit(maxInPrompt)
                     .toList();
         }
+    }
+
+    public List<EvolvedExampleInfo> getActiveExemplarsForScenario(CustomerScenario scenario) {
+        return getActiveExamplesForScenario(scenario);
     }
 
     /**
@@ -1091,38 +1106,123 @@ public class CustomerSelfEvolutionService {
     // Lưu trữ bền vững (Long-Term Memory JSON Persistence)
     // =========================================================================
 
-    private void persistToDiskIfEnabled() {
-        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
-        if (evo == null || !evo.isPersistToDisk() || evo.getStoragePath() == null || evo.getStoragePath().isBlank()) {
-            return;
+    public Path resolveExistingStoragePath(String rawPath) {
+        if (rawPath == null || rawPath.isBlank()) {
+            return null;
         }
-        try {
-            Path target = Path.of(evo.getStoragePath().strip());
-            if (target.getParent() != null) {
-                Files.createDirectories(target.getParent());
+        String cleaned = rawPath.strip().replace('\\', '/');
+        Path direct = Path.of(cleaned);
+
+        if (direct.isAbsolute()) {
+            try {
+                if (Files.isRegularFile(direct)) {
+                    return direct.normalize();
+                }
+            } catch (Exception ignored) {
             }
-            Path tmp = target.resolveSibling(target.getFileName().toString() + ".tmp");
-            CustomerEvolutionStatusResponse snapshot = getStatus();
-            objectMapper.writeValue(tmp.toFile(), snapshot);
-            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
-        } catch (Exception e) {
-            log.warn("Không thể lưu bộ nhớ tự tiến hoá xuống {}: {}", evo.getStoragePath(), e.getMessage());
+            return null;
         }
+
+        List<Path> candidates = new ArrayList<>();
+        // 1. Direct path (relative to current working directory)
+        candidates.add(direct);
+
+        // 2. Monorepo root -> api-java subfolder
+        candidates.add(Path.of("api-java", cleaned));
+
+        // 3. Running inside api-java while path starts with api-java/
+        if (cleaned.startsWith("api-java/")) {
+            candidates.add(Path.of(cleaned.substring("api-java/".length())));
+        }
+
+        // 4. Running from deeper subfolder or sibling modules
+        candidates.add(Path.of("..", cleaned));
+        candidates.add(Path.of("..", "api-java", cleaned));
+
+        for (Path candidate : candidates) {
+            try {
+                if (Files.isRegularFile(candidate)) {
+                    return candidate.toAbsolutePath().normalize();
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        return null;
     }
 
-    private void loadFromDiskIfEnabled() {
+    public Path resolveWritableStoragePath(String rawPath) {
+        if (rawPath != null && !rawPath.isBlank()) {
+            String cleaned = rawPath.strip().replace('\\', '/');
+            Path direct = Path.of(cleaned);
+            if (direct.isAbsolute()) {
+                return direct.normalize();
+            }
+        }
+        if (resolvedStoragePath != null) {
+            return resolvedStoragePath;
+        }
+        Path existing = resolveExistingStoragePath(rawPath);
+        if (existing != null) {
+            this.resolvedStoragePath = existing;
+            return existing;
+        }
+        if (rawPath == null || rawPath.isBlank()) {
+            return Path.of("data/customer-evolution-memory.json").toAbsolutePath().normalize();
+        }
+        String cleaned = rawPath.strip().replace('\\', '/');
+        Path direct = Path.of(cleaned);
+        if (Files.isDirectory(Path.of("api-java"))) {
+            return Path.of("api-java", cleaned).toAbsolutePath().normalize();
+        }
+        return direct.toAbsolutePath().normalize();
+    }
+
+    public void loadStateFromDisk() {
         CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
-        if (evo == null || !evo.isPersistToDisk() || evo.getStoragePath() == null || evo.getStoragePath().isBlank()) {
+        if (evo == null || !evo.isEnabled() || evo.getStoragePath() == null || evo.getStoragePath().isBlank()) {
             return;
         }
         synchronized (stateLock) {
             try {
-                Path target = Path.of(evo.getStoragePath().strip());
-                if (!Files.exists(target)) {
-                    return;
+                String configuredPath = evo.getStoragePath().strip();
+                Path direct = Path.of(configuredPath.replace('\\', '/'));
+                Path existingFile = resolveExistingStoragePath(configuredPath);
+
+                // Chỉ tìm kiếm các đường dẫn mặc định khi configuredPath là đường dẫn tương đối
+                if (existingFile == null && !direct.isAbsolute()
+                        && (configuredPath.endsWith("customer-evolution-memory.json") || configuredPath.isBlank())) {
+                    existingFile = resolveExistingStoragePath("data/customer-evolution-memory.json");
+                    if (existingFile == null) {
+                        existingFile = resolveExistingStoragePath("api-java/data/customer-evolution-memory.json");
+                    }
                 }
-                CustomerEvolutionStatusResponse snapshot =
-                        objectMapper.readValue(target.toFile(), CustomerEvolutionStatusResponse.class);
+
+                CustomerEvolutionStatusResponse snapshot = null;
+                if (existingFile != null && Files.isRegularFile(existingFile)) {
+                    this.resolvedStoragePath = existingFile;
+                    snapshot = objectMapper.readValue(existingFile.toFile(), CustomerEvolutionStatusResponse.class);
+                    log.info("Loaded EvoAgentX customer evolution memory from disk: {}", existingFile);
+                } else if (!direct.isAbsolute()) {
+                    String resPath = configuredPath.replace('\\', '/');
+                    if (resPath.startsWith("/")) {
+                        resPath = resPath.substring(1);
+                    }
+                    var is = getClass().getClassLoader().getResourceAsStream(resPath);
+                    if (is == null && !resPath.startsWith("data/")) {
+                        is = getClass().getClassLoader().getResourceAsStream("data/" + resPath);
+                    }
+                    if (is == null && configuredPath.endsWith("customer-evolution-memory.json")) {
+                        is = getClass().getClassLoader().getResourceAsStream("customer-evolution-memory.json");
+                    }
+                    java.io.InputStream stream = is;
+                    if (stream != null) {
+                        try (stream) {
+                            snapshot = objectMapper.readValue(stream, CustomerEvolutionStatusResponse.class);
+                            log.info("Loaded EvoAgentX customer evolution memory from classpath resource: {}", resPath);
+                        }
+                    }
+                }
+
                 if (snapshot != null) {
                     evolutionGeneration.set(Math.max(0, snapshot.evolutionGeneration()));
                     totalInteractions.set(Math.max(0L, snapshot.totalInteractions()));
@@ -1147,12 +1247,40 @@ public class CustomerSelfEvolutionService {
                         recentGradients.clear();
                         recentGradients.addAll(snapshot.recentGradients());
                     }
-                    log.info("Loaded EvoAgentX customer evolution memory from {} (gen={}, interactions={})",
-                            target, evolutionGeneration.get(), totalInteractions.get());
+                    log.info("Loaded EvoAgentX customer evolution memory (gen={}, interactions={}, avgQuality={})",
+                            evolutionGeneration.get(), totalInteractions.get(), snapshot.averageQualityScore());
                 }
             } catch (Exception e) {
                 log.warn("Không thể đọc bộ nhớ tự tiến hoá từ {}: {}", evo.getStoragePath(), e.getMessage());
             }
+        }
+    }
+
+    private void loadFromDiskIfEnabled() {
+        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+        if (evo == null || !evo.isEnabled() || !evo.isPersistToDisk()) {
+            return;
+        }
+        loadStateFromDisk();
+    }
+
+    private void persistToDiskIfEnabled() {
+        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+        if (evo == null || !evo.isPersistToDisk() || evo.getStoragePath() == null || evo.getStoragePath().isBlank()) {
+            return;
+        }
+        try {
+            Path target = resolveWritableStoragePath(evo.getStoragePath().strip());
+            if (target.getParent() != null) {
+                Files.createDirectories(target.getParent());
+            }
+            Path tmp = target.resolveSibling(target.getFileName().toString() + ".tmp");
+            CustomerEvolutionStatusResponse snapshot = getStatus();
+            objectMapper.writeValue(tmp.toFile(), snapshot);
+            Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
+            this.resolvedStoragePath = target;
+        } catch (Exception e) {
+            log.warn("Không thể lưu bộ nhớ tự tiến hoá xuống {}: {}", evo.getStoragePath(), e.getMessage());
         }
     }
 

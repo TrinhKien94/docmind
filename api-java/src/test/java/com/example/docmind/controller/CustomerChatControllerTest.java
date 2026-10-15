@@ -238,6 +238,20 @@ class CustomerChatControllerTest {
                 .andExpect(jsonPath("$.evolution_generation").value(3))
                 .andExpect(jsonPath("$.learned_guidelines.SALES[0].rule").value("Luôn nêu rõ ưu đãi gói năm"));
 
+        mockMvc.perform(get("/api/customer-chat/evolution/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.strategy").value("evoagentx-textgrad-mipro"))
+                .andExpect(jsonPath("$.evolution_generation").value(3))
+                .andExpect(jsonPath("$.average_quality_score").value(0.88))
+                .andExpect(jsonPath("$.learned_guidelines.SALES[0].rule").value("Luôn nêu rõ ưu đãi gói năm"));
+
+        mockMvc.perform(get("/evolution/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.enabled").value(true))
+                .andExpect(jsonPath("$.strategy").value("evoagentx-textgrad-mipro"))
+                .andExpect(jsonPath("$.evolution_generation").value(3));
+
         mockMvc.perform(post("/api/customer-chat/feedback")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""

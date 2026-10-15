@@ -61,8 +61,14 @@ public class CustomerChatController {
 
     @GetMapping({
             "/api/customer-chat/evolution",
+            "/api/customer-chat/evolution/status",
+            "/api/customer-chat/status",
             "/api/chat/customer/evolution",
-            "/api/customer-support/evolution"
+            "/api/chat/customer/evolution/status",
+            "/api/customer-support/evolution",
+            "/api/customer-support/evolution/status",
+            "/evolution",
+            "/evolution/status"
     })
     public ResponseEntity<CustomerEvolutionStatusResponse> getEvolutionStatus() {
         return ResponseEntity.ok(customerChatService.getEvolutionStatus());
