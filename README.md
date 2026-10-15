@@ -80,6 +80,11 @@ is only involved during **ingest**.
 | POST   | `/api/customer-chat/feedback` | Submit explicit customer feedback (`interaction_id`, `rating` 1..5, `helpful`, `feedback`) to trigger TextGrad guideline learning or MIPRO exemplar promotion. |
 | POST   | `/api/customer-chat/evolve` | Proactively trigger an EvoAgentX TextGrad + MIPRO optimization cycle (optionally scoped by `scenario`). |
 | DELETE | `/api/customer-chat/evolution` | Reset the self-evolving memory store to its initial state. |
+| GET    | `/api/astrbot/overview`  | Full snapshot of the AstrBot Multi-Platform Control Center (19 platform adapter types, active bots, UMO sessions, personas, LLM providers, cron jobs, extensions/MCP servers, traces, and console logs). |
+| GET/POST/PUT/DELETE | `/api/astrbot/bots/**` | Manage multi-platform bot instances (`telegram`, `discord`, `slack`, `lark`, `dingtalk`, `line`, `wecom`, `wecom_ai_bot`, `weixin_official_account`, `weixin_oc`, `qq_official`, `qq_official_webhook`, `aiocqhttp`, `satori`, `kook`, `mattermost`, `misskey`, `facebook_messenger`, `webchat`), test connections, and perform QR registration (`/api/astrbot/bot-types/{type}/registration`). |
+| GET/POST | `/api/astrbot/webhooks/platforms/{uuid}` | Unified Webhook callback verification & event ingestion across supported chat platforms. |
+| POST   | `/api/astrbot/simulate`  | Simulate multi-platform `AstrMessageEvent` and internal Star Slash Commands (`/help`, `/status`, `/reset`, `/persona`, `/scenario`, `/evolve`, `/whoami`) routed through `CustomerChatService` + Dior KB + EvoAgentX. |
+| GET/POST/DELETE | `/api/astrbot/sessions`, `/routes`, `/personas`, `/providers`, `/cron`, `/extensions`, `/logs`, `/traces` | Manage UMO session custom rules, UMO route bindings, AI Personas, LLM Provider sources, proactive Cron Jobs, Star Plugins/MCP Servers, pipeline traces, and console logs. |
 
 The exact block/chunk fields these endpoints exchange are defined in
 [`docs/canonical-schema.md`](docs/canonical-schema.md) — read that first.

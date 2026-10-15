@@ -36,6 +36,7 @@
         @refresh-documents="fetchDocuments"
         @view-detail="inspectingDoc = $event"
         @toggle-demo="toggleDemoMode"
+        @open-astrbot="handleOpenAstrBot"
       />
 
       <!-- Right Main: Chat Q&A with Citations -->
@@ -53,6 +54,7 @@
         @toggle-sidebar="toggleMobileSidebar"
         @open-evolution="handleOpenEvolution"
         @open-messenger="handleOpenMessenger"
+        @open-astrbot="handleOpenAstrBot"
       />
     </div>
 
@@ -77,7 +79,14 @@
       v-if="isMessengerModalOpen"
       :is-open="isMessengerModalOpen"
       @close="handleCloseMessenger"
+      @open-astrbot="handleSwitchMessengerToAstrBot"
       @session-updated="syncCustomerBackendConfig"
+    />
+
+    <!-- AstrBot Multi-Platform Integration & Management Dashboard Modal -->
+    <AstrBotModal
+      v-if="isAstrBotModalOpen"
+      @close="handleCloseAstrBot"
     />
   </div>
 </template>
@@ -91,6 +100,7 @@ import ChatArea from './components/ChatArea.vue'
 import DocumentDetailModal from './components/DocumentDetailModal.vue'
 import CustomerEvolutionModal from './components/CustomerEvolutionModal.vue'
 import MessengerModal from './components/MessengerModal.vue'
+import AstrBotModal from './components/AstrBotModal.vue'
 
 const documents = ref([])
 const selectedDocIds = ref([])
@@ -107,9 +117,10 @@ const customerScenarios = ref([])
 const defaultCustomerRole = ref('Khách hàng mua hàng hoặc sử dụng dịch vụ')
 const isMobileSidebarOpen = ref(false)
 
-// Modals State (Milestone 3)
+// Modals State (Milestone 3 + AstrBot Hub)
 const isEvolutionModalOpen = ref(false)
 const isMessengerModalOpen = ref(false)
+const isAstrBotModalOpen = ref(false)
 
 const pollingTimers = new Map()
 
@@ -518,6 +529,19 @@ const handleCloseMessenger = () => {
   isMessengerModalOpen.value = false
 }
 
+const handleOpenAstrBot = () => {
+  isAstrBotModalOpen.value = true
+}
+
+const handleCloseAstrBot = () => {
+  isAstrBotModalOpen.value = false
+}
+
+const handleSwitchMessengerToAstrBot = () => {
+  isMessengerModalOpen.value = false
+  isAstrBotModalOpen.value = true
+}
+
 const handleEvolutionUpdated = (newGen) => {
   if (typeof newGen === 'number') {
     evolutionGen.value = newGen
@@ -528,7 +552,9 @@ const handleEvolutionUpdated = (newGen) => {
 // Global keyboard navigation & Escape key hierarchy
 const handleKeydown = (e) => {
   if (e.key === 'Escape') {
-    if (isEvolutionModalOpen.value) {
+    if (isAstrBotModalOpen.value) {
+      handleCloseAstrBot()
+    } else if (isEvolutionModalOpen.value) {
       handleCloseEvolution()
     } else if (isMessengerModalOpen.value) {
       handleCloseMessenger()

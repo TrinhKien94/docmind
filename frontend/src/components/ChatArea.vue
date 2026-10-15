@@ -63,7 +63,20 @@
             @click="emit('open-evolution')"
           >
             <span class="action-icon">🧬</span>
-            <span class="action-label">Gen #{{ evolutionGen }}</span>
+            <span class="action-label evo-text">Gen #{{ evolutionGen }}</span>
+          </button>
+
+          <!-- AstrBot Multi-Platform Hub Modal Trigger -->
+          <button
+            class="header-action-btn btn-astrbot"
+            data-testid="open-astrbot-btn"
+            type="button"
+            title="Mở Trung tâm Điều khiển Đa Nền tảng AstrBot (19 Platform Adapters, UMO Sessions, Star Commands)"
+            @click="emit('open-astrbot')"
+          >
+            <span class="action-icon">🛰️</span>
+            <span class="action-label astrbot-text">AstrBot Hub</span>
+            <span class="messenger-dot" title="19 Platform Adapters Ready"></span>
           </button>
 
           <!-- Facebook Messenger Modal Trigger -->
@@ -382,7 +395,8 @@ const emit = defineEmits([
   'clear-chat',
   'toggle-sidebar',
   'open-evolution',
-  'open-messenger'
+  'open-messenger',
+  'open-astrbot'
 ])
 
 const chatMode = ref('customer')
@@ -756,6 +770,19 @@ defineExpose({ scrollToBottom })
 .btn-evo:hover {
   background: rgba(168, 85, 247, 0.22);
   border-color: rgba(168, 85, 247, 0.6);
+  transform: translateY(-1px);
+}
+
+.btn-astrbot {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.16), rgba(139, 92, 246, 0.14));
+  border: 1px solid rgba(99, 102, 241, 0.42);
+  color: #c7d2fe;
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.18);
+}
+
+.btn-astrbot:hover {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.28), rgba(139, 92, 246, 0.24));
+  border-color: rgba(99, 102, 241, 0.7);
   transform: translateY(-1px);
 }
 
@@ -1285,7 +1312,29 @@ textarea::placeholder {
 /* Tablet (768px–1023px) */
 @media (max-width: 1023px) {
   .header-primary-row {
-    padding: 0 14px;
+    padding: 0 10px;
+    gap: 8px;
+  }
+
+  .pulse-sparkle,
+  .header-mode-tag {
+    display: none;
+  }
+
+  .header-primary-actions {
+    gap: 5px;
+  }
+
+  .header-action-btn {
+    min-height: 44px;
+    min-width: 44px;
+    padding: 6px 8px;
+  }
+
+  .astrbot-text,
+  .messenger-text,
+  .settings-text {
+    display: none;
   }
 }
 
@@ -1319,18 +1368,19 @@ textarea::placeholder {
   }
 
   .header-primary-actions {
-    gap: 6px;
+    gap: 5px;
   }
 
   .header-action-btn {
     min-height: 44px;
     min-width: 44px;
-    padding: 6px 10px;
+    padding: 6px 8px;
   }
 
+  .astrbot-text,
   .messenger-text,
   .settings-text {
-    display: none; /* Icon-only on mobile for Messenger and Settings */
+    display: none; /* Icon-only on mobile for AstrBot, Messenger and Settings */
   }
 
   .header-secondary-row {
@@ -1419,6 +1469,17 @@ textarea::placeholder {
     width: 56px;
     height: 56px;
     margin-bottom: 14px;
+  }
+}
+
+/* Compact mobile (< 400px: 320px, 360px, 375px, 390px) */
+@media (max-width: 399px) {
+  .evo-text {
+    display: none;
+  }
+
+  .header-primary-actions {
+    gap: 4px;
   }
 }
 

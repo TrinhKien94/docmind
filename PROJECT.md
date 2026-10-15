@@ -46,25 +46,43 @@ DocMind is a multi-service intelligent document and customer consultation platfo
 - `GET /api/messenger/webhook?hub.mode=subscribe&hub.verify_token={token}&hub.challenge={challenge}` -> returns `hub.challenge` as plain text (HTTP 200) or HTTP 403.
 - `POST /api/messenger/webhook` -> handles JSON payload with `object: "page"`, returns HTTP 200 `EVENT_RECEIVED`.
 
+### Backend ↔ Frontend AstrBot Multi-Platform Control Center API Contract
+- `GET /api/astrbot/overview` -> `AstrBotOverviewResponse`:
+  `{ "enabled": boolean, "version": string, "timezone": string, "webhook_base_path": string, "stats": Map, "bot_types": List<AstrBotPlatformTypeDto> (19 adapters), "bots": List<AstrBotInstanceDto>, "sessions": List<AstrBotSessionRuleDto>, "personas": List<AstrBotPersonaDto>, "providers": List<AstrBotProviderDto>, "cron_jobs": List<AstrBotCronJobDto>, "extensions": List<AstrBotExtensionDto>, "traces": List<AstrBotTraceDto>, "logs": List<AstrBotLogEntryDto> }`
+- `POST /api/astrbot/bots`, `PUT /api/astrbot/bots/{botId}`, `PATCH|POST /api/astrbot/bots/{botId}/enabled`, `DELETE /api/astrbot/bots/{botId}`, `POST /api/astrbot/bots/{botId}/test`, `POST /api/astrbot/bot-types/{botType}/registration`
+- `GET|POST /api/astrbot/webhooks/platforms/{webhookUuid}` -> Unified Webhook callback endpoint for Telegram, Slack, Lark, LINE, WeCom, WeChat Official Account, QQ Official Webhook, Mattermost, Facebook Messenger.
+- `POST /api/astrbot/simulate` -> Multi-platform & Star Slash Command (`/help`, `/status`, `/reset`, `/persona`, `/scenario`, `/evolve`, `/whoami`) live simulator routed through `CustomerChatService` + Dior KB + EvoAgentX.
+- `GET /api/astrbot/sessions`, `POST /api/astrbot/sessions/rules`, `DELETE /api/astrbot/sessions`, `GET|POST|DELETE /api/astrbot/routes` -> UMO (`{platform_id}:{message_type}:{session_id}`) session & route management.
+- `GET|POST|PUT|DELETE /api/astrbot/personas`, `GET|POST|PUT|DELETE /api/astrbot/providers`, `GET|POST|PUT|DELETE /api/astrbot/cron`, `POST /api/astrbot/cron/{jobId}/run`, `GET|POST|PATCH|DELETE /api/astrbot/extensions`, `GET|DELETE /api/astrbot/logs`, `GET /api/astrbot/traces`.
+
 ### Frontend Component Contracts
 - `App.vue` controls:
   - `isMobileSidebarOpen` (boolean) passed to `DocumentSidebar.vue` (`isOpen` prop, `@close` event) and toggled from `ChatArea.vue` (`@toggle-sidebar` event).
   - `isEvolutionModalOpen` (boolean) toggled from `ChatArea.vue` (`@open-evolution` event) to show `CustomerEvolutionModal.vue`.
   - `isMessengerModalOpen` (boolean) toggled from `ChatArea.vue` (`@open-messenger` event) to show `MessengerModal.vue`.
+  - `isAstrBotModalOpen` (boolean) toggled from `ChatArea.vue` (`@open-astrbot` event) to show `AstrBotModal.vue` (6-tab omni-channel management dashboard).
 
 ## Code Layout
 - `D:\docmind\api-java\src\main\java\com\example\docmind\config\MessengerProperties.java`
+- `D:\docmind\api-java\src\main\java\com\example\docmind\config\AstrBotProperties.java`
 - `D:\docmind\api-java\src\main\java\com\example\docmind\dto\messenger\*`
+- `D:\docmind\api-java\src\main\java\com\example\docmind\dto\astrbot\*`
 - `D:\docmind\api-java\src\main\java\com\example\docmind\service\FacebookGraphClient.java`
 - `D:\docmind\api-java\src\main\java\com\example\docmind\service\MessengerService.java`
+- `D:\docmind\api-java\src\main\java\com\example\docmind\service\astrbot\AstrBotPlatformCatalog.java`
+- `D:\docmind\api-java\src\main\java\com\example\docmind\service\astrbot\AstrBotService.java`
 - `D:\docmind\api-java\src\main\java\com\example\docmind\controller\MessengerWebhookController.java`
+- `D:\docmind\api-java\src\main\java\com\example\docmind\controller\AstrBotController.java`
 - `D:\docmind\api-java\src\test\java\com\example\docmind\controller\MessengerWebhookControllerTest.java`
+- `D:\docmind\api-java\src\test\java\com\example\docmind\controller\AstrBotControllerTest.java`
 - `D:\docmind\api-java\src\test\java\com\example\docmind\service\MessengerServiceTest.java`
+- `D:\docmind\api-java\src\test\java\com\example\docmind\service\AstrBotServiceTest.java`
 - `D:\docmind\frontend\src\style.css`
 - `D:\docmind\frontend\src\App.vue`
 - `D:\docmind\frontend\src\components\ChatArea.vue`
 - `D:\docmind\frontend\src\components\DocumentSidebar.vue`
 - `D:\docmind\frontend\src\components\CustomerEvolutionModal.vue`
 - `D:\docmind\frontend\src\components\MessengerModal.vue`
+- `D:\docmind\frontend\src\components\AstrBotModal.vue`
 - `D:\docmind\frontend\src\api.js`
 - `D:\docmind\frontend\src\mockData.js`
