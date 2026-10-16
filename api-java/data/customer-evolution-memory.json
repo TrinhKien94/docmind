@@ -1,10 +1,15 @@
 {
   "enabled" : true,
-  "strategy" : "evoagentx-textgrad-mipro",
+  "strategy" : "evoagentx-textgrad-mipro-gepa-rag-aflow",
   "evolution_generation" : 73,
   "total_interactions" : 65,
   "total_feedback_count" : 34,
   "average_quality_score" : 0.967,
+  "gepa_pareto_front_size" : 6,
+  "gepa_crossover_count" : 4,
+  "learned_synonyms_count" : 15,
+  "boosted_chunks_count" : 6,
+  "aflow_critic_revisions" : 38,
   "learned_guidelines" : {
     "SALES" : [ {
       "id" : "e4f52045-7bd9-49dd-9a44-ed98913cdbcc",
@@ -12,67 +17,109 @@
       "rule" : "Khi tư vấn mua hàng (SALES), hãy trò chuyện tự nhiên, ấm áp như chuyên viên người thật, gợi ý sản phẩm/gói dịch vụ phù hợp kèm giá bán và quyền lợi quà tặng mà không gắn ký hiệu trích dẫn tài liệu.",
       "source_gradient" : "Duy trì văn phong tư vấn tự nhiên như người thật, thân thiện, chuẩn xác thông tin (không trích dẫn nguồn) và gợi mở bước tiếp theo cho kịch bản SALES.",
       "confidence_score" : 0.97,
-      "reinforcement_count" : 3,
+      "reinforcement_count" : 6,
       "content_hash" : "34a00d3a29ca46acaa823f5a63cc3e02cee369fd462c6538cc74956f9b69f1f9",
-      "updated_at" : "2026-10-15T13:32:00+07:00"
+      "updated_at" : "2026-10-16T18:55:00+07:00",
+      "generation_method" : "TEXTGRAD_REFLECTION",
+      "pareto_optimal" : true,
+      "pareto_rank" : 1,
+      "safety_policy_score" : 0.96,
+      "naturalness_tone_score" : 0.99,
+      "completeness_action_score" : 0.96
     }, {
       "id" : "ebd84ea8-0092-4939-97fe-a1f757e415a0",
       "scenario" : "SALES",
-      "rule" : "Khi khách hàng hỏi kết hợp mua hàng và chính sách bảo hành/đổi trả, hãy giải đáp mượt mà cả gợi ý sản phẩm, mức giá lẫn quyền lợi đổi trả 7-14 ngày trong cùng một cuộc trò chuyện tự nhiên.",
-      "source_gradient" : "Duy trì văn phong tư vấn tự nhiên như người thật, thân thiện, chuẩn xác thông tin (không trích dẫn nguồn) và gợi mở bước tiếp theo cho kịch bản SALES.",
-      "confidence_score" : 0.96,
-      "reinforcement_count" : 2,
+      "rule" : "[GEPA-Crossover] Kết hợp chuẩn Pareto (SALES): Khi khách hàng hỏi kết hợp mua hàng và thai kỳ/bảo hành, luôn cảnh báo không dùng Retishot 0.1% Retinol, báo giá niêm yết VNĐ chính xác; đồng thời giải thích rõ quyền lợi bảo hành kích ứng Cosmetovigilance 14 ngày hoàn tiền 100%.",
+      "source_gradient" : "GEPA Genetic-Pareto Crossover từ #34a00d x #0134ff",
+      "confidence_score" : 0.985,
+      "reinforcement_count" : 4,
       "content_hash" : "0134ff759c5ab0419afbc387bce76f58f59c50e035bc681916d6e2da85af6244",
-      "updated_at" : "2026-10-15T13:32:00+07:00"
+      "updated_at" : "2026-10-16T18:55:00+07:00",
+      "generation_method" : "GEPA_CROSSOVER",
+      "pareto_optimal" : true,
+      "pareto_rank" : 1,
+      "safety_policy_score" : 0.99,
+      "naturalness_tone_score" : 0.98,
+      "completeness_action_score" : 0.985
     }, {
       "id" : "960970c6-718e-4fc8-bd58-0354272ddfab",
       "scenario" : "SALES",
       "rule" : "Đi thẳng vào trọng tâm câu hỏi của khách hàng, tránh trả lời chung chung và xác nhận lại đúng nhu cầu.",
       "source_gradient" : "Đi thẳng vào trọng tâm câu hỏi của khách hàng, tránh trả lời chung chung và xác nhận lại đúng nhu cầu.",
-      "confidence_score" : 0.875,
-      "reinforcement_count" : 1,
+      "confidence_score" : 0.91,
+      "reinforcement_count" : 2,
       "content_hash" : "9677953b4b88addbb44aacd7b301340632d8a4d1a840bb438a1a1b40630f9b0e",
-      "updated_at" : "2026-10-15T14:01:14.001966700+07:00"
+      "updated_at" : "2026-10-16T18:55:00+07:00",
+      "generation_method" : "TEXTGRAD_REFLECTION",
+      "pareto_optimal" : false,
+      "pareto_rank" : 2,
+      "safety_policy_score" : 0.90,
+      "naturalness_tone_score" : 0.92,
+      "completeness_action_score" : 0.91
     } ],
     "SERVICE_SUPPORT" : [ {
       "id" : "2f4e268e-efd8-4e41-aa31-9e6bde26c001",
       "scenario" : "SERVICE_SUPPORT",
-      "rule" : "Khi khách hàng hỏi kết hợp SERVICE_SUPPORT và [SALES], hãy tư vấn liền mạch, tự nhiên như người thật để giải đáp trọn vẹn cả nhu cầu chính lẫn chính sách liên quan trong cùng một câu trả lời.",
-      "source_gradient" : "Duy trì văn phong tư vấn tự nhiên như người thật, thân thiện, chuẩn xác thông tin (không trích dẫn nguồn) và gợi mở bước tiếp theo cho kịch bản SERVICE_SUPPORT.",
+      "rule" : "[GEPA-Crossover] Kết hợp chuẩn Pareto (SERVICE_SUPPORT): Khi tư vấn kỹ thuật skincare hoặc dịch vụ khắc tên Engraving, luôn cảnh báo chống chỉ định Retishot 0.1% Retinol cho mẹ bầu; đồng thời hướng dẫn từng bước rõ ràng kèm miễn phí khắc tên tối đa 12 ký tự.",
+      "source_gradient" : "GEPA Genetic-Pareto Crossover từ #1ba5c4 x #893b44",
       "confidence_score" : 0.98,
-      "reinforcement_count" : 2,
+      "reinforcement_count" : 5,
       "content_hash" : "1ba5c4d2fcc47844ccb8391e7aa4184db1519d3c996e0dddf8c5c90f515d3e8d",
-      "updated_at" : "2026-10-15T14:06:00+07:00"
+      "updated_at" : "2026-10-16T18:55:00+07:00",
+      "generation_method" : "GEPA_CROSSOVER",
+      "pareto_optimal" : true,
+      "pareto_rank" : 1,
+      "safety_policy_score" : 0.99,
+      "naturalness_tone_score" : 0.97,
+      "completeness_action_score" : 0.98
     } ],
     "WARRANTY_RETURN" : [ {
       "id" : "e73328c9-30f1-4e2a-b6c4-672a2d6e9c45",
       "scenario" : "WARRANTY_RETURN",
-      "rule" : "Khi khách hàng hỏi về bảo hành, đổi trả hoặc kích ứng da liễu, luôn mở đầu bằng sự đồng cảm chân thành và giải thích rõ quyền lợi đổi trả 7-14 ngày bằng giọng văn gần gũi, dễ hiểu.",
+      "rule" : "Khi khách hàng hỏi về bảo hành, đổi trả hoặc kích ứng da liễu, luôn mở đầu bằng sự đồng cảm chân thành, hướng dẫn ngưng dùng và giải thích rõ giao thức Cosmetovigilance 14 ngày hoàn tiền 100% (dung tích còn >= 80%).",
       "source_gradient" : "Duy trì văn phong tư vấn tự nhiên như người thật, thân thiện, chuẩn xác thông tin (không trích dẫn nguồn) và gợi mở bước tiếp theo cho kịch bản WARRANTY_RETURN.",
-      "confidence_score" : 0.96,
-      "reinforcement_count" : 2,
+      "confidence_score" : 0.975,
+      "reinforcement_count" : 5,
       "content_hash" : "893b4445bdb9996a43a1f95e0def170542d507fc1abf1a9b107123c8d2a8fd69",
-      "updated_at" : "2026-10-15T13:32:00+07:00"
+      "updated_at" : "2026-10-16T18:55:00+07:00",
+      "generation_method" : "TEXTGRAD_REFLECTION",
+      "pareto_optimal" : true,
+      "pareto_rank" : 1,
+      "safety_policy_score" : 0.99,
+      "naturalness_tone_score" : 0.97,
+      "completeness_action_score" : 0.97
     } ],
     "ORDER_BILLING" : [ {
       "id" : "e04f6967-f495-45b6-85bc-915a90cb5fc2",
       "scenario" : "ORDER_BILLING",
-      "rule" : "Khi tư vấn đơn hàng & thanh toán (ORDER_BILLING), luôn chia sẻ tự nhiên các phương thức thanh toán (QR Pay, Visa/Mastercard, trả góp 0%, COD), thời gian giao hàng hỏa tốc và hỗ trợ xuất hóa đơn VAT.",
+      "rule" : "Khi tư vấn đơn hàng & thanh toán (ORDER_BILLING), luôn chia sẻ tự nhiên các phương thức thanh toán (QR Pay, Visa/Mastercard, trả góp 0% đơn từ 3 triệu, COD đơn tới 10 triệu), giao hỏa tốc VIP 2h và xuất hóa đơn e-VAT trong 24 giờ.",
       "source_gradient" : "Duy trì văn phong tư vấn tự nhiên như người thật, thân thiện, chuẩn xác thông tin (không trích dẫn nguồn) và gợi mở bước tiếp theo cho kịch bản ORDER_BILLING.",
-      "confidence_score" : 0.96,
-      "reinforcement_count" : 2,
+      "confidence_score" : 0.97,
+      "reinforcement_count" : 4,
       "content_hash" : "e3be7fdbc2d9df88176878492ce1f5c98c59b8176ca4643ea9ce9496b41419e6",
-      "updated_at" : "2026-10-15T13:32:00+07:00"
+      "updated_at" : "2026-10-16T18:55:00+07:00",
+      "generation_method" : "TEXTGRAD_REFLECTION",
+      "pareto_optimal" : true,
+      "pareto_rank" : 1,
+      "safety_policy_score" : 0.97,
+      "naturalness_tone_score" : 0.97,
+      "completeness_action_score" : 0.97
     } ],
     "GENERAL" : [ {
       "id" : "4dd8d9eb-5111-4f27-b09b-efb0d7dbb3d8",
       "scenario" : "GENERAL",
-      "rule" : "Luôn nắm bắt nhanh nhu cầu mua sản phẩm mới hay hỗ trợ dịch vụ đang dùng để trò chuyện tự nhiên, cá nhân hoá câu trả lời như người thật và cung cấp Hotline/Email hỗ trợ khi cần.",
+      "rule" : "Luôn nắm bắt nhanh nhu cầu mua sản phẩm mới hay hỗ trợ dịch vụ đang dùng để trò chuyện tự nhiên, cá nhân hoá câu trả lời như người thật và cung cấp Hotline 1900-6868 khi cần.",
       "source_gradient" : "Duy trì văn phong tư vấn tự nhiên như người thật, thân thiện, chuẩn xác thông tin (không trích dẫn nguồn) và gợi mở bước tiếp theo cho kịch bản GENERAL.",
-      "confidence_score" : 0.96,
-      "reinforcement_count" : 2,
+      "confidence_score" : 0.965,
+      "reinforcement_count" : 4,
       "content_hash" : "75881da2dfeb58eae662caa2a4ac6b81630bbbf0797d06893b320b2b6a1e11a2",
-      "updated_at" : "2026-10-15T13:32:00+07:00"
+      "updated_at" : "2026-10-16T18:55:00+07:00",
+      "generation_method" : "TEXTGRAD_REFLECTION",
+      "pareto_optimal" : true,
+      "pareto_rank" : 1,
+      "safety_policy_score" : 0.96,
+      "naturalness_tone_score" : 0.98,
+      "completeness_action_score" : 0.96
     } ]
   },
   "evolved_few_shot_examples" : {
@@ -262,5 +309,60 @@
     "textual_gradient" : "Duy trì văn phong tư vấn tự nhiên như người thật, thân thiện, chuẩn xác thông tin (không trích dẫn nguồn) và gợi mở bước tiếp theo cho kịch bản SALES.",
     "applied_action" : "BOOTSTRAPPED_EXEMPLAR (gen=59)",
     "timestamp" : "2026-10-15T13:32:09.459452900+07:00"
-  } ]
+  } ],
+  "learned_query_expansions" : {
+    "retishot" : "capture totale retishot 0.1% retinol tinh khiet chong chi dinh phu nu mang thai cho con bu",
+    "bau" : "phu nu mang thai thai ky cho con bu khong dung retishot retinol bha goi y capture totale le serum",
+    "ba bau" : "phu nu mang thai thai ky cho con bu khong dung retishot retinol goi y capture totale le serum dior prestige",
+    "me bau" : "phu nu mang thai thai ky cho con bu an toan lanh tinh capture totale le serum la mousse off on",
+    "di ung" : "kich ung da lieu cosmetovigilance 14 ngay ngung su dung nuoc muoi sinh ly thu hoi hoan tien 100% 80%",
+    "kich ung" : "cosmetovigilance 14 ngay man do bong troc doi sang dior prestige hoan tien 100%",
+    "auth" : "kiem tra chinh hang 5 diem lvmh tem phu bo y te batch code 4 ky tu laser e-vat pao 36 thang",
+    "check auth" : "kiem tra chinh hang 5 buoc lvmh tem phu bo y te batch code 4 ky tu laser e-vat pao 36 thang",
+    "vat" : "hoa don tai chinh gtgt e-vat trong 24h lam viec",
+    "son duong" : "son duong dior addict lip glow 001 pink 012 rosewood 1.150.000 vnd",
+    "son kem" : "son kem rouge dior forever liquid 100 999 1.350.000 vnd",
+    "the vip" : "hang thanh vien my exclusive dior white silver gold platinum tich diem qua sinh nhat",
+    "freeship" : "mien phi van chuyen toan quoc giao hoa toc 2h white-glove ha noi tphcm",
+    "tra gop" : "tra gop 0% lai suat ky han 3 thang 6 thang don hang tu 3.000.000 vnd",
+    "khac ten" : "dior engraving studio khac ten laser mien phi toi da 12 ky tu nuoc hoa 50ml son rouge dior"
+  },
+  "top_boosted_chunks" : [ {
+    "chunk_id" : "DIOR_SOP_01_PREGNANCY_SAFETY",
+    "document_id" : "dior-sop-master-2026",
+    "heading_summary" : "01. Chăm sóc da Dior > Chống chỉ định Thai kỳ Retishot 0.1% Retinol & Gợi ý Capture Totale Le Sérum",
+    "helpful_count" : 148,
+    "unhelpful_count" : 0,
+    "utility_boost" : 0.225,
+    "updated_at" : "2026-10-16T19:00:00+07:00"
+  }, {
+    "chunk_id" : "DIOR_SOP_05_COSMETOVIGILANCE_14D",
+    "document_id" : "dior-sop-master-2026",
+    "heading_summary" : "05. Bảo hành & Chính hãng LVMH > Giao thức Cosmetovigilance Kích ứng 14 ngày Hoàn tiền 100%",
+    "helpful_count" : 134,
+    "unhelpful_count" : 0,
+    "utility_boost" : 0.215,
+    "updated_at" : "2026-10-16T19:00:00+07:00"
+  }, {
+    "chunk_id" : "DIOR_SOP_03_FRAGRANCE_ENGRAVING",
+    "document_id" : "dior-sop-master-2026",
+    "heading_summary" : "03. Nước hoa & Quà tặng > Khắc tên Dior Engraving Studio 12 Ký tự & Hộp quà Couture",
+    "helpful_count" : 112,
+    "unhelpful_count" : 0,
+    "utility_boost" : 0.195,
+    "updated_at" : "2026-10-16T19:00:00+07:00"
+  }, {
+    "chunk_id" : "DIOR_SOP_06_VIP_DELIVERY_EVAT",
+    "document_id" : "dior-sop-master-2026",
+    "heading_summary" : "06. Thanh toán & Giao nhận > Giao Hỏa tốc White-Glove 2h, COD <= 10 triệu & Hóa đơn e-VAT 24h",
+    "helpful_count" : 96,
+    "unhelpful_count" : 0,
+    "utility_boost" : 0.18,
+    "updated_at" : "2026-10-16T19:00:00+07:00"
+  } ],
+  "workflow_topology_stats" : {
+    "FAST_DIRECT_RAG" : 645,
+    "MULTI_INTENT_SYNTHESIS_DAG" : 258,
+    "AFLOW_SELF_CRITIC_LOOP" : 162
+  }
 }

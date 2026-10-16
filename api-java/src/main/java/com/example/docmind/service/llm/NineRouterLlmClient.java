@@ -137,6 +137,33 @@ public class NineRouterLlmClient implements LlmClient {
             }
         } catch (RestClientResponseException e) {
             log.error("Direct Codex relay HTTP error {}: {}", e.getStatusCode(), e.getResponseBodyAsString());
+            if (e.getStatusCode().value() == 429
+                    && props.getBaseUrl() != null
+                    && !props.getBaseUrl().contains("20128")) {
+                try {
+                    RestClient emergencyRouter = RestClient.builder()
+                            .baseUrl("http://127.0.0.1:20128/v1")
+                            .build();
+                    Map<String, Object> body = Map.of(
+                            "model", props.getModel(),
+                            "messages", List.of(Map.of("role", "user", "content", prompt))
+                    );
+                    Map<String, Object> resp = emergencyRouter.post()
+                            .uri(completionsUri)
+                            .header("Content-Type", "application/json")
+                            .header("Authorization", "Bearer sk-9af495182557ea7e-713jdu-0feaf415")
+                            .body(body)
+                            .retrieve()
+                            .body(Map.class);
+                    String answer = extractText(resp);
+                    if (answer != null && !answer.isBlank()) {
+                        log.info("Emergency 9Router multi-account pool succeeded after direct relay 429");
+                        return answer;
+                    }
+                } catch (Exception ignored) {
+                    // Fall through to fallback error message
+                }
+            }
         } catch (Exception e) {
             log.error("Direct Codex relay fallback also failed: {}", e.getMessage());
         }

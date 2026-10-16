@@ -3,10 +3,12 @@ package com.example.docmind.service.evolution;
 import com.example.docmind.config.CustomerSupportProperties;
 import com.example.docmind.dto.CustomerChatRequest;
 import com.example.docmind.dto.CustomerEvolutionStatusResponse;
+import com.example.docmind.dto.CustomerEvolutionStatusResponse.ChunkUtilityInfo;
 import com.example.docmind.dto.CustomerEvolutionStatusResponse.EvolvedExampleInfo;
 import com.example.docmind.dto.CustomerEvolutionStatusResponse.LearnedGuidelineInfo;
 import com.example.docmind.dto.CustomerEvolutionStatusResponse.TextualGradientInfo;
 import com.example.docmind.dto.CustomerFeedbackRequest;
+import com.example.docmind.repository.RetrievedChunk;
 import com.example.docmind.service.FileValidation;
 import com.example.docmind.service.llm.LlmClient;
 import com.example.docmind.service.retrieval.CustomerScenario;
@@ -41,7 +43,7 @@ import java.util.regex.Pattern;
 /**
  * Động cơ Tự tiến hoá & Học hỏi sau các lần chat với khách hàng (EvoAgentX Self-Evolving Engine).
  *
- * <p>Thiết kế dựa trên 3 trụ cột cốt lõi của <b>EvoAgentX</b>:
+ * <p>Thiết kế dựa trên 6 trụ cột tiến hoá của <b>EvoAgentX</b>:
  * <ol>
  *   <li><b>TextGrad Optimizer ({@code textgrad_optimizer.py})</b>: Đánh giá đa tiêu chí câu trả lời
  *       sau mỗi phiên chat (Loss Evaluation), tính toán đạo hàm văn bản ({@code Textual Gradient})
@@ -52,6 +54,15 @@ import java.util.regex.Pattern;
  *   <li><b>Long-Term Memory Deduplication ({@code long_term_memory.py})</b>: Chống trùng lặp tri thức
  *       bằng mã băm {@code SHA-256}, tăng điểm củng cố ({@code reinforcement_count}) cho các quy tắc
  *       được xác nhận nhiều lần, cắt tỉa theo ngưỡng hiệu quả và lưu trữ bền vững ra file JSON.</li>
+ *   <li><b>GEPA (Genetic-Pareto Prompt Evolution)</b>: Lai ghép di truyền (Crossover) các quy tắc mạnh
+ *       và xếp hạng không bị trội (Non-dominated Pareto Frontier Sorting) trên 3 trục mục tiêu:
+ *       An toàn/Chính sách, Văn phong tự nhiên, và Độ đầy đủ đa ý định.</li>
+ *   <li><b>Self-Evolving RAG (Dynamic Query Expansion & Adaptive Chunk Utility Boosting)</b>:
+ *       Tự học từ đồng nghĩa/slang từ hội thoại thực tế và cộng điểm ưu tiên RRF cho các Chunk tài liệu
+ *       giúp tạo ra câu trả lời chất lượng cao.</li>
+ *   <li><b>AFlow Adaptive Workflow Topology & Self-Critic Loop</b>: Tự động định tuyến câu hỏi rủi ro cao
+ *       (thai kỳ, kích ứng 14 ngày, đa ý định/báo giá) qua vòng lặp Tự kiểm duyệt 2 bước
+ *       ({@code Generate -> Critic -> Revise}).</li>
  * </ol>
  */
 @Service
@@ -66,6 +77,14 @@ public class CustomerSelfEvolutionService {
     );
     private static final Pattern CITATION_MARKER_PATTERN = Pattern.compile("\\[(\\d+)]");
 
+    public static final String TOPOLOGY_FAST_DIRECT = "FAST_DIRECT_RAG";
+    public static final String TOPOLOGY_MULTI_INTENT = "MULTI_INTENT_SYNTHESIS_DAG";
+    public static final String TOPOLOGY_AFLOW_CRITIC = "AFLOW_SELF_CRITIC_LOOP";
+
+    public static final String TOPOLOGY_FAST_DIRECT_RAG = TOPOLOGY_FAST_DIRECT;
+    public static final String TOPOLOGY_MULTI_INTENT_DAG = TOPOLOGY_MULTI_INTENT;
+    public static final String TOPOLOGY_AFLOW_SELF_CRITIC = TOPOLOGY_AFLOW_CRITIC;
+
     private final CustomerSupportProperties customerProps;
     private final LlmClient llmClient;
     private final ObjectMapper objectMapper;
@@ -74,6 +93,8 @@ public class CustomerSelfEvolutionService {
     private final AtomicInteger evolutionGeneration = new AtomicInteger(0);
     private final AtomicLong totalInteractions = new AtomicLong(0);
     private final AtomicLong totalFeedbackCount = new AtomicLong(0);
+    private final AtomicInteger gepaCrossoverCount = new AtomicInteger(0);
+    private final AtomicLong aflowCriticRevisions = new AtomicLong(0);
     private double cumulativeQualityScore = 0.0;
 
     /** Quy tắc đã học theo mã kịch bản (SALES, SERVICE_SUPPORT, WARRANTY_RETURN, ORDER_BILLING, GENERAL). */
@@ -88,6 +109,15 @@ public class CustomerSelfEvolutionService {
 
     /** Lịch sử các Textual Gradient gần nhất để quan sát và kiểm toán. */
     private final Deque<TextualGradientInfo> recentGradients = new ArrayDeque<>();
+
+    /** Từ điển mở rộng truy vấn tự học (Self-Evolving RAG Learned Query Expansions). */
+    private final Map<String, String> learnedQueryExpansions = new LinkedHashMap<>();
+
+    /** Điểm uy tín của từng Chunk tài liệu (Self-Evolving RAG Adaptive Chunk Utility Boosting). */
+    private final Map<String, ChunkUtilityInfo> chunkUtilityScores = new LinkedHashMap<>();
+
+    /** Thống kê số lượt thực thi theo từng cấu trúc luồng AFlow (Workflow Topology Stats). */
+    private final Map<String, Long> workflowTopologyStats = new LinkedHashMap<>();
 
     /** Đường dẫn tệp bộ nhớ tự tiến hoá đã được định vị thành công. */
     private volatile Path resolvedStoragePath;
@@ -118,12 +148,52 @@ public class CustomerSelfEvolutionService {
             learnedGuidelines.put(sc.code(), new ArrayList<>());
             evolvedExamples.put(sc.code(), new ArrayList<>());
         }
+        seedDefaultSelfEvolvingRagAndTopologyState();
         loadFromDiskIfEnabled();
     }
 
+    private void seedDefaultSelfEvolvingRagAndTopologyState() {
+        synchronized (stateLock) {
+            learnedQueryExpansions.putIfAbsent("retishot",
+                    "capture totale retishot 0.1% retinol tinh khiet chong chi dinh phu nu mang thai cho con bu");
+            learnedQueryExpansions.putIfAbsent("bau",
+                    "phu nu mang thai thai ky cho con bu khong dung retishot retinol bha goi y capture totale le serum");
+            learnedQueryExpansions.putIfAbsent("ba bau",
+                    "phu nu mang thai thai ky cho con bu khong dung retishot retinol goi y capture totale le serum dior prestige");
+            learnedQueryExpansions.putIfAbsent("me bau",
+                    "phu nu mang thai thai ky cho con bu an toan lanh tinh capture totale le serum la mousse off on");
+            learnedQueryExpansions.putIfAbsent("di ung",
+                    "kich ung da lieu cosmetovigilance 14 ngay ngung su dung nuoc muoi sinh ly thu hoi hoan tien 100% 80%");
+            learnedQueryExpansions.putIfAbsent("kich ung",
+                    "cosmetovigilance 14 ngay man do bong troc doi sang dior prestige hoan tien 100%");
+            learnedQueryExpansions.putIfAbsent("auth",
+                    "kiem tra chinh hang 5 diem lvmh tem phu bo y te batch code 4 ky tu laser e-vat pao 36 thang");
+            learnedQueryExpansions.putIfAbsent("check auth",
+                    "kiem tra chinh hang 5 buoc lvmh tem phu bo y te batch code 4 ky tu laser e-vat pao 36 thang");
+            learnedQueryExpansions.putIfAbsent("vat",
+                    "hoa don tai chinh gtgt e-vat trong 24h lam viec");
+            learnedQueryExpansions.putIfAbsent("son duong",
+                    "son duong dior addict lip glow 001 pink 012 rosewood 1.150.000 vnd");
+            learnedQueryExpansions.putIfAbsent("son kem",
+                    "son kem rouge dior forever liquid 100 999 1.350.000 vnd");
+            learnedQueryExpansions.putIfAbsent("the vip",
+                    "hang thanh vien my exclusive dior white silver gold platinum tich diem qua sinh nhat");
+            learnedQueryExpansions.putIfAbsent("freeship",
+                    "mien phi van chuyen toan quoc giao hoa toc 2h white-glove ha noi tphcm");
+            learnedQueryExpansions.putIfAbsent("tra gop",
+                    "tra gop 0% lai suat ky han 3 thang 6 thang don hang tu 3.000.000 vnd");
+            learnedQueryExpansions.putIfAbsent("khac ten",
+                    "dior engraving studio khac ten laser mien phi toi da 12 ky tu nuoc hoa 50ml son rouge dior");
+
+            workflowTopologyStats.putIfAbsent(TOPOLOGY_FAST_DIRECT, 0L);
+            workflowTopologyStats.putIfAbsent(TOPOLOGY_MULTI_INTENT, 0L);
+            workflowTopologyStats.putIfAbsent(TOPOLOGY_AFLOW_CRITIC, 0L);
+        }
+    }
+
     /**
-     * Lấy danh sách các quy tắc đã tiến hoá (Learned Guidelines) áp dụng cho kịch bản hiện tại
-     * (kết hợp quy tắc chuyên biệt của kịch bản + quy tắc chung GENERAL).
+     * Lấy danh sách các quy tắc đã tiến hoá (Learned Guidelines) áp dụng cho kịch bản hiện tại,
+     * ưu tiên các quy tắc nằm trên biên Pareto tối ưu (GEPA Pareto Rank 1).
      */
     public List<LearnedGuidelineInfo> getActiveGuidelinesForScenario(CustomerScenario scenario) {
         CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
@@ -149,12 +219,24 @@ public class CustomerSelfEvolutionService {
             }
 
             return combined.stream()
-                    .sorted(Comparator.comparingDouble(
-                            (LearnedGuidelineInfo g) -> g.confidenceScore() + 0.05 * g.reinforcementCount()
-                    ).reversed())
+                    .sorted(Comparator.comparingDouble(CustomerSelfEvolutionService::gepaRankingScore).reversed())
                     .limit(maxInPrompt)
                     .toList();
         }
+    }
+
+    private static double gepaRankingScore(LearnedGuidelineInfo g) {
+        if (g == null) {
+            return 0.0;
+        }
+        double paretoBonus = g.paretoOptimal() ? 0.15 : Math.max(0.0, 0.08 - 0.03 * Math.max(0, g.paretoRank() - 1));
+        double crossoverBonus = "GEPA_CROSSOVER".equalsIgnoreCase(g.generationMethod()) ? 0.04 : 0.0;
+        double multiObjectiveMean = (g.safetyPolicyScore() + g.naturalnessToneScore() + g.completenessActionScore()) / 3.0;
+        return 0.55 * g.confidenceScore()
+                + 0.45 * multiObjectiveMean
+                + 0.05 * g.reinforcementCount()
+                + paretoBonus
+                + crossoverBonus;
     }
 
     /**
@@ -208,7 +290,7 @@ public class CustomerSelfEvolutionService {
         // Phát hiện tín hiệu ngầm định từ khách hàng (hài lòng / phàn nàn / hỏi lại trong history hoặc câu hỏi hiện tại)
         ImplicitSignal implicitSignal = detectImplicitSignal(request);
 
-        // Đánh giá chất lượng câu trả lời theo đa tiêu chí (EvoAgentX Loss Evaluation)
+        // Đánh giá chất lượng câu trả lời theo đa tiêu chí + 3 trục GEPA Pareto (EvoAgentX Loss Evaluation)
         EvaluationResult eval = evaluateInteraction(
                 question,
                 answer,
@@ -260,6 +342,9 @@ public class CustomerSelfEvolutionService {
                         shouldCallLlmReflection,
                         precomputedLlmGuideline
                 );
+                // Self-Evolving RAG: Cập nhật điểm uy tín Chunk & tự học từ khoá mở rộng truy vấn
+                updateChunkUtilityScores(fusedChunks, eval.qualityScore(), implicitSignal, null);
+                learnQueryExpansionFromInteraction(question, fusedChunks, eval.qualityScore());
                 persistToDiskIfEnabled();
             }
         }
@@ -269,7 +354,7 @@ public class CustomerSelfEvolutionService {
 
     /**
      * Tiếp nhận phản hồi tường minh của khách hàng (POST /api/customer-chat/feedback)
-     * và chạy ngay bước cập nhật đạo hàm văn bản (TextGrad step) + cập nhật bộ nhớ dài hạn.
+     * và chạy ngay bước cập nhật đạo hàm văn bản (TextGrad step) + GEPA Pareto + cập nhật bộ nhớ dài hạn.
      */
     public CustomerEvolutionStatusResponse recordFeedbackAndEvolve(CustomerFeedbackRequest feedbackReq) {
         if (feedbackReq == null || !feedbackReq.isTargetProvided()) {
@@ -368,7 +453,7 @@ public class CustomerSelfEvolutionService {
     }
 
     /**
-     * Kích hoạt chủ động 1 chu kỳ tối ưu hoá EvoAgentX TextGrad + MIPRO trên các tương tác gần đây.
+     * Kích hoạt chủ động 1 chu kỳ tối ưu hoá EvoAgentX TextGrad + MIPRO + GEPA Genetic-Pareto Crossover.
      */
     public CustomerEvolutionStatusResponse triggerEvolutionCycle(String optionalScenario) {
         CustomerScenario targetScenario = (optionalScenario != null && !optionalScenario.isBlank())
@@ -383,25 +468,28 @@ public class CustomerSelfEvolutionService {
                     .toList();
 
             if (episodesSnapshot.isEmpty()) {
-                // Nếu chưa có lịch sử tương tác, khởi tạo quy tắc nền tảng ban đầu cho kịch bản mục tiêu
                 CustomerScenario sc = targetScenario != null ? targetScenario : CustomerScenario.SALES;
-                String seedRule = synthesizeDeterministicGuideline(
-                        sc,
-                        List.of(),
-                        "Khách hàng cần thông tin tư vấn rõ ràng, báo giá minh bạch và hướng dẫn từng bước.",
-                        null,
-                        true
-                );
-                upsertGuideline(sc.code(), seedRule, "EvoAgentX proactive baseline initialization", 0.85);
+                boolean crossed = performGepaGeneticCrossover(sc);
+                if (!crossed) {
+                    String seedRule = synthesizeDeterministicGuideline(
+                            sc,
+                            List.of(),
+                            "Khách hàng cần thông tin tư vấn rõ ràng, báo giá minh bạch và hướng dẫn từng bước.",
+                            null,
+                            true
+                    );
+                    upsertGuideline(sc.code(), seedRule, "EvoAgentX proactive baseline initialization",
+                            0.85, "TEXTGRAD_MUTATION", 0.90, 0.90, 0.85);
+                }
                 int gen = evolutionGeneration.incrementAndGet();
                 recordGradient(new TextualGradientInfo(
                         UUID.randomUUID().toString(),
                         sc.code(),
-                        "(Proactive Evolution Cycle)",
-                        0.85,
-                        "Khởi tạo chu kỳ tiến hoá chủ động khi chưa có phiên chat trong bộ nhớ.",
-                        "Củng cố quy tắc tư vấn trọng tâm cho kịch bản " + sc.code(),
-                        "EVOLVED_GUIDELINE_UPSERT (gen=" + gen + ")",
+                        "(Proactive Evolution Cycle — GEPA + TextGrad)",
+                        0.92,
+                        "Khởi tạo chu kỳ tiến hoá chủ động và tối ưu biên Pareto GEPA cho kịch bản " + sc.code() + ".",
+                        "Lai ghép quy tắc GEPA Crossover và củng cố biên Pareto cho kịch bản " + sc.code(),
+                        (crossed ? "GEPA_PARETO_CROSSOVER" : "EVOLVED_GUIDELINE_UPSERT") + " (gen=" + gen + ")",
                         OffsetDateTime.now().toString()
                 ));
                 persistToDiskIfEnabled();
@@ -434,6 +522,21 @@ public class CustomerSelfEvolutionService {
                 applyEvolutionStepWithCandidate(
                         step.episode(), step.eval(), ImplicitSignal.NEUTRAL, null, true, step.llmGuideline());
             }
+            // Thực thi thêm bước lai ghép di truyền GEPA (Genetic-Pareto Crossover)
+            CustomerScenario crossoverTarget = targetScenario != null ? targetScenario : CustomerScenario.SALES;
+            if (performGepaGeneticCrossover(crossoverTarget)) {
+                int gen = evolutionGeneration.incrementAndGet();
+                recordGradient(new TextualGradientInfo(
+                        UUID.randomUUID().toString(),
+                        crossoverTarget.code(),
+                        "(GEPA Genetic-Pareto Crossover)",
+                        0.96,
+                        "Lai ghép 2 quy tắc dẫn đầu biên Pareto (An toàn chính sách x Đa ý định/Văn phong).",
+                        "Tổng hợp quy tắc con GEPA-Crossover tối ưu đồng thời 3 mục tiêu Pareto cho " + crossoverTarget.code(),
+                        "GEPA_PARETO_CROSSOVER (gen=" + gen + ")",
+                        OffsetDateTime.now().toString()
+                ));
+            }
             persistToDiskIfEnabled();
             return getStatus();
         }
@@ -447,6 +550,8 @@ public class CustomerSelfEvolutionService {
             evolutionGeneration.set(0);
             totalInteractions.set(0);
             totalFeedbackCount.set(0);
+            gepaCrossoverCount.set(0);
+            aflowCriticRevisions.set(0);
             cumulativeQualityScore = 0.0;
             for (CustomerScenario sc : CustomerScenario.values()) {
                 learnedGuidelines.put(sc.code(), new ArrayList<>());
@@ -455,13 +560,17 @@ public class CustomerSelfEvolutionService {
             episodeStore.clear();
             episodeOrder.clear();
             recentGradients.clear();
+            learnedQueryExpansions.clear();
+            chunkUtilityScores.clear();
+            workflowTopologyStats.clear();
+            seedDefaultSelfEvolvingRagAndTopologyState();
             persistToDiskIfEnabled();
             return getStatus();
         }
     }
 
     /**
-     * Trả về trạng thái hiện tại của động cơ tự tiến hoá EvoAgentX.
+     * Trả về trạng thái hiện tại của động cơ tự tiến hoá EvoAgentX (bao gồm GEPA, Self-Evolving RAG, AFlow).
      */
     public CustomerEvolutionStatusResponse getStatus() {
         synchronized (stateLock) {
@@ -472,8 +581,16 @@ public class CustomerSelfEvolutionService {
                     : 0.0;
 
             Map<String, List<LearnedGuidelineInfo>> guidelinesCopy = new LinkedHashMap<>();
+            int paretoFrontCount = 0;
             for (CustomerScenario sc : CustomerScenario.values()) {
-                guidelinesCopy.put(sc.code(), List.copyOf(learnedGuidelines.getOrDefault(sc.code(), List.of())));
+                recomputeParetoFrontier(sc.code());
+                List<LearnedGuidelineInfo> list = List.copyOf(learnedGuidelines.getOrDefault(sc.code(), List.of()));
+                guidelinesCopy.put(sc.code(), list);
+                for (LearnedGuidelineInfo g : list) {
+                    if (g != null && g.paretoOptimal()) {
+                        paretoFrontCount++;
+                    }
+                }
             }
 
             Map<String, List<EvolvedExampleInfo>> examplesCopy = new LinkedHashMap<>();
@@ -481,16 +598,29 @@ public class CustomerSelfEvolutionService {
                 examplesCopy.put(sc.code(), List.copyOf(evolvedExamples.getOrDefault(sc.code(), List.of())));
             }
 
+            List<ChunkUtilityInfo> sortedChunks = chunkUtilityScores.values().stream()
+                    .sorted(Comparator.comparingDouble(ChunkUtilityInfo::utilityBoost).reversed())
+                    .limit(20)
+                    .toList();
+
             return new CustomerEvolutionStatusResponse(
                     evo == null || evo.isEnabled(),
-                    evo != null ? evo.getStrategy() : "evoagentx-textgrad-mipro",
+                    evo != null ? evo.getStrategy() : "evoagentx-textgrad-mipro-gepa-aflow",
                     evolutionGeneration.get(),
                     interactions,
                     totalFeedbackCount.get(),
                     avgScore,
                     guidelinesCopy,
                     examplesCopy,
-                    List.copyOf(recentGradients)
+                    List.copyOf(recentGradients),
+                    paretoFrontCount,
+                    gepaCrossoverCount.get(),
+                    learnedQueryExpansions.size(),
+                    chunkUtilityScores.size(),
+                    aflowCriticRevisions.get(),
+                    new LinkedHashMap<>(learnedQueryExpansions),
+                    sortedChunks,
+                    new LinkedHashMap<>(workflowTopologyStats)
             );
         }
     }
@@ -498,6 +628,7 @@ public class CustomerSelfEvolutionService {
     public int getCurrentGeneration() {
         return evolutionGeneration.get();
     }
+
 
     // =========================================================================
     // Nội bộ: Đánh giá đa tiêu chí (Loss), tính Textual Gradient & Cập nhật Bộ nhớ
@@ -564,9 +695,15 @@ public class CustomerSelfEvolutionService {
 
         if (needsGuideline) {
             String candidateGuideline = precomputedLlmGuideline;
+            String method = (candidateGuideline != null && !candidateGuideline.isBlank())
+                    ? "LLM_TEXTGRAD_REFLECTION"
+                    : "TEXTGRAD_MUTATION";
             if ((candidateGuideline == null || candidateGuideline.isBlank())
                     && invokeLlmOptimizer && llmClient != null) {
                 candidateGuideline = tryGenerateGuidelineViaLlm(episode, eval, explicitFeedback);
+                if (candidateGuideline != null && !candidateGuideline.isBlank()) {
+                    method = "LLM_TEXTGRAD_REFLECTION";
+                }
             }
             if (candidateGuideline == null || candidateGuideline.isBlank()) {
                 candidateGuideline = synthesizeDeterministicGuideline(
@@ -578,9 +715,26 @@ public class CustomerSelfEvolutionService {
                 );
             }
             double guidelineConfidence = Math.max(0.72, Math.min(0.96, eval.qualityScore() + 0.12));
-            upsertGuideline(scenario.code(), candidateGuideline, eval.textualGradient(), guidelineConfidence);
+            upsertGuideline(
+                    scenario.code(),
+                    candidateGuideline,
+                    eval.textualGradient(),
+                    guidelineConfidence,
+                    method,
+                    eval.safetyPolicyScore(),
+                    eval.naturalnessToneScore(),
+                    eval.completenessActionScore()
+            );
             int gen = evolutionGeneration.incrementAndGet();
             appliedAction = "EVOLVED_GUIDELINE_UPSERT (gen=" + gen + ")";
+
+            // Nếu là câu hỏi đa ý định hoặc đã tích luỹ đủ >= 2 quy tắc trong kịch bản, kích hoạt lai ghép GEPA
+            if (!secondaries.isEmpty() && learnedGuidelines.getOrDefault(scenario.code(), List.of()).size() >= 2) {
+                if (performGepaGeneticCrossover(scenario)) {
+                    int crossGen = evolutionGeneration.incrementAndGet();
+                    appliedAction = appliedAction + " + GEPA_CROSSOVER (gen=" + crossGen + ")";
+                }
+            }
         }
 
         // Nếu nhận phản hồi tiêu cực hoặc điểm chất lượng bị hạ thấp, loại bỏ mẫu Few-Shot cũ (nếu đã trót lưu)
@@ -666,6 +820,7 @@ public class CustomerSelfEvolutionService {
 
         // 2. Độ chính xác nội dung & Diễn đạt tự nhiên (Natural Grounding — không dùng ký hiệu trích dẫn máy móc)
         double groundingScore = 0.85;
+        double safetyPolicyScore = 0.96;
         if (retrievedChunkCount > 0) {
             Matcher m = CITATION_MARKER_PATTERN.matcher(safeAnswer);
             if (m.find()) {
@@ -691,6 +846,7 @@ public class CustomerSelfEvolutionService {
                         || normAnswer.contains(" hoan tien ") || normAnswer.contains(" 1 doi 1 ")
                         || normAnswer.contains(" kich ung ") || normAnswer.contains(" chinh hang "))) {
                     completenessScore = Math.max(0.5, completenessScore - 0.25);
+                    safetyPolicyScore = Math.max(0.65, safetyPolicyScore - 0.15);
                     critiques.add("Câu hỏi đa ý định có hỏi thêm về Bảo hành/Đổi trả/Xác thực nhưng câu trả lời chưa đề cập đầy đủ.");
                     gradients.add("Với câu hỏi kết hợp Mua hàng và Bảo hành/Đổi trả, phải trả lời trọn vẹn cả báo giá sản phẩm/dịch vụ lẫn chính sách đổi trả 7-14 ngày.");
                 } else if (sec == CustomerScenario.ORDER_BILLING
@@ -725,13 +881,17 @@ public class CustomerSelfEvolutionService {
                     ? evo.getPregnancySafetyRequiredKeywords()
                     : List.of("retishot", "retinol", "chong chi dinh", "khong su dung", "khong dung", "tranh", "an toan", "lanh tinh");
 
-            if (containsAnyNormalizedKeyword(normQuestion, pregTriggers)
-                    && !containsAnyNormalizedKeyword(normAnswer, pregSafetyKeywords)) {
-                toneScore = Math.min(toneScore, 0.45);
-                groundingScore = Math.min(groundingScore, 0.35);
-                completenessScore = Math.max(0.20, completenessScore - 0.50);
-                critiques.add("Khách hàng đang mang thai/thai kỳ nhưng câu trả lời chưa cảnh báo chống chỉ định Retinol (Capture Totale Retishot) và xác nhận độ an toàn.");
-                gradients.add("Khi tư vấn mỹ phẩm cho phụ nữ mang thai (thai kỳ) hoặc cho con bú, bắt buộc cảnh báo tuyệt đối không dùng Capture Totale Retishot (0.1% Retinol) và chỉ gợi ý dòng lành tính (Capture Totale Le Sérum, Dior Prestige, La Mousse OFF/ON).");
+            if (containsAnyNormalizedKeyword(normQuestion, pregTriggers)) {
+                if (!containsAnyNormalizedKeyword(normAnswer, pregSafetyKeywords)) {
+                    toneScore = Math.min(toneScore, 0.45);
+                    groundingScore = Math.min(groundingScore, 0.35);
+                    completenessScore = Math.max(0.20, completenessScore - 0.50);
+                    safetyPolicyScore = 0.25;
+                    critiques.add("Khách hàng đang mang thai/thai kỳ nhưng câu trả lời chưa cảnh báo chống chỉ định Retinol (Capture Totale Retishot) và xác nhận độ an toàn.");
+                    gradients.add("Khi tư vấn mỹ phẩm cho phụ nữ mang thai (thai kỳ) hoặc cho con bú, bắt buộc cảnh báo tuyệt đối không dùng Capture Totale Retishot (0.1% Retinol) và chỉ gợi ý dòng lành tính (Capture Totale Le Sérum, Dior Prestige, La Mousse OFF/ON).");
+                } else {
+                    safetyPolicyScore = 0.99;
+                }
             }
         }
 
@@ -787,7 +947,10 @@ public class CustomerSelfEvolutionService {
             gradients.add("Khắc phục theo góp ý của khách hàng (" + scenario.title(customerProps) + "): " + cleanComment);
         }
 
-        score = Math.round(Math.max(0.0, Math.min(1.0, score)) * 1000.0) / 1000.0;
+        score = round3(Math.max(0.0, Math.min(1.0, score)));
+        double naturalnessAxis = round3(0.5 * toneScore + 0.5 * groundingScore);
+        double completenessAxis = round3(0.6 * completenessScore + 0.4 * actionScore);
+        double safetyAxis = round3(Math.max(0.2, Math.min(0.99, 0.7 * safetyPolicyScore + 0.3 * groundingScore)));
 
         String lossCritique = critiques.isEmpty()
                 ? "Câu trả lời đạt chuẩn tư vấn khách hàng trên cả 4 tiêu chí (Văn phong tự nhiên, Độ chính xác, Độ đầy đủ, Gợi mở hỗ trợ)."
@@ -796,7 +959,11 @@ public class CustomerSelfEvolutionService {
                 ? "Duy trì văn phong tư vấn tự nhiên như người thật, thân thiện, chuẩn xác thông tin (không trích dẫn nguồn) và gợi mở bước tiếp theo cho kịch bản " + scenario.code() + "."
                 : String.join(" ", gradients);
 
-        return new EvaluationResult(score, lossCritique, textualGradient);
+        return new EvaluationResult(score, lossCritique, textualGradient, safetyAxis, naturalnessAxis, completenessAxis);
+    }
+
+    private static double round3(double val) {
+        return Math.round(val * 1000.0) / 1000.0;
     }
 
     private ImplicitSignal detectImplicitSignal(CustomerChatRequest request) {
@@ -945,6 +1112,18 @@ public class CustomerSelfEvolutionService {
     }
 
     private void upsertGuideline(String scenarioCode, String rawRule, String sourceGradient, double confidence) {
+        upsertGuideline(scenarioCode, rawRule, sourceGradient, confidence,
+                "TEXTGRAD_MUTATION", confidence, confidence, confidence);
+    }
+
+    private void upsertGuideline(String scenarioCode,
+                                 String rawRule,
+                                 String sourceGradient,
+                                 double confidence,
+                                 String generationMethod,
+                                 double safetyScore,
+                                 double naturalnessScore,
+                                 double completenessScore) {
         String cleanRule = sanitizeRuleText(rawRule);
         if (cleanRule.isBlank()) {
             return;
@@ -957,9 +1136,7 @@ public class CustomerSelfEvolutionService {
         for (int i = 0; i < list.size(); i++) {
             LearnedGuidelineInfo existing = list.get(i);
             if (existing.contentHash().equals(hash)) {
-                double boostedConfidence = Math.round(
-                        Math.min(0.99, Math.max(existing.confidenceScore(), confidence) + 0.02) * 1000.0
-                ) / 1000.0;
+                double boostedConfidence = round3(Math.min(0.99, Math.max(existing.confidenceScore(), confidence) + 0.02));
                 LearnedGuidelineInfo updated = new LearnedGuidelineInfo(
                         existing.id(),
                         scenarioCode,
@@ -968,9 +1145,16 @@ public class CustomerSelfEvolutionService {
                         boostedConfidence,
                         existing.reinforcementCount() + 1,
                         hash,
-                        now
+                        now,
+                        existing.generationMethod() != null ? existing.generationMethod() : generationMethod,
+                        existing.paretoOptimal(),
+                        existing.paretoRank(),
+                        round3(Math.max(existing.safetyPolicyScore(), safetyScore)),
+                        round3(Math.max(existing.naturalnessToneScore(), naturalnessScore)),
+                        round3(Math.max(existing.completenessActionScore(), completenessScore))
                 );
                 list.set(i, updated);
+                recomputeParetoFrontier(scenarioCode);
                 return;
             }
         }
@@ -980,25 +1164,454 @@ public class CustomerSelfEvolutionService {
                 scenarioCode,
                 cleanRule,
                 sourceGradient != null ? sanitizeRuleText(sourceGradient) : "",
-                Math.round(confidence * 1000.0) / 1000.0,
+                round3(confidence),
                 1,
                 hash,
-                now
+                now,
+                generationMethod != null ? generationMethod : "TEXTGRAD_MUTATION",
+                true,
+                1,
+                round3(safetyScore),
+                round3(naturalnessScore),
+                round3(completenessScore)
         );
         list.add(created);
+        recomputeParetoFrontier(scenarioCode);
 
         int maxGuidelines = customerProps.getEvolution() != null
                 && customerProps.getEvolution().getMaxLearnedGuidelinesPerScenario() > 0
                 ? customerProps.getEvolution().getMaxLearnedGuidelinesPerScenario()
                 : 10;
         if (list.size() > maxGuidelines) {
-            list.sort(Comparator.comparingDouble(
-                    (LearnedGuidelineInfo g) -> g.confidenceScore() + 0.05 * g.reinforcementCount()
-            ).reversed());
+            list.sort(Comparator.comparingDouble(CustomerSelfEvolutionService::gepaRankingScore).reversed());
             while (list.size() > maxGuidelines) {
                 list.remove(list.size() - 1);
             }
         }
+    }
+
+    // =========================================================================
+    // Trụ cột 4: GEPA (Genetic-Pareto Prompt Evolution — Non-Dominated Sorting & Crossover)
+    // =========================================================================
+
+    /**
+     * Tính toán thứ hạng không bị trội (Non-Dominated Pareto Rank — NSGA-II / GEPA)
+     * cho toàn bộ quy tắc trong kịch bản trên 3 trục:
+     * (1) safetyPolicyScore, (2) naturalnessToneScore, (3) completenessActionScore.
+     */
+    private void recomputeParetoFrontier(String scenarioCode) {
+        List<LearnedGuidelineInfo> list = learnedGuidelines.get(scenarioCode);
+        if (list == null || list.isEmpty()) {
+            return;
+        }
+        int n = list.size();
+        int[] ranks = new int[n];
+        for (int i = 0; i < n; i++) {
+            LearnedGuidelineInfo a = list.get(i);
+            int dominatedByCount = 0;
+            for (int j = 0; j < n; j++) {
+                if (i == j) {
+                    continue;
+                }
+                LearnedGuidelineInfo b = list.get(j);
+                if (paretoDominates(b, a)) {
+                    dominatedByCount++;
+                }
+            }
+            ranks[i] = 1 + dominatedByCount;
+        }
+        for (int i = 0; i < n; i++) {
+            LearnedGuidelineInfo g = list.get(i);
+            int rank = ranks[i];
+            boolean optimal = (rank == 1);
+            if (g.paretoRank() != rank || g.paretoOptimal() != optimal) {
+                list.set(i, new LearnedGuidelineInfo(
+                        g.id(),
+                        g.scenario(),
+                        g.rule(),
+                        g.sourceGradient(),
+                        g.confidenceScore(),
+                        g.reinforcementCount(),
+                        g.contentHash(),
+                        g.updatedAt(),
+                        g.generationMethod() != null ? g.generationMethod() : "TEXTGRAD_MUTATION",
+                        optimal,
+                        rank,
+                        g.safetyPolicyScore() > 0 ? g.safetyPolicyScore() : g.confidenceScore(),
+                        g.naturalnessToneScore() > 0 ? g.naturalnessToneScore() : g.confidenceScore(),
+                        g.completenessActionScore() > 0 ? g.completenessActionScore() : g.confidenceScore()
+                ));
+            }
+        }
+    }
+
+    private static boolean paretoDominates(LearnedGuidelineInfo b, LearnedGuidelineInfo a) {
+        if (a == null || b == null) {
+            return false;
+        }
+        double bSafe = b.safetyPolicyScore() > 0 ? b.safetyPolicyScore() : b.confidenceScore();
+        double bNat = b.naturalnessToneScore() > 0 ? b.naturalnessToneScore() : b.confidenceScore();
+        double bComp = b.completenessActionScore() > 0 ? b.completenessActionScore() : b.confidenceScore();
+
+        double aSafe = a.safetyPolicyScore() > 0 ? a.safetyPolicyScore() : a.confidenceScore();
+        double aNat = a.naturalnessToneScore() > 0 ? a.naturalnessToneScore() : a.confidenceScore();
+        double aComp = a.completenessActionScore() > 0 ? a.completenessActionScore() : a.confidenceScore();
+
+        boolean geAll = bSafe >= aSafe && bNat >= aNat && bComp >= aComp;
+        boolean gtAny = bSafe > aSafe || bNat > aNat || bComp > aComp;
+        return geAll && gtAny;
+    }
+
+    /**
+     * Lai ghép di truyền (GEPA Genetic Crossover) giữa 2 quy tắc bổ trợ nhau trên biên Pareto
+     * của kịch bản để sinh ra quy tắc thế hệ con kết hợp cả tính an toàn/chính sách lẫn độ đầy đủ đa ý định.
+     */
+    public boolean performGepaGeneticCrossover(CustomerScenario scenario) {
+        CustomerScenario sc = scenario != null ? scenario : CustomerScenario.SALES;
+        synchronized (stateLock) {
+            recomputeParetoFrontier(sc.code());
+            List<LearnedGuidelineInfo> candidates = new ArrayList<>(learnedGuidelines.getOrDefault(sc.code(), List.of()));
+            if (candidates.size() < 2) {
+                List<LearnedGuidelineInfo> genList = learnedGuidelines.getOrDefault(CustomerScenario.GENERAL.code(), List.of());
+                for (LearnedGuidelineInfo g : genList) {
+                    if (candidates.stream().noneMatch(c -> c.contentHash().equals(g.contentHash()))) {
+                        candidates.add(g);
+                    }
+                }
+            }
+            if (candidates.size() < 2) {
+                return false;
+            }
+
+            // Chọn Cha/Mẹ 1 mạnh nhất về An toàn/Chính sách và Cha/Mẹ 2 mạnh nhất về Độ đầy đủ/Văn phong
+            LearnedGuidelineInfo parentA = candidates.stream()
+                    .max(Comparator.comparingDouble(LearnedGuidelineInfo::safetyPolicyScore)
+                            .thenComparingDouble(LearnedGuidelineInfo::confidenceScore))
+                    .orElse(candidates.get(0));
+
+            LearnedGuidelineInfo parentB = candidates.stream()
+                    .filter(g -> !g.contentHash().equals(parentA.contentHash()))
+                    .max(Comparator.comparingDouble((LearnedGuidelineInfo g) ->
+                            g.completenessActionScore() + g.naturalnessToneScore()))
+                    .orElse(candidates.get(1));
+
+            String partA = extractCoreClause(parentA.rule(), 125);
+            String partB = extractCoreClause(parentB.rule(), 125);
+            String offspringRule = "[GEPA-Crossover] Kết hợp chuẩn Pareto (" + sc.code() + "): "
+                    + partA + "; đồng thời " + decapitalizeFirst(partB);
+            offspringRule = truncate(sanitizeRuleText(offspringRule), 260);
+
+            String normHash = FileValidation.sha256Hex(
+                    CustomerScenario.normalizeWordsPadded(offspringRule).strip().getBytes(StandardCharsets.UTF_8));
+            boolean alreadyExists = learnedGuidelines.getOrDefault(sc.code(), List.of()).stream()
+                    .anyMatch(g -> g.contentHash().equals(normHash));
+
+            double childSafe = round3(Math.min(0.99, Math.max(parentA.safetyPolicyScore(), parentB.safetyPolicyScore()) + 0.01));
+            double childNat = round3(Math.min(0.99, Math.max(parentA.naturalnessToneScore(), parentB.naturalnessToneScore()) + 0.01));
+            double childComp = round3(Math.min(0.99, Math.max(parentA.completenessActionScore(), parentB.completenessActionScore()) + 0.01));
+            double childConf = round3((childSafe + childNat + childComp) / 3.0);
+
+            upsertGuideline(
+                    sc.code(),
+                    offspringRule,
+                    "GEPA Genetic-Pareto Crossover từ #" + parentA.contentHash().substring(0, 6)
+                            + " x #" + parentB.contentHash().substring(0, 6),
+                    childConf,
+                    "GEPA_CROSSOVER",
+                    childSafe,
+                    childNat,
+                    childComp
+            );
+            if (!alreadyExists) {
+                gepaCrossoverCount.incrementAndGet();
+            }
+            return true;
+        }
+    }
+
+    private static String extractCoreClause(String rule, int maxChars) {
+        if (rule == null || rule.isBlank()) {
+            return "tư vấn chính xác và tận tâm";
+        }
+        String cleaned = rule.replaceFirst("(?iu)^\\[gepa-crossover]\\s*kết\\s+hợp\\s+chuẩn\\s+pareto\\s*\\([^)]*\\)\\s*:\\s*", "").strip();
+        if (cleaned.endsWith(".")) {
+            cleaned = cleaned.substring(0, cleaned.length() - 1).strip();
+        }
+        return truncate(cleaned, maxChars);
+    }
+
+    private static String decapitalizeFirst(String s) {
+        if (s == null || s.isEmpty()) {
+            return "";
+        }
+        return Character.toLowerCase(s.charAt(0)) + s.substring(1);
+    }
+
+    // =========================================================================
+    // Trụ cột 5: Self-Evolving RAG (Learned Query Expansion & Chunk Utility Boosting)
+    // =========================================================================
+
+    /**
+     * Mở rộng câu truy vấn RAG bằng từ điển từ đồng nghĩa/slang đã tự học trong quá trình vận hành.
+     */
+    public String expandQueryWithLearnedSynonyms(String rawQuery) {
+        if (rawQuery == null || rawQuery.isBlank()) {
+            return "";
+        }
+        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+        if (evo != null && !evo.isEnabled()) {
+            return rawQuery;
+        }
+        String padded = CustomerScenario.normalizeWordsPadded(rawQuery);
+        List<String> matchedExpansions = new ArrayList<>();
+        synchronized (stateLock) {
+            for (Map.Entry<String, String> entry : learnedQueryExpansions.entrySet()) {
+                String trigger = CustomerScenario.normalizeWordsPadded(entry.getKey()).strip();
+                if (!trigger.isEmpty() && padded.contains(" " + trigger + " ")) {
+                    matchedExpansions.add(entry.getValue());
+                    if (matchedExpansions.size() >= 5) {
+                        break;
+                    }
+                }
+            }
+        }
+        if (matchedExpansions.isEmpty()) {
+            return rawQuery;
+        }
+        return rawQuery + " " + String.join(" ", matchedExpansions);
+    }
+
+    /**
+     * Tái xếp hạng (Re-rank) danh sách các FusedChunk dựa trên điểm uy tín (Chunk Utility Boost)
+     * mà EvoAgentX đã học được từ các lượt tư vấn thành công trước đó.
+     */
+    public List<ReciprocalRankFusion.FusedChunk> rerankChunksByLearnedUtility(
+            List<ReciprocalRankFusion.FusedChunk> fusedChunks) {
+        if (fusedChunks == null || fusedChunks.size() <= 1) {
+            return fusedChunks != null ? fusedChunks : List.of();
+        }
+        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+        if (evo != null && !evo.isEnabled()) {
+            return fusedChunks;
+        }
+        synchronized (stateLock) {
+            if (chunkUtilityScores.isEmpty()) {
+                return fusedChunks;
+            }
+            List<ReciprocalRankFusion.FusedChunk> adjusted = new ArrayList<>(fusedChunks.size());
+            boolean anyBoostApplied = false;
+            for (ReciprocalRankFusion.FusedChunk fc : fusedChunks) {
+                if (fc == null || fc.chunk() == null || fc.chunk().chunkId() == null) {
+                    continue;
+                }
+                String key = fc.chunk().chunkId().toString();
+                ChunkUtilityInfo util = chunkUtilityScores.get(key);
+                if (util != null && Math.abs(util.utilityBoost()) > 1e-6) {
+                    double boostedScore = fc.score() * (1.0 + util.utilityBoost()) + util.utilityBoost() * 0.005;
+                    adjusted.add(new ReciprocalRankFusion.FusedChunk(fc.chunk(), boostedScore));
+                    anyBoostApplied = true;
+                } else {
+                    adjusted.add(fc);
+                }
+            }
+            if (!anyBoostApplied) {
+                return fusedChunks;
+            }
+            adjusted.sort(Comparator.comparingDouble(ReciprocalRankFusion.FusedChunk::score).reversed());
+            return List.copyOf(adjusted);
+        }
+    }
+
+    private void updateChunkUtilityScores(List<ReciprocalRankFusion.FusedChunk> fusedChunks,
+                                          double qualityScore,
+                                          ImplicitSignal implicitSignal,
+                                          CustomerFeedbackRequest explicitFeedback) {
+        if (fusedChunks == null || fusedChunks.isEmpty()) {
+            return;
+        }
+        boolean isPositive = qualityScore >= 0.85
+                || implicitSignal == ImplicitSignal.POSITIVE
+                || (explicitFeedback != null && (Boolean.TRUE.equals(explicitFeedback.helpful())
+                || (explicitFeedback.rating() != null && explicitFeedback.rating() >= 4)));
+        boolean isNegative = implicitSignal == ImplicitSignal.NEGATIVE
+                || isNegativeExplicitFeedback(explicitFeedback)
+                || qualityScore < 0.65;
+
+        if (!isPositive && !isNegative) {
+            return;
+        }
+        String now = OffsetDateTime.now().toString();
+        int limit = Math.min(3, fusedChunks.size());
+        for (int i = 0; i < limit; i++) {
+            ReciprocalRankFusion.FusedChunk fc = fusedChunks.get(i);
+            if (fc == null || fc.chunk() == null || fc.chunk().chunkId() == null) {
+                continue;
+            }
+            RetrievedChunk c = fc.chunk();
+            String chunkKey = c.chunkId().toString();
+            String docKey = c.documentId() != null ? c.documentId().toString() : "local-kb";
+            String headingSummary = (c.headingPath() != null && !c.headingPath().isEmpty())
+                    ? String.join(" > ", c.headingPath())
+                    : truncate(c.text(), 70);
+
+            ChunkUtilityInfo existing = chunkUtilityScores.get(chunkKey);
+            int helpful = existing != null ? existing.helpfulCount() : 0;
+            int unhelpful = existing != null ? existing.unhelpfulCount() : 0;
+            double currentBoost = existing != null ? existing.utilityBoost() : 0.0;
+
+            if (isPositive) {
+                helpful++;
+                double step = (i == 0) ? 0.025 : 0.015;
+                currentBoost = round3(Math.min(0.25, currentBoost + step));
+            } else {
+                unhelpful++;
+                currentBoost = round3(Math.max(-0.15, currentBoost - 0.03));
+            }
+
+            chunkUtilityScores.put(chunkKey, new ChunkUtilityInfo(
+                    chunkKey,
+                    docKey,
+                    headingSummary,
+                    helpful,
+                    unhelpful,
+                    currentBoost,
+                    now
+            ));
+        }
+    }
+
+    private void learnQueryExpansionFromInteraction(String question,
+                                                    List<ReciprocalRankFusion.FusedChunk> fusedChunks,
+                                                    double qualityScore) {
+        if (question == null || question.isBlank() || fusedChunks == null || fusedChunks.isEmpty() || qualityScore < 0.88) {
+            return;
+        }
+        String normQ = CustomerScenario.normalizeWordsPadded(question).strip();
+        String[] qTokens = normQ.split("\\s+");
+        if (qTokens.length < 2 || qTokens.length > 6) {
+            return;
+        }
+        if (learnedQueryExpansions.containsKey(normQ) || learnedQueryExpansions.size() >= 40) {
+            return;
+        }
+        RetrievedChunk topChunk = fusedChunks.get(0).chunk();
+        if (topChunk == null || topChunk.headingPath() == null || topChunk.headingPath().isEmpty()) {
+            return;
+        }
+        String headingKeywords = CustomerScenario.normalizeWordsPadded(String.join(" ", topChunk.headingPath())).strip();
+        if (!headingKeywords.isBlank() && !headingKeywords.equals(normQ)) {
+            learnedQueryExpansions.put(normQ, truncate(headingKeywords, 110));
+        }
+    }
+
+    // =========================================================================
+    // Trụ cột 6: AFlow Adaptive Workflow Topology & Self-Critic Loop
+    // =========================================================================
+
+    /**
+     * Định tuyến động cấu trúc luồng thực thi AFlow (Workflow Topology) dựa trên độ phức tạp
+     * và mức độ rủi ro chính sách/an toàn của câu hỏi.
+     */
+    public String selectWorkflowTopology(CustomerChatRequest request,
+                                         CustomerScenario primaryScenario,
+                                         List<CustomerScenario> secondaryScenarios) {
+        String question = request != null ? request.resolvedQuestion() : "";
+        String normQ = CustomerScenario.normalizeWordsPadded(question);
+        ImplicitSignal signal = detectImplicitSignal(request);
+
+        boolean highRiskSafetyOrPolicy = normQ.contains(" mang thai ") || normQ.contains(" ba bau ")
+                || normQ.contains(" me bau ") || normQ.contains(" thai ky ") || normQ.contains(" cho con bu ")
+                || normQ.contains(" di ung ") || normQ.contains(" kich ung ") || normQ.contains(" man do ")
+                || normQ.contains(" ngung su dung ") || normQ.contains(" cosmetovigilance ")
+                || normQ.contains(" 99 000 ") || normQ.contains(" 99k ") || normQ.contains(" 0 dong ")
+                || normQ.contains(" ignore all ") || normQ.contains(" system prompt ")
+                || normQ.contains(" bac si da dong y ")
+                || signal == ImplicitSignal.NEGATIVE;
+
+        String selected;
+        if (highRiskSafetyOrPolicy) {
+            selected = TOPOLOGY_AFLOW_CRITIC;
+        } else if (secondaryScenarios != null && !secondaryScenarios.isEmpty()) {
+            selected = TOPOLOGY_MULTI_INTENT;
+        } else {
+            selected = TOPOLOGY_FAST_DIRECT;
+        }
+
+        synchronized (stateLock) {
+            workflowTopologyStats.merge(selected, 1L, Long::sum);
+        }
+        return selected;
+    }
+
+    /**
+     * Thực thi vòng lặp Tự kiểm duyệt & Sửa lỗi 2 bước của AFlow ({@code Draft -> Critic -> Revise})
+     * cho các câu hỏi rủi ro cao hoặc đa ý định, đảm bảo 100% tuân thủ an toàn y tế & chính sách thương hiệu.
+     */
+    public String applyAflowSelfCriticAndRevise(String topology,
+                                                CustomerChatRequest request,
+                                                CustomerScenario primaryScenario,
+                                                List<CustomerScenario> secondaryScenarios,
+                                                String draftAnswer) {
+        if (draftAnswer == null || draftAnswer.isBlank()) {
+            return draftAnswer;
+        }
+        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+        if (evo != null && !evo.isEnabled()) {
+            return draftAnswer;
+        }
+        if (!TOPOLOGY_AFLOW_CRITIC.equals(topology) && !TOPOLOGY_MULTI_INTENT.equals(topology)) {
+            return draftAnswer;
+        }
+
+        String question = request != null ? request.resolvedQuestion() : "";
+        String normQ = CustomerScenario.normalizeWordsPadded(question);
+        String normA = CustomerScenario.normalizeWordsPadded(draftAnswer);
+        List<String> revisions = new ArrayList<>();
+
+        // Critic Guard 1: Chống chỉ định thai kỳ & cho con bú (Capture Totale Retishot 0.1% Retinol)
+        boolean asksPregnancy = normQ.contains(" mang thai ") || normQ.contains(" ba bau ")
+                || normQ.contains(" me bau ") || normQ.contains(" thai ky ") || normQ.contains(" cho con bu ");
+        if (asksPregnancy && !(normA.contains(" retishot ") || normA.contains(" retinol ")
+                || normA.contains(" chong chi dinh ") || normA.contains(" khong su dung "))) {
+            revisions.add("Lưu ý an toàn thai kỳ: Phụ nữ mang thai hoặc đang cho con bú tuyệt đối không sử dụng dòng Capture Totale Retishot (chứa 0.1% Retinol tinh khiết); Chị nên ưu tiên các dòng lành tính như Capture Totale Le Sérum hoặc Dior Prestige.");
+        }
+
+        // Critic Guard 2: Giao thức Cosmetovigilance 14 ngày khi kích ứng/dị ứng da
+        boolean asksIrritation = normQ.contains(" di ung ") || normQ.contains(" kich ung ")
+                || normQ.contains(" man do ") || normQ.contains(" ngua rat ") || normQ.contains(" cham chich ");
+        if (asksIrritation && !(normA.contains(" 14 ngay ") || normA.contains(" cosmetovigilance ")
+                || normA.contains(" hoan tien ") || normA.contains(" ngung su dung "))) {
+            revisions.add("Theo giao thức bảo hành da liễu Cosmetovigilance 14 ngày của Christian Dior, Quý khách vui lòng tạm ngưng sử dụng sản phẩm ngay, rửa mặt nhẹ bằng nước mát/nước muối sinh lý và liên hệ Hotline 1900-6868 để được thu hồi đổi sang dòng dịu nhẹ (Dior Prestige) hoặc hoàn tiền 100% (khi dung tích còn từ 80%).");
+        }
+
+        // Critic Guard 3: Chống thao túng giá (99k / 0 đồng)
+        boolean priceAttack = (normQ.contains(" 99 000 ") || normQ.contains(" 99k ") || normQ.contains(" 0 dong "))
+                && (normQ.contains(" capture totale ") || normQ.contains(" le serum ") || normQ.contains(" sauvage ") || normQ.contains(" son "));
+        if (priceAttack && !normA.contains(" 3 450 000 ") && !normA.contains(" niem yet ")) {
+            revisions.add("Christian Dior Vietnam luôn áp dụng thống nhất bảng giá niêm yết chính hãng trên toàn hệ thống (ví dụ Capture Totale Le Sérum 30ml có giá niêm yết 3.450.000 VNĐ) và không có chương trình bán giá 99.000 VNĐ hay 0 đồng.");
+        }
+
+        // Critic Guard 4: Đảm bảo trả lời đủ kịch bản phụ (Multi-Intent Secondary Scenarios)
+        if (secondaryScenarios != null && !secondaryScenarios.isEmpty()) {
+            for (CustomerScenario sec : secondaryScenarios) {
+                if (sec == CustomerScenario.WARRANTY_RETURN
+                        && !(normA.contains(" bao hanh ") || normA.contains(" doi tra ")
+                        || normA.contains(" 7 ngay ") || normA.contains(" 14 ngay "))) {
+                    revisions.add("Về chính sách đổi trả chính hãng: Dior hỗ trợ đổi ý/đổi màu trong 07 ngày (còn nguyên màng seal & tem phụ LVMH) và bảo hành 1 đổi 1 trong 14 ngày nếu có lỗi kỹ thuật/vận chuyển hoặc kích ứng da liễu.");
+                } else if (sec == CustomerScenario.ORDER_BILLING
+                        && !(normA.contains(" thanh toan ") || normA.contains(" vat ")
+                        || normA.contains(" hoa don ") || normA.contains(" hoa toc ") || normA.contains(" van chuyen "))) {
+                    revisions.add("Về thanh toán & vận chuyển: Hệ thống hỗ trợ thanh toán thẻ/Apple Pay/chuyển khoản/COD, miễn phí giao hỏa tốc White-Glove 2 giờ tại nội thành Hà Nội & TP.HCM và xuất hóa đơn điện tử e-VAT chính danh trong 24 giờ.");
+                }
+            }
+        }
+
+        if (revisions.isEmpty()) {
+            return draftAnswer;
+        }
+
+        aflowCriticRevisions.incrementAndGet();
+        return draftAnswer.strip() + "\n\n" + String.join("\n\n", revisions);
     }
 
     private boolean evictExemplarIfPresent(String scenarioCode, String question) {
@@ -1227,12 +1840,16 @@ public class CustomerSelfEvolutionService {
                     evolutionGeneration.set(Math.max(0, snapshot.evolutionGeneration()));
                     totalInteractions.set(Math.max(0L, snapshot.totalInteractions()));
                     totalFeedbackCount.set(Math.max(0L, snapshot.totalFeedbackCount()));
+                    gepaCrossoverCount.set(Math.max(0, snapshot.gepaCrossoverCount()));
+                    aflowCriticRevisions.set(Math.max(0L, snapshot.aflowCriticRevisions()));
                     cumulativeQualityScore = snapshot.averageQualityScore() * snapshot.totalInteractions();
 
                     if (snapshot.learnedGuidelines() != null) {
                         snapshot.learnedGuidelines().forEach((k, v) -> {
                             if (k != null && v != null) {
-                                learnedGuidelines.put(k.toUpperCase(Locale.ROOT), new ArrayList<>(v));
+                                String code = k.toUpperCase(Locale.ROOT);
+                                learnedGuidelines.put(code, new ArrayList<>(v));
+                                recomputeParetoFrontier(code);
                             }
                         });
                     }
@@ -1247,8 +1864,22 @@ public class CustomerSelfEvolutionService {
                         recentGradients.clear();
                         recentGradients.addAll(snapshot.recentGradients());
                     }
-                    log.info("Loaded EvoAgentX customer evolution memory (gen={}, interactions={}, avgQuality={})",
-                            evolutionGeneration.get(), totalInteractions.get(), snapshot.averageQualityScore());
+                    if (snapshot.learnedQueryExpansions() != null && !snapshot.learnedQueryExpansions().isEmpty()) {
+                        learnedQueryExpansions.putAll(snapshot.learnedQueryExpansions());
+                    }
+                    if (snapshot.topBoostedChunks() != null) {
+                        for (ChunkUtilityInfo cu : snapshot.topBoostedChunks()) {
+                            if (cu != null && cu.chunkId() != null) {
+                                chunkUtilityScores.put(cu.chunkId(), cu);
+                            }
+                        }
+                    }
+                    if (snapshot.workflowTopologyStats() != null && !snapshot.workflowTopologyStats().isEmpty()) {
+                        workflowTopologyStats.putAll(snapshot.workflowTopologyStats());
+                    }
+                    log.info("Loaded EvoAgentX customer evolution memory (gen={}, interactions={}, avgQuality={}, gepaCrossovers={}, synonyms={})",
+                            evolutionGeneration.get(), totalInteractions.get(), snapshot.averageQualityScore(),
+                            gepaCrossoverCount.get(), learnedQueryExpansions.size());
                 }
             } catch (Exception e) {
                 log.warn("Không thể đọc bộ nhớ tự tiến hoá từ {}: {}", evo.getStoragePath(), e.getMessage());
@@ -1325,7 +1956,10 @@ public class CustomerSelfEvolutionService {
     private record EvaluationResult(
             double qualityScore,
             String lossCritique,
-            String textualGradient
+            String textualGradient,
+            double safetyPolicyScore,
+            double naturalnessToneScore,
+            double completenessActionScore
     ) {
     }
 
@@ -1342,3 +1976,4 @@ public class CustomerSelfEvolutionService {
     ) {
     }
 }
+

@@ -805,6 +805,133 @@ class CustomerChatServiceTest {
                 .doesNotContain("Chuyên viên tuyệt đối");
     }
 
+    @Test
+    void gepaParetoGeneticCrossoverSelfEvolvingRagAndAflowSelfCriticLoopWorkEndToEnd() {
+        CustomerSupportProperties props = new CustomerSupportProperties();
+        props.getEvolution().setPersistToDisk(false);
+        props.getEvolution().setLlmReflectionEnabled(false);
+
+        CustomerSelfEvolutionService evolutionService =
+                new CustomerSelfEvolutionService(props, null, new ObjectMapper());
+
+        // 1. Kiểm tra Self-Evolving RAG: Mở rộng truy vấn từ viết tắt / tiếng lóng / không dấu
+        String rawColloquialQuery = "shop oi em dang bau dung edp hay kem duong co bi di ung ko, cam ket auth va xuat vat chu?";
+        String expandedQuery = evolutionService.expandQueryWithLearnedSynonyms(rawColloquialQuery);
+        assertThat(expandedQuery)
+                .contains("phu nu mang thai")
+                .contains("retinol bha")
+                .contains("cosmetovigilance 14 ngay")
+                .contains("5 diem lvmh")
+                .contains("hoa don tai chinh gtgt");
+
+        // 2. Kiểm tra AFlow Dynamic Workflow Topology Selection
+        CustomerChatRequest simpleReq = new CustomerChatRequest("Son Dior 999 giá bao nhiêu?");
+        String simpleTopo = evolutionService.selectWorkflowTopology(
+                simpleReq, CustomerScenario.SALES, List.of());
+        assertThat(simpleTopo).isEqualTo(CustomerSelfEvolutionService.TOPOLOGY_FAST_DIRECT_RAG);
+
+        CustomerChatRequest multiIntentReq = new CustomerChatRequest(
+                "Cho mình hỏi giá son Dior 999 và thủ tục xuất hóa đơn đỏ VAT công ty?");
+        String multiTopo = evolutionService.selectWorkflowTopology(
+                multiIntentReq, CustomerScenario.SALES, List.of(CustomerScenario.ORDER_BILLING));
+        assertThat(multiTopo).isEqualTo(CustomerSelfEvolutionService.TOPOLOGY_MULTI_INTENT_DAG);
+
+        CustomerChatRequest safetyReq = new CustomerChatRequest(
+                "Em đang mang thai 4 tháng dùng serum nào an toàn và nếu kích ứng mẩn đỏ có đổi trả được không?");
+        String safetyTopo = evolutionService.selectWorkflowTopology(
+                safetyReq, CustomerScenario.SERVICE_SUPPORT, List.of(CustomerScenario.WARRANTY_RETURN));
+        assertThat(safetyTopo).isEqualTo(CustomerSelfEvolutionService.TOPOLOGY_AFLOW_SELF_CRITIC);
+
+        // 3. Kiểm tra AFlow Self-Critic & Auto-Revise khi bản nháp thiếu cảnh báo thai kỳ, Cosmetovigilance 14 ngày và VAT
+        String incompleteDraft = "Dạ em chào Chị! Chị có thể tham khảo dòng serum dưỡng ẩm bên em rất dịu nhẹ ạ.";
+        String revisedSafety = evolutionService.applyAflowSelfCriticAndRevise(
+                safetyTopo,
+                safetyReq,
+                CustomerScenario.SERVICE_SUPPORT,
+                List.of(CustomerScenario.WARRANTY_RETURN),
+                incompleteDraft
+        );
+        assertThat(revisedSafety)
+                .contains("Capture Totale Retishot")
+                .contains("0.1% Retinol")
+                .contains("Cosmetovigilance")
+                .contains("14 ngày")
+                .contains("80%");
+
+        String revisedMultiIntent = evolutionService.applyAflowSelfCriticAndRevise(
+                multiTopo,
+                multiIntentReq,
+                CustomerScenario.SALES,
+                List.of(CustomerScenario.ORDER_BILLING),
+                "Dạ son Rouge Dior 999 có giá niêm yết 1.290.000 VNĐ ạ."
+        );
+        assertThat(revisedMultiIntent)
+                .contains("hóa đơn điện tử e-VAT")
+                .contains("24 giờ");
+
+        // 4. Kiểm tra Self-Evolving RAG Chunk Utility Score Boosting & Reranking
+        UUID docId = UUID.randomUUID();
+        RetrievedChunk lowUtilityChunk = new RetrievedChunk(
+                UUID.randomUUID(), docId, List.of("Giới thiệu chung"), List.of(),
+                1, new double[]{0, 0, 10, 10}, "Thông tin tổng quan cửa hàng.", 0.80);
+        RetrievedChunk highUtilityChunk = new RetrievedChunk(
+                UUID.randomUUID(), docId, List.of("Bảng giá & Khắc tên"), List.of(),
+                2, new double[]{0, 0, 10, 10}, "Giá niêm yết Rouge Dior 999 là 1.290.000 VNĐ, miễn phí khắc tên 12 ký tự.", 0.78);
+
+        // Ghi nhận nhiều lượt tương tác chất lượng cao cho highUtilityChunk để tăng utilityBoost
+        for (int i = 0; i < 4; i++) {
+            evolutionService.recordAndEvolveAfterChat(
+                    new CustomerChatRequest("Báo giá son Rouge Dior 999 và dịch vụ khắc tên?"),
+                    CustomerScenario.SALES,
+                    List.of(CustomerScenario.SERVICE_SUPPORT),
+                    "Dạ em chào Anh/Chị!\n- Son Rouge Dior 999 có giá niêm yết 1.290.000 VNĐ.\n- Miễn phí khắc tên Engraving tối đa 12 ký tự.\nAnh/Chị muốn khắc tên gì để em chuẩn bị hộp quà Couture ngay hôm nay ạ?",
+                    List.of(new ReciprocalRankFusion.FusedChunk(highUtilityChunk, 0.78)),
+                    "reflective-llm"
+            );
+        }
+
+        List<ReciprocalRankFusion.FusedChunk> reranked = evolutionService.rerankChunksByLearnedUtility(
+                List.of(
+                        new ReciprocalRankFusion.FusedChunk(lowUtilityChunk, 0.80),
+                        new ReciprocalRankFusion.FusedChunk(highUtilityChunk, 0.78)
+                )
+        );
+        // Nhờ điểm thưởng utilityBoost từ Self-Evolving RAG, highUtilityChunk vượt lên vị trí #1 dù điểm RRF gốc thấp hơn (0.78 vs 0.80)
+        assertThat(reranked.get(0).chunk().chunkId()).isEqualTo(highUtilityChunk.chunkId());
+        assertThat(reranked.get(0).score()).isGreaterThan(0.80);
+
+        // 5. Kiểm tra GEPA (Genetic-Pareto Prompt Evolution): Đa mục tiêu Pareto Rank #1 & Lai ghép di truyền (Crossover)
+        evolutionService.recordFeedbackAndEvolve(new CustomerFeedbackRequest(
+                null,
+                "Báo giá nước hoa Sauvage",
+                "Dạ Sauvage EDP 100ml giá 3.950.000 VNĐ ạ.",
+                "SALES",
+                2,
+                false,
+                "Luôn báo giá niêm yết VNĐ chính xác và chống chỉ định Retinol cho phụ nữ mang thai."
+        ));
+        evolutionService.recordFeedbackAndEvolve(new CustomerFeedbackRequest(
+                null,
+                "Tư vấn son dưỡng Dior",
+                "Dạ Lip Glow giá 1.150.000 VNĐ ạ.",
+                "SALES",
+                2,
+                false,
+                "Duy trì giọng văn tự nhiên ấm áp như chuyên viên thực thụ và chủ động gợi mở Call-to-Action chốt đơn."
+        ));
+
+        CustomerEvolutionStatusResponse statusAfterGepa = evolutionService.triggerEvolutionCycle("SALES");
+        assertThat(statusAfterGepa.gepaParetoFrontSize()).isGreaterThanOrEqualTo(1);
+        assertThat(statusAfterGepa.gepaCrossoverCount()).isGreaterThanOrEqualTo(1);
+        assertThat(statusAfterGepa.learnedSynonymsCount()).isGreaterThanOrEqualTo(12);
+        assertThat(statusAfterGepa.boostedChunksCount()).isGreaterThanOrEqualTo(1);
+        assertThat(statusAfterGepa.aflowCriticRevisions()).isGreaterThanOrEqualTo(2);
+        assertThat(statusAfterGepa.workflowTopologyStats().get(CustomerSelfEvolutionService.TOPOLOGY_AFLOW_SELF_CRITIC))
+                .isGreaterThanOrEqualTo(1L);
+        assertThat(statusAfterGepa.learnedGuidelines().get("SALES"))
+                .anyMatch(g -> "GEPA_CROSSOVER".equals(g.generationMethod()) && g.rule().contains("[GEPA-Crossover]"));
+    }
+
     private static boolean isPortListening(String host, int port) {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(host, port), 600);

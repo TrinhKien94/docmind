@@ -117,6 +117,9 @@ public class CustomerChatService {
         }
         List<CustomerScenario> secondaryScenarios =
                 CustomerScenario.detectSecondaryScenarios(retrievalQuery, scenario, customerProps);
+        String workflowTopology = evolutionService != null
+                ? evolutionService.selectWorkflowTopology(request, scenario, secondaryScenarios)
+                : CustomerSelfEvolutionService.TOPOLOGY_FAST_DIRECT_RAG;
 
         String defaultRole = (customerProps.getDefaultCustomerRole() != null
                 && !customerProps.getDefaultCustomerRole().isBlank())
@@ -131,10 +134,10 @@ public class CustomerChatService {
                 : 5;
         int topK = request.topK() != null ? request.topK() : defaultTopK;
 
-        // 1) Truy xuất ngữ cảnh tài liệu (nếu khách hàng truyền document_ids hoặc tự động tìm tài liệu READY).
+        // 1) Truy xuất ngữ cảnh tài liệu (kèm Self-Evolving RAG Query Expansion & Chunk Utility Boosting).
         List<ReciprocalRankFusion.FusedChunk> fused = retrieveChunksForCustomer(request.documentIds(), retrievalQuery, topK);
 
-        // 2) Lấy tri thức đã tiến hoá từ EvoAgentX Self-Evolution Engine cho kịch bản chính + kịch bản phụ (multi-intent).
+        // 2) Lấy tri thức đã tiến hoá từ EvoAgentX Self-Evolution Engine (GEPA Pareto Frontier + MIPRO) cho kịch bản chính + kịch bản phụ.
         List<LearnedGuidelineInfo> activeGuidelines =
                 mergeActiveGuidelines(scenario, secondaryScenarios);
         List<EvolvedExampleInfo> activeExamples =
@@ -151,8 +154,6 @@ public class CustomerChatService {
         }
         answer = stripCustomerCitationMarkers(answer);
         String modelName = llmClient != null ? llmClient.name() : "pretrained-fallback";
-        log.info("stage=customer-chat engine={} scenario={} fused_chunks={} applied_guidelines={}",
-                modelName, scenario.code(), fused.size(), activeGuidelines.size());
 
         // 4) Dựng citations truy ngược về chunk/document/block/page/bbox/heading_path.
         List<Citation> citations = new ArrayList<>(fused.size());
@@ -181,9 +182,19 @@ public class CustomerChatService {
             citations.removeIf(cit -> !retrievedIds.contains(UUID.fromString(cit.chunkId())));
         }
 
-        // 6) Thực thi chiến lược tự tiến hoá học hỏi sau lần chat (EvoAgentX TextGrad & MIPRO).
+        // 6) Thực thi chiến lược tự tiến hoá học hỏi sau lần chat (EvoAgentX TextGrad, MIPRO, GEPA & Self-Evolving RAG).
         String interactionId = evolutionService.recordAndEvolveAfterChat(
                 request, scenario, secondaryScenarios, answer, fused, modelName);
+
+        // 7) AFlow Self-Critic & Auto-Revise: tự phản biện và hoàn thiện bản nháp trước khi gửi tới khách hàng.
+        if (evolutionService != null && answer != null
+                && !answer.startsWith("[stub-llm]")
+                && !modelName.toLowerCase(java.util.Locale.ROOT).contains("stub")) {
+            answer = evolutionService.applyAflowSelfCriticAndRevise(
+                    workflowTopology, request, scenario, secondaryScenarios, answer);
+        }
+        log.info("stage=customer-chat engine={} topology={} scenario={} fused_chunks={} applied_guidelines={}",
+                modelName, workflowTopology, scenario.code(), fused.size(), activeGuidelines.size());
 
         return new CustomerChatResponse(
                 answer,
@@ -298,6 +309,9 @@ public class CustomerChatService {
         if (retrievalService == null) {
             return List.of();
         }
+        String expandedQuery = evolutionService != null
+                ? evolutionService.expandQueryWithLearnedSynonyms(question)
+                : question;
 
         // Trường hợp 1: Khách hàng hoặc client truyền rõ danh sách document_ids
         if (rawDocumentIds != null && !rawDocumentIds.isEmpty()) {
@@ -313,8 +327,13 @@ public class CustomerChatService {
             }
             try {
                 List<ReciprocalRankFusion.FusedChunk> result =
-                        retrievalService.retrieve(documentIds, question, topK);
-                return result != null ? result : List.of();
+                        retrievalService.retrieve(documentIds, expandedQuery, topK);
+                if (result == null || result.isEmpty()) {
+                    return List.of();
+                }
+                return evolutionService != null
+                        ? evolutionService.rerankChunksByLearnedUtility(result)
+                        : result;
             } catch (Exception e) {
                 log.warn("Explicit document RAG retrieval failed ({}); falling back to pre-trained prompt context",
                         e.getMessage());
@@ -360,8 +379,13 @@ public class CustomerChatService {
             if (!readyDocIds.isEmpty()) {
                 try {
                     List<ReciprocalRankFusion.FusedChunk> result =
-                            retrievalService.retrieve(new ArrayList<>(readyDocIds), question, topK);
-                    return result != null ? result : List.of();
+                            retrievalService.retrieve(new ArrayList<>(readyDocIds), expandedQuery, topK);
+                    if (result == null || result.isEmpty()) {
+                        return List.of();
+                    }
+                    return evolutionService != null
+                            ? evolutionService.rerankChunksByLearnedUtility(result)
+                            : result;
                 } catch (Exception e) {
                     log.warn("Auto-discover READY documents retrieval failed ({}); falling back to pre-trained prompt context",
                             e.getMessage());

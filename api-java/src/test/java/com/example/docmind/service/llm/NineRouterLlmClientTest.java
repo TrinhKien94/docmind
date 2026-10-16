@@ -96,23 +96,37 @@ class NineRouterLlmClientTest {
     }
 
     @Test
-    void testFallbackToDirectRelayWhenNineRouterFails() {
-        if (!isPortListening("127.0.0.1", 11500)) {
-            // Bỏ qua nếu direct relay không bật
-            return;
+    void testFallbackToDirectRelayWhenNineRouterFails() throws Exception {
+        com.sun.net.httpserver.HttpServer relayServer =
+                com.sun.net.httpserver.HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        try {
+            relayServer.createContext("/v1/chat/completions", exchange -> {
+                byte[] respBytes = "{\"choices\":[{\"message\":{\"content\":\"OK\"}}]}"
+                        .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+                exchange.getResponseHeaders().add("Content-Type", "application/json");
+                exchange.sendResponseHeaders(200, respBytes.length);
+                try (var os = exchange.getResponseBody()) {
+                    os.write(respBytes);
+                }
+            });
+            relayServer.start();
+            int relayPort = relayServer.getAddress().getPort();
+
+            NineRouterProperties props = new NineRouterProperties();
+            props.setBaseUrl("http://127.0.0.1:59999/v1"); // NineRouter unreachable
+            props.setCodexRelayUrl("http://127.0.0.1:" + relayPort + "/v1");
+            props.setCodexAuthToken("test-relay-token");
+            props.setModel("codex/gpt-6-astra");
+            props.setTimeoutMs(5000);
+
+            NineRouterLlmClient client = new NineRouterLlmClient(props, objectMapper);
+            String answer = client.complete("Trả lời chính xác một từ duy nhất: OK");
+
+            assertThat(answer).isEqualTo("OK");
+            assertThat(answer).doesNotContain("[9router-error]");
+        } finally {
+            relayServer.stop(0);
         }
-
-        NineRouterProperties props = new NineRouterProperties();
-        props.setBaseUrl("http://127.0.0.1:59999/v1"); // NineRouter unreachble
-        props.setCodexRelayUrl("http://127.0.0.1:11500/v1");
-        props.setModel("codex/gpt-6-astra");
-        props.setTimeoutMs(45000);
-
-        NineRouterLlmClient client = new NineRouterLlmClient(props, objectMapper);
-        String answer = client.complete("Trả lời chính xác một từ duy nhất: OK");
-
-        assertThat(answer).isNotBlank();
-        assertThat(answer).doesNotContain("[9router-error]");
     }
 
     private static boolean isPortListening(String host, int port) {

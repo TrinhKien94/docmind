@@ -1569,9 +1569,12 @@ public class AstrBotService {
                 if (evolutionService != null) {
                     CustomerEvolutionStatusResponse evolved = evolutionService.triggerEvolutionCycle(
                             "AUTO".equalsIgnoreCase(activeScenario) ? "SALES" : activeScenario);
-                    return "🧬 Đã kích hoạt chu kỳ tự tiến hoá **EvoAgentX (TextGrad + MIPRO)** thành công! Thế hệ mới: **Gen #"
+                    return "🧬 Đã kích hoạt chu kỳ tự tiến hoá **EvoAgentX (TextGrad + MIPRO + GEPA + Self-Evolving RAG + AFlow)** thành công! Thế hệ mới: **Gen #"
                             + evolved.evolutionGeneration() + "** (" + evolved.learnedGuidelines().size() + " nhóm quy tắc, "
-                            + evolved.evolvedFewShotExamples().size() + " nhóm mẫu MIPRO).";
+                            + evolved.evolvedFewShotExamples().size() + " nhóm mẫu MIPRO, "
+                            + "GEPA Pareto Front: `" + evolved.gepaParetoFrontSize() + "` quy tắc tối ưu, "
+                            + "GEPA Crossover: `" + evolved.gepaCrossoverCount() + "`, "
+                            + "Self-Evolving RAG Synonyms: `" + evolved.learnedSynonymsCount() + "`).";
                 }
                 return "🧬 Động cơ EvoAgentX đã ghi nhận yêu cầu tối ưu hoá.";
             case "/guidelines": {
@@ -1585,7 +1588,10 @@ public class AstrBotService {
                 return "📋 **Quy tắc Tự tiến hoá EvoAgentX (Gen #" + evo.evolutionGeneration() + ")**:\n"
                         + "- Điểm chất lượng trung bình: `" + String.format(Locale.US, "%.1f%%", evo.averageQualityScore() * 100) + "`\n"
                         + "- Số nhóm kịch bản đã học quy tắc TextGrad: `" + (evo.learnedGuidelines() != null ? evo.learnedGuidelines().size() : 0) + "`\n"
-                        + "- Số nhóm mẫu Few-Shot MIPRO: `" + (evo.evolvedFewShotExamples() != null ? evo.evolvedFewShotExamples().size() : 0) + "`";
+                        + "- Số nhóm mẫu Few-Shot MIPRO: `" + (evo.evolvedFewShotExamples() != null ? evo.evolvedFewShotExamples().size() : 0) + "`\n"
+                        + "- GEPA Pareto Front (`Rank #1`): `" + evo.gepaParetoFrontSize() + "` quy tắc · Lai ghép di truyền (`Crossover`): `" + evo.gepaCrossoverCount() + "`\n"
+                        + "- Self-Evolving RAG: `" + evo.learnedSynonymsCount() + "` từ đồng nghĩa mở rộng · `" + evo.boostedChunksCount() + "` chunk được tăng trọng số\n"
+                        + "- AFlow Self-Critic Revisions: `" + evo.aflowCriticRevisions() + "` lần tự phản biện & nâng cấp";
             }
             case "/tts":
                 if ("on".equalsIgnoreCase(arg) || "true".equalsIgnoreCase(arg)) {

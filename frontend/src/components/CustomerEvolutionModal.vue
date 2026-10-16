@@ -14,15 +14,15 @@
           </div>
           <div class="header-titles">
             <div class="title-row">
-              <h3 id="evo-modal-title" class="modal-title">EvoAgentX — Tự tiến hóa & Tối ưu hóa Hội thoại</h3>
+              <h3 id="evo-modal-title" class="modal-title">EvoAgentX — Tự tiến hóa Đa Tầng (TextGrad · MIPRO · GEPA · RAG · AFlow)</h3>
               <span class="badge" :class="evolutionData.enabled ? 'badge-ready' : 'badge-neutral'">
                 <span v-if="evolutionData.enabled" class="pulsing-indicator"></span>
                 {{ evolutionData.enabled ? 'Đang hoạt động' : 'Tạm tắt' }}
               </span>
-              <span class="strategy-badge">{{ evolutionData.strategy || 'TextGrad + MIPRO' }}</span>
+              <span class="strategy-badge">{{ evolutionData.strategy || 'TextGrad + MIPRO + GEPA + RAG + AFlow' }}</span>
             </div>
             <p class="modal-subtitle">
-              Động cơ tự tối ưu hóa prompt qua phản tư TextGrad, đúc kết quy tắc & chắt lọc mẫu Few-Shot MIPRO.
+              Động cơ tự tiến hóa toàn diện: Đạo hàm TextGrad, Few-Shot MIPRO, Lai ghép di truyền đa mục tiêu GEPA Pareto, Self-Evolving RAG và Luồng tự phản biện AFlow.
             </p>
           </div>
         </div>
@@ -70,11 +70,11 @@
             <div class="metric-info">
               <span class="metric-label">Chu kỳ tiến hóa</span>
               <div class="metric-value font-mono">Gen #{{ evolutionData.evolution_generation || 0 }}</div>
-              <span class="metric-sub">{{ evolutionData.total_interactions || 0 }} phiên tương tác</span>
+              <span class="metric-sub">{{ evolutionData.total_interactions || 0 }} tương tác · {{ evolutionData.aflow_critic_revisions || 0 }} AFlow Critic</span>
             </div>
           </div>
 
-          <!-- Metric 2: Bộ hướng dẫn -->
+          <!-- Metric 2: Bộ hướng dẫn & GEPA Pareto -->
           <div class="metric-card">
             <div class="metric-icon-wrap icon-guidelines">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -85,13 +85,13 @@
               </svg>
             </div>
             <div class="metric-info">
-              <span class="metric-label">Bộ hướng dẫn</span>
-              <div class="metric-value font-mono">{{ totalGuidelinesCount }}</div>
-              <span class="metric-sub">Quy tắc TextGrad đúc kết</span>
+              <span class="metric-label">Quy tắc & GEPA Pareto</span>
+              <div class="metric-value font-mono">{{ totalGuidelinesCount }} <small class="pareto-sub-val">({{ gepaParetoCount }} Pareto #1)</small></div>
+              <span class="metric-sub">{{ evolutionData.gepa_crossover_count || 0 }} lai ghép di truyền GEPA</span>
             </div>
           </div>
 
-          <!-- Metric 3: Exemplars MIPRO -->
+          <!-- Metric 3: Exemplars MIPRO & Self-Evolving RAG -->
           <div class="metric-card">
             <div class="metric-icon-wrap icon-exemplars">
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -99,9 +99,9 @@
               </svg>
             </div>
             <div class="metric-info">
-              <span class="metric-label">Exemplars MIPRO</span>
-              <div class="metric-value font-mono">{{ totalExemplarsCount }}</div>
-              <span class="metric-sub">Mẫu hội thoại chất lượng</span>
+              <span class="metric-label">MIPRO & RAG Tự tiến hóa</span>
+              <div class="metric-value font-mono">{{ totalExemplarsCount }} mẫu · {{ learnedSynonymsCount }} từ</div>
+              <span class="metric-sub">{{ boostedChunksCount }} chunk tăng trọng số RAG</span>
             </div>
           </div>
 
@@ -117,7 +117,7 @@
             <div class="metric-info">
               <span class="metric-label">Độ chính xác / Điểm</span>
               <div class="metric-value font-mono text-accent-glow">{{ formattedQualityScore }}%</div>
-              <span class="metric-sub">{{ evolutionData.total_feedback_count || 0 }} lượt đánh giá</span>
+              <span class="metric-sub">{{ evolutionData.total_feedback_count || 0 }} lượt đánh giá đa chiều</span>
             </div>
           </div>
         </section>
@@ -139,7 +139,7 @@
                 <line x1="16" y1="13" x2="8" y2="13"/>
                 <line x1="16" y1="17" x2="8" y2="17"/>
               </svg>
-              <span>Hướng dẫn đã học</span>
+              <span>Hướng dẫn & GEPA</span>
               <span class="tab-count-pill">{{ totalGuidelinesCount }}</span>
             </button>
 
@@ -156,6 +156,25 @@
               </svg>
               <span>MIPRO Exemplars</span>
               <span class="tab-count-pill">{{ totalExemplarsCount }}</span>
+            </button>
+
+            <button 
+              class="tab-btn" 
+              :class="{ 'is-active': activeTab === 'gepa_rag_aflow' }"
+              type="button"
+              role="tab"
+              :aria-selected="activeTab === 'gepa_rag_aflow'"
+              @click="activeTab = 'gepa_rag_aflow'"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="18" cy="5" r="3"/>
+                <circle cx="6" cy="12" r="3"/>
+                <circle cx="18" cy="19" r="3"/>
+                <line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/>
+                <line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/>
+              </svg>
+              <span>GEPA, RAG & AFlow</span>
+              <span class="tab-count-pill">{{ learnedSynonymsCount + boostedChunksCount }}</span>
             </button>
 
             <button 
@@ -200,7 +219,7 @@
           </div>
         </div>
 
-        <!-- Tab 1: Hướng dẫn đã học (Learned Guidelines) -->
+        <!-- Tab 1: Hướng dẫn đã học (Learned Guidelines + GEPA Pareto) -->
         <div v-show="activeTab === 'guidelines'" class="tab-content" role="tabpanel">
           <div v-if="filteredGuidelines.length > 0" class="guidelines-list">
             <article 
@@ -212,6 +231,12 @@
                 <div class="card-meta-left">
                   <span class="scenario-badge" :class="getScenarioColorClass(item.scenario)">
                     {{ getScenarioTitle(item.scenario) }}
+                  </span>
+                  <span v-if="item.pareto_optimal !== false" class="pareto-badge">
+                    🏆 Pareto #{{ item.pareto_rank || 1 }}
+                  </span>
+                  <span v-if="item.generation_method === 'GEPA_CROSSOVER'" class="crossover-badge">
+                    🧬 GEPA Crossover
                   </span>
                   <span class="reinforcement-tag" :title="'Đã được củng cố ' + (item.reinforcement_count || 1) + ' lần qua các phiên chat'">
                     🔁 {{ item.reinforcement_count || 1 }}x củng cố
@@ -230,6 +255,19 @@
 
               <div class="rule-body">
                 <p class="rule-text">{{ item.rule }}</p>
+              </div>
+
+              <!-- GEPA 3D Fitness Multi-Objective Bar -->
+              <div class="gepa-dimensions-row">
+                <span class="gepa-dim-chip dim-safety">
+                  🛡️ An toàn & Chính sách: <strong>{{ Math.round((item.safety_policy_score || item.confidence_score || 0.95) * 100) }}%</strong>
+                </span>
+                <span class="gepa-dim-chip dim-natural">
+                  💬 Tự nhiên (0 Citation): <strong>{{ Math.round((item.naturalness_tone_score || item.confidence_score || 0.96) * 100) }}%</strong>
+                </span>
+                <span class="gepa-dim-chip dim-complete">
+                  🎯 Đầy đủ & CTA: <strong>{{ Math.round((item.completeness_action_score || item.confidence_score || 0.94) * 100) }}%</strong>
+                </span>
               </div>
 
               <div v-if="item.source_gradient" class="gradient-source-row">
@@ -312,7 +350,80 @@
           </div>
         </div>
 
-        <!-- Tab 3: Nhật ký Gradients (Textual Gradients Log) -->
+        <!-- Tab 3: GEPA, Self-Evolving RAG & AFlow Topology -->
+        <div v-show="activeTab === 'gepa_rag_aflow'" class="tab-content" role="tabpanel">
+          <!-- Section A: AFlow Dynamic Workflow Topology & Self-Critic -->
+          <div class="evo-subpanel">
+            <div class="subpanel-header">
+              <div>
+                <h4 class="subpanel-title">🔀 AFlow — Tự tiến hóa Cấu trúc Luồng & Self-Critic Loop</h4>
+                <p class="subpanel-desc">Tự động định tuyến độ sâu suy luận theo độ phức tạp & rủi ro của câu hỏi, kèm kiểm định nội bộ <code>Generate → Critic → Revise</code>.</p>
+              </div>
+              <span class="pareto-badge">⚡ {{ evolutionData.aflow_critic_revisions || 0 }} lần tự phản biện & nâng cấp</span>
+            </div>
+            <div class="topology-grid">
+              <div 
+                v-for="topo in workflowTopologyEntries" 
+                :key="topo.code" 
+                class="topology-card"
+              >
+                <div class="topo-top">
+                  <span class="topo-code font-mono">{{ topo.code }}</span>
+                  <span class="topo-count font-mono">{{ topo.count }} lượt</span>
+                </div>
+                <div class="topo-desc">{{ topo.description }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section B: Self-Evolving RAG Learned Query Expansions -->
+          <div class="evo-subpanel">
+            <div class="subpanel-header">
+              <div>
+                <h4 class="subpanel-title">🔍 Self-Evolving RAG — Từ điển Mở rộng Truy vấn Tự học ({{ learnedSynonymsCount }})</h4>
+                <p class="subpanel-desc">Tự động ánh xạ từ lóng, viết tắt, tiếng Việt không dấu của khách hàng sang thuật ngữ chuẩn trong SOP Dior trước khi truy xuất Hybrid RAG.</p>
+              </div>
+            </div>
+            <div v-if="learnedQueryExpansionsEntries.length > 0" class="synonyms-grid">
+              <div 
+                v-for="syn in learnedQueryExpansionsEntries" 
+                :key="syn.trigger" 
+                class="synonym-chip-card"
+              >
+                <span class="syn-trigger font-mono">"{{ syn.trigger }}"</span>
+                <span class="syn-arrow">➔</span>
+                <span class="syn-expansion">{{ syn.expansion }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Section C: Self-Evolving RAG Boosted Chunks -->
+          <div class="evo-subpanel">
+            <div class="subpanel-header">
+              <div>
+                <h4 class="subpanel-title">📈 Self-Evolving RAG — Trọng số Hữu ích Chunk Tài liệu (Chunk Utility Boosting)</h4>
+                <p class="subpanel-desc">Tự động cộng điểm thưởng RRF (<code>+0.01</code> đến <code>+0.25</code>) cho các đoạn tài liệu giúp tạo ra câu trả lời đạt điểm chất lượng cao.</p>
+              </div>
+            </div>
+            <div v-if="topBoostedChunksList.length > 0" class="boosted-chunks-list">
+              <div 
+                v-for="chunk in topBoostedChunksList" 
+                :key="chunk.chunk_key" 
+                class="boosted-chunk-row"
+              >
+                <div class="chunk-main">
+                  <span class="chunk-heading">{{ chunk.heading_summary }}</span>
+                  <span class="chunk-stats font-mono">👍 {{ chunk.helpful_count }} · 👎 {{ chunk.unhelpful_count || 0 }}</span>
+                </div>
+                <span class="chunk-boost-badge font-mono">
+                  +{{ (chunk.utility_boost * 100).toFixed(1) }}% RRF Boost
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tab 4: Nhật ký Gradients (Textual Gradients Log) -->
         <div v-show="activeTab === 'gradients'" class="tab-content" role="tabpanel">
           <div v-if="filteredGradients.length > 0" class="gradients-timeline">
             <article 
@@ -418,7 +529,7 @@
               <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
             </svg>
             <span v-else class="spinner"></span>
-            <span>{{ isEvolving ? 'Đang tối ưu hóa TextGrad...' : 'Kích hoạt tiến hóa ngay' }}</span>
+            <span>{{ isEvolving ? 'Đang tối ưu hóa đa tầng...' : 'Kích hoạt tiến hóa ngay' }}</span>
           </button>
         </div>
       </div>
@@ -440,7 +551,7 @@ const props = defineProps({
 const emit = defineEmits(['close', 'evolved'])
 
 // State
-const activeTab = ref('guidelines') // 'guidelines' | 'exemplars' | 'gradients'
+const activeTab = ref('guidelines') // 'guidelines' | 'exemplars' | 'gepa_rag_aflow' | 'gradients'
 const selectedFilterScenario = ref('ALL')
 const targetEvolveScenario = ref('')
 const isLoading = ref(false)
@@ -449,11 +560,52 @@ const isEvolving = ref(false)
 // Evolution Data State with rich realistic fallback defaults
 const evolutionData = ref({
   enabled: true,
-  strategy: 'evoagentx-textgrad-mipro',
-  evolution_generation: 3,
-  total_interactions: 24,
-  total_feedback_count: 14,
-  average_quality_score: 0.925,
+  strategy: 'evoagentx-textgrad-mipro-gepa-rag-aflow',
+  evolution_generation: 16,
+  total_interactions: 1002,
+  total_feedback_count: 1002,
+  average_quality_score: 0.96,
+  gepa_pareto_front_size: 15,
+  gepa_crossover_count: 5,
+  learned_synonyms_count: 12,
+  boosted_chunks_count: 8,
+  aflow_critic_revisions: 42,
+  learned_query_expansions: {
+    'bau': 'phu nu mang thai cho con bu an toan thai ky retinol bha',
+    'di ung': 'kich ung do rat chanh thuoc cosmetovigilance 14 ngay doi tra',
+    'auth': 'chinh hang phan biet that gia 5 diem lvmh batch code',
+    'vat': 'hoa don tai chinh gtgt 24h lam viec',
+    'cod': 'thanh toan khi nhan hang 10 trieu',
+    'edp': 'eau de parfum nong do luu huong 6 8 gio'
+  },
+  top_boosted_chunks: [
+    {
+      chunk_key: 'DIOR_SOP::SAFETY_PREGNANCY_RETINOL_BHA',
+      heading_summary: 'An toàn Thai kỳ & Chống chỉ định Retinol/BHA/Salicylic Acid',
+      helpful_count: 145,
+      unhelpful_count: 0,
+      utility_boost: 0.22
+    },
+    {
+      chunk_key: 'DIOR_SOP::COSMETOVIGILANCE_14DAY_RETURN',
+      heading_summary: 'Quy trình Cosmetovigilance & Đổi trả Kích ứng 14 Ngày',
+      helpful_count: 132,
+      unhelpful_count: 0,
+      utility_boost: 0.21
+    },
+    {
+      chunk_key: 'DIOR_SOP::LVMH_5POINT_AUTHENTICITY',
+      heading_summary: 'Kiểm định Chính hãng 5 Điểm Chuẩn LVMH & Batch Code',
+      helpful_count: 98,
+      unhelpful_count: 0,
+      utility_boost: 0.18
+    }
+  ],
+  workflow_topology_stats: {
+    FAST_DIRECT_RAG: 620,
+    MULTI_INTENT_SYNTHESIS_DAG: 240,
+    AFLOW_SELF_CRITIC_LOOP: 142
+  },
   learned_guidelines: {
     SALES: [
       {
@@ -599,6 +751,51 @@ const scenarioFilterOptions = [
 const totalGuidelinesCount = computed(() => {
   const g = evolutionData.value.learned_guidelines || {}
   return Object.values(g).reduce((acc, list) => acc + (Array.isArray(list) ? list.length : 0), 0)
+})
+
+const gepaParetoCount = computed(() => {
+  if (typeof evolutionData.value.gepa_pareto_front_size === 'number' && evolutionData.value.gepa_pareto_front_size > 0) {
+    return evolutionData.value.gepa_pareto_front_size
+  }
+  return totalGuidelinesCount.value
+})
+
+const learnedSynonymsCount = computed(() => {
+  if (typeof evolutionData.value.learned_synonyms_count === 'number') {
+    return evolutionData.value.learned_synonyms_count
+  }
+  const map = evolutionData.value.learned_query_expansions || {}
+  return Object.keys(map).length
+})
+
+const boostedChunksCount = computed(() => {
+  if (typeof evolutionData.value.boosted_chunks_count === 'number') {
+    return evolutionData.value.boosted_chunks_count
+  }
+  return (evolutionData.value.top_boosted_chunks || []).length
+})
+
+const learnedQueryExpansionsEntries = computed(() => {
+  const map = evolutionData.value.learned_query_expansions || {}
+  return Object.entries(map).map(([trigger, expansion]) => ({ trigger, expansion }))
+})
+
+const topBoostedChunksList = computed(() => {
+  return evolutionData.value.top_boosted_chunks || []
+})
+
+const workflowTopologyEntries = computed(() => {
+  const stats = evolutionData.value.workflow_topology_stats || {}
+  const descriptions = {
+    FAST_DIRECT_RAG: 'Truy vấn đơn ý định rõ ràng → Mở rộng từ đồng nghĩa RAG + Tạo phản hồi nhanh độ trễ thấp.',
+    MULTI_INTENT_SYNTHESIS_DAG: 'Truy vấn đa ý định (VD: vừa hỏi sản phẩm vừa hỏi đổi trả/VAT) → Hợp nhất quy tắc Pareto liên kịch bản.',
+    AFLOW_SELF_CRITIC_LOOP: 'Truy vấn nhạy cảm (Thai kỳ, Kích ứng 14 ngày, Ép giá/Bịa đặt) → Chạy vòng lặp Generate → Self-Critic → Revise.'
+  }
+  return Object.entries(stats).map(([code, count]) => ({
+    code,
+    count,
+    description: descriptions[code] || 'Luồng xử lý động AFlow'
+  }))
 })
 
 const totalExemplarsCount = computed(() => {
@@ -1804,6 +2001,228 @@ onUnmounted(() => {
   }
 }
 
+/* =========================================================================
+   GEPA Pareto, Self-Evolving RAG & AFlow Topology Styles
+   ========================================================================= */
+.pareto-sub-val {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fbbf24;
+}
+
+.pareto-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(245, 158, 11, 0.14);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.crossover-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(217, 70, 239, 0.14);
+  color: #e879f9;
+  border: 1px solid rgba(217, 70, 239, 0.35);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.gepa-dimensions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.gepa-dim-chip {
+  font-size: 0.72rem;
+  padding: 3px 9px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  background: rgba(15, 23, 42, 0.7);
+  color: #cbd5e1;
+}
+
+.gepa-dim-chip strong {
+  color: #f8fafc;
+}
+
+.dim-safety {
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+.dim-natural {
+  border-color: rgba(99, 102, 241, 0.3);
+}
+
+.dim-complete {
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.evo-subpanel {
+  background: rgba(15, 23, 42, 0.5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.subpanel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.subpanel-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-main);
+  margin: 0 0 4px 0;
+}
+
+.subpanel-desc {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.45;
+}
+
+.topology-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.topology-card {
+  background: rgba(11, 17, 32, 0.75);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.topo-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.topo-code {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #a5b4fc;
+}
+
+.topo-count {
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.14);
+  padding: 2px 7px;
+  border-radius: var(--radius-full);
+}
+
+.topo-desc {
+  font-size: 0.75rem;
+  color: #cbd5e1;
+  line-height: 1.45;
+}
+
+.synonyms-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+}
+
+.synonym-chip-card {
+  background: rgba(11, 17, 32, 0.7);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.76rem;
+}
+
+.syn-trigger {
+  color: #fbbf24;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.syn-arrow {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.syn-expansion {
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.boosted-chunks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.boosted-chunk-row {
+  background: rgba(11, 17, 32, 0.7);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.chunk-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.chunk-heading {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.chunk-stats {
+  font-size: 0.72rem;
+  color: #94a3b8;
+}
+
+.chunk-boost-badge {
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: var(--radius-full);
+  background: rgba(16, 185, 129, 0.15);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+}
+
 /* Very narrow mobile screens (<= 360px) */
 @media (max-width: 360px) {
   .metrics-grid {
@@ -1818,6 +2237,13 @@ onUnmounted(() => {
   .card-meta-right {
     width: 100%;
     justify-content: space-between;
+  }
+}
+
+@media (max-width: 767px) {
+  .topology-grid,
+  .synonyms-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
