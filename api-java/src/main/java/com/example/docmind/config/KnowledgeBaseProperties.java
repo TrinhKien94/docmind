@@ -98,63 +98,29 @@ public class KnowledgeBaseProperties {
 
     /**
      * Danh sách quy tắc cộng điểm khớp miền kiến thức (Domain-Specific Intent Alignment Rules)
-     * ngoại hoá hoàn toàn ra cấu hình.
+     * ngoại hoá hoàn toàn ra tệp cấu hình {@code domain-knowledge-pack.json} / {@code application.properties}.
      */
     private List<DomainAlignmentRule> domainAlignmentRules = new ArrayList<>(defaultDomainAlignmentRules());
 
     public static List<DomainAlignmentRule> defaultDomainAlignmentRules() {
-        return List.of(
-                DomainAlignmentRule.of(
-                        "skincare",
-                        List.of("skincare"),
-                        List.of("da dau", "da kho", "da nhay cam", "lao hoa", "nam", "mang thai",
-                                "bau", "capture totale", "prestige", "dior snow", "la mousse", "retishot", "serum", "kem duong"),
-                        2.2
-                ),
-                DomainAlignmentRule.of(
-                        "makeup",
-                        List.of("makeup"),
-                        List.of("kem nen", "undertone", "cushion", "son", "rouge dior", "lip glow",
-                                "maximizer", "moi tham", "che khuyet diem", "phan", "matte", "skin glow", "999", "720", "772", "100"),
-                        2.2
-                ),
-                DomainAlignmentRule.of(
-                        "fragrance_gifting",
-                        List.of("fragrance", "gift"),
-                        List.of("nuoc hoa", "miss dior", "jadore", "sauvage", "elixir", "gris dior",
-                                "khac ten", "engraving", "qua tang", "tang vo", "tang ban gai", "hop qua", "sample", "mau thu"),
-                        2.2
-                ),
-                DomainAlignmentRule.of(
-                        "sales_loyalty",
-                        List.of("sales-closing", "loyalty"),
-                        List.of("hang thanh vien", "loyalty", "tich diem", "white", "silver", "gold",
-                                "platinum", "spa", "facial", "try first", "upsell", "cross sell"),
-                        2.2
-                ),
-                DomainAlignmentRule.of(
-                        "authenticity_warranty_return",
-                        List.of("authenticity", "warranty", "return"),
-                        List.of("chinh hang", "batch code", "tem phu", "doi tra", "bao hanh", "hoan tien",
-                                "di ung", "kich ung", "man do", "ngua", "gay son", "chay dau", "do mo hoi", "voi xit", "cosmetovigilance"),
-                        2.6
-                ),
-                DomainAlignmentRule.of(
-                        "order_payment_delivery",
-                        List.of("order", "payment", "delivery"),
-                        List.of("thanh toan", "tra gop", "dat coc", "cod", "hoa don", "vat",
-                                "van chuyen", "giao hang", "hoa toc", "2h", "2 gio", "freeship", "dong goi", "cach nhiet"),
-                        2.4
-                )
-        );
+        List<DomainAlignmentRule> fromPack = DomainKnowledgePack.loadDefault().getDomainAlignmentRules();
+        return fromPack != null ? List.copyOf(fromPack) : List.of();
     }
 
     @Getter
     @Setter
+    @com.fasterxml.jackson.annotation.JsonIgnoreProperties(ignoreUnknown = true)
     public static class DomainAlignmentRule {
+        @com.fasterxml.jackson.annotation.JsonProperty("name")
         private String name = "";
+
+        @com.fasterxml.jackson.annotation.JsonProperty("filename_keywords")
         private List<String> filenameKeywords = new ArrayList<>();
+
+        @com.fasterxml.jackson.annotation.JsonProperty("query_phrases")
         private List<String> queryPhrases = new ArrayList<>();
+
+        @com.fasterxml.jackson.annotation.JsonProperty("bonus_score")
         private double bonusScore = 2.2;
 
         public DomainAlignmentRule() {

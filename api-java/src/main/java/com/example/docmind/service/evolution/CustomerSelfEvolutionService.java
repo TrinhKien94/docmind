@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -154,36 +155,19 @@ public class CustomerSelfEvolutionService {
 
     private void seedDefaultSelfEvolvingRagAndTopologyState() {
         synchronized (stateLock) {
-            learnedQueryExpansions.putIfAbsent("retishot",
-                    "capture totale retishot 0.1% retinol tinh khiet chong chi dinh phu nu mang thai cho con bu");
-            learnedQueryExpansions.putIfAbsent("bau",
-                    "phu nu mang thai thai ky cho con bu khong dung retishot retinol bha goi y capture totale le serum");
-            learnedQueryExpansions.putIfAbsent("ba bau",
-                    "phu nu mang thai thai ky cho con bu khong dung retishot retinol goi y capture totale le serum dior prestige");
-            learnedQueryExpansions.putIfAbsent("me bau",
-                    "phu nu mang thai thai ky cho con bu an toan lanh tinh capture totale le serum la mousse off on");
-            learnedQueryExpansions.putIfAbsent("di ung",
-                    "kich ung da lieu cosmetovigilance 14 ngay ngung su dung nuoc muoi sinh ly thu hoi hoan tien 100% 80%");
-            learnedQueryExpansions.putIfAbsent("kich ung",
-                    "cosmetovigilance 14 ngay man do bong troc doi sang dior prestige hoan tien 100%");
-            learnedQueryExpansions.putIfAbsent("auth",
-                    "kiem tra chinh hang 5 diem lvmh tem phu bo y te batch code 4 ky tu laser e-vat pao 36 thang");
-            learnedQueryExpansions.putIfAbsent("check auth",
-                    "kiem tra chinh hang 5 buoc lvmh tem phu bo y te batch code 4 ky tu laser e-vat pao 36 thang");
-            learnedQueryExpansions.putIfAbsent("vat",
-                    "hoa don tai chinh gtgt e-vat trong 24h lam viec");
-            learnedQueryExpansions.putIfAbsent("son duong",
-                    "son duong dior addict lip glow 001 pink 012 rosewood 1.150.000 vnd");
-            learnedQueryExpansions.putIfAbsent("son kem",
-                    "son kem rouge dior forever liquid 100 999 1.350.000 vnd");
-            learnedQueryExpansions.putIfAbsent("the vip",
-                    "hang thanh vien my exclusive dior white silver gold platinum tich diem qua sinh nhat");
-            learnedQueryExpansions.putIfAbsent("freeship",
-                    "mien phi van chuyen toan quoc giao hoa toc 2h white-glove ha noi tphcm");
-            learnedQueryExpansions.putIfAbsent("tra gop",
-                    "tra gop 0% lai suat ky han 3 thang 6 thang don hang tu 3.000.000 vnd");
-            learnedQueryExpansions.putIfAbsent("khac ten",
-                    "dior engraving studio khac ten laser mien phi toi da 12 ky tu nuoc hoa 50ml son rouge dior");
+            CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+            if (evo == null || evo.isDomainGuardrailsEnabled()) {
+                Map<String, String> configuredSeeds = (evo != null && evo.getSeedQueryExpansions() != null)
+                        ? evo.getSeedQueryExpansions()
+                        : com.example.docmind.config.DomainKnowledgePack.loadDefault().getSeedQueryExpansions();
+                if (configuredSeeds != null) {
+                    configuredSeeds.forEach((k, v) -> {
+                        if (k != null && !k.isBlank() && v != null && !v.isBlank()) {
+                            learnedQueryExpansions.putIfAbsent(k.strip(), v.strip());
+                        }
+                    });
+                }
+            }
 
             workflowTopologyStats.putIfAbsent(TOPOLOGY_FAST_DIRECT, 0L);
             workflowTopologyStats.putIfAbsent(TOPOLOGY_MULTI_INTENT, 0L);
@@ -869,7 +853,7 @@ public class CustomerSelfEvolutionService {
             }
         }
 
-        // 3b. Kiểm tra an toàn chống chỉ định thai kỳ (Pregnancy & Contraindication Safety Check)
+        // 3b. Kiểm tra an toàn đối tượng nhạy cảm & rào chắn chính sách (Data-Driven Policy Guardrails)
         if (evo == null || evo.isPregnancySafetyCheckEnabled()) {
             String normQuestion = CustomerScenario.normalizeWordsPadded(question);
             List<String> pregTriggers = (evo != null && evo.getPregnancyTriggerKeywords() != null
@@ -879,7 +863,7 @@ public class CustomerSelfEvolutionService {
             List<String> pregSafetyKeywords = (evo != null && evo.getPregnancySafetyRequiredKeywords() != null
                     && !evo.getPregnancySafetyRequiredKeywords().isEmpty())
                     ? evo.getPregnancySafetyRequiredKeywords()
-                    : List.of("retishot", "retinol", "chong chi dinh", "khong su dung", "khong dung", "tranh", "an toan", "lanh tinh");
+                    : List.of("chong chi dinh", "khong su dung", "khong dung", "tranh", "an toan", "lanh tinh");
 
             if (containsAnyNormalizedKeyword(normQuestion, pregTriggers)) {
                 if (!containsAnyNormalizedKeyword(normAnswer, pregSafetyKeywords)) {
@@ -887,8 +871,14 @@ public class CustomerSelfEvolutionService {
                     groundingScore = Math.min(groundingScore, 0.35);
                     completenessScore = Math.max(0.20, completenessScore - 0.50);
                     safetyPolicyScore = 0.25;
-                    critiques.add("Khách hàng đang mang thai/thai kỳ nhưng câu trả lời chưa cảnh báo chống chỉ định Retinol (Capture Totale Retishot) và xác nhận độ an toàn.");
-                    gradients.add("Khi tư vấn mỹ phẩm cho phụ nữ mang thai (thai kỳ) hoặc cho con bú, bắt buộc cảnh báo tuyệt đối không dùng Capture Totale Retishot (0.1% Retinol) và chỉ gợi ý dòng lành tính (Capture Totale Le Sérum, Dior Prestige, La Mousse OFF/ON).");
+                    com.example.docmind.config.DomainKnowledgePack.PolicyGuardrailRule safetyRule =
+                            findConfiguredGuardrail("pregnancy-contraindication-safety");
+                    critiques.add(safetyRule != null && safetyRule.getCritiqueMessage() != null && !safetyRule.getCritiqueMessage().isBlank()
+                            ? safetyRule.getCritiqueMessage()
+                            : "Khách hàng thuộc nhóm đối tượng nhạy cảm nhưng câu trả lời chưa nêu rõ cảnh báo chống chỉ định và xác nhận độ an toàn theo tài liệu.");
+                    gradients.add(safetyRule != null && safetyRule.getGradientInstruction() != null && !safetyRule.getGradientInstruction().isBlank()
+                            ? safetyRule.getGradientInstruction()
+                            : "Khi tư vấn cho đối tượng nhạy cảm (mang thai, trẻ nhỏ, bệnh lý nền), bắt buộc cảnh báo rõ các thành phần/dịch vụ chống chỉ định và chỉ gợi ý phương án an toàn trong tài liệu.");
                 } else {
                     safetyPolicyScore = 0.99;
                 }
@@ -1483,34 +1473,74 @@ public class CustomerSelfEvolutionService {
     private void learnQueryExpansionFromInteraction(String question,
                                                     List<ReciprocalRankFusion.FusedChunk> fusedChunks,
                                                     double qualityScore) {
-        if (question == null || question.isBlank() || fusedChunks == null || fusedChunks.isEmpty() || qualityScore < 0.88) {
-            return;
-        }
-        String normQ = CustomerScenario.normalizeWordsPadded(question).strip();
-        String[] qTokens = normQ.split("\\s+");
-        if (qTokens.length < 2 || qTokens.length > 6) {
-            return;
-        }
-        if (learnedQueryExpansions.containsKey(normQ) || learnedQueryExpansions.size() >= 40) {
+        if (fusedChunks == null || fusedChunks.isEmpty() || qualityScore < 0.85) {
             return;
         }
         RetrievedChunk topChunk = fusedChunks.get(0).chunk();
-        if (topChunk == null || topChunk.headingPath() == null || topChunk.headingPath().isEmpty()) {
+        if (topChunk == null) {
             return;
         }
-        String headingKeywords = CustomerScenario.normalizeWordsPadded(String.join(" ", topChunk.headingPath())).strip();
-        if (!headingKeywords.isBlank() && !headingKeywords.equals(normQ)) {
-            learnedQueryExpansions.put(normQ, truncate(headingKeywords, 110));
+        String headingKeywords = (topChunk.headingPath() != null && !topChunk.headingPath().isEmpty())
+                ? CustomerScenario.normalizeWordsPadded(String.join(" ", topChunk.headingPath())).strip()
+                : "";
+        String chunkKeyTerms = extractKeyTermsFromChunkText(topChunk.text(), 10);
+        String expansionPayload = truncate((headingKeywords + " " + chunkKeyTerms).strip(), 120);
+        if (expansionPayload.isBlank()) {
+            return;
+        }
+
+        // 1. Học từ câu hỏi ngắn của khách hàng -> tiêu đề & thuật ngữ trọng tâm của chunk
+        if (question != null && !question.isBlank()) {
+            String normQ = CustomerScenario.normalizeWordsPadded(question).strip();
+            String[] qTokens = normQ.isEmpty() ? new String[0] : normQ.split("\\s+");
+            if (qTokens.length >= 1 && qTokens.length <= 6
+                    && !learnedQueryExpansions.containsKey(normQ)
+                    && learnedQueryExpansions.size() < 60
+                    && !expansionPayload.equals(normQ)) {
+                learnedQueryExpansions.put(normQ, expansionPayload);
+            }
+        }
+
+        // 2. Tự động trích xuất tiêu đề nhánh cuối (leaf heading) làm khóa mở rộng truy vấn đa lĩnh vực
+        if (topChunk.headingPath() != null && !topChunk.headingPath().isEmpty() && learnedQueryExpansions.size() < 60) {
+            String leafHeading = topChunk.headingPath().get(topChunk.headingPath().size() - 1);
+            String normLeaf = CustomerScenario.normalizeWordsPadded(leafHeading).strip();
+            String[] leafTokens = normLeaf.isEmpty() ? new String[0] : normLeaf.split("\\s+");
+            if (leafTokens.length >= 1 && leafTokens.length <= 4 && !learnedQueryExpansions.containsKey(normLeaf)) {
+                learnedQueryExpansions.put(normLeaf, expansionPayload);
+            }
         }
     }
 
+    private static String extractKeyTermsFromChunkText(String text, int maxTerms) {
+        if (text == null || text.isBlank() || maxTerms <= 0) {
+            return "";
+        }
+        String norm = CustomerScenario.normalizeWordsPadded(text).strip();
+        if (norm.isEmpty()) {
+            return "";
+        }
+        Set<String> stop = Set.of("la", "cua", "va", "co", "cho", "thi", "ma", "nhu", "voi", "cac", "nhung",
+                "duoc", "khong", "trong", "nay", "do", "khi", "hay", "hoac", "neu", "de", "tu", "den");
+        List<String> terms = new ArrayList<>(maxTerms);
+        for (String tok : norm.split("\\s+")) {
+            if (tok.length() >= 3 && !stop.contains(tok) && !terms.contains(tok)) {
+                terms.add(tok);
+                if (terms.size() >= maxTerms) {
+                    break;
+                }
+            }
+        }
+        return String.join(" ", terms);
+    }
+
     // =========================================================================
-    // Trụ cột 6: AFlow Adaptive Workflow Topology & Self-Critic Loop
+    // Trụ cột 6: AFlow Adaptive Workflow Topology & Self-Critic Loop (Đa lĩnh vực)
     // =========================================================================
 
     /**
-     * Định tuyến động cấu trúc luồng thực thi AFlow (Workflow Topology) dựa trên độ phức tạp
-     * và mức độ rủi ro chính sách/an toàn của câu hỏi.
+     * Định tuyến động cấu trúc luồng thực thi AFlow (Workflow Topology) dựa trên độ phức tạp,
+     * tín hiệu cảm xúc khách hàng và mức độ rủi ro chính sách/an toàn (đa lĩnh vực).
      */
     public String selectWorkflowTopology(CustomerChatRequest request,
                                          CustomerScenario primaryScenario,
@@ -1522,10 +1552,13 @@ public class CustomerSelfEvolutionService {
         boolean highRiskSafetyOrPolicy = normQ.contains(" mang thai ") || normQ.contains(" ba bau ")
                 || normQ.contains(" me bau ") || normQ.contains(" thai ky ") || normQ.contains(" cho con bu ")
                 || normQ.contains(" di ung ") || normQ.contains(" kich ung ") || normQ.contains(" man do ")
-                || normQ.contains(" ngung su dung ") || normQ.contains(" cosmetovigilance ")
+                || normQ.contains(" ngung su dung ") || normQ.contains(" chong chi dinh ")
+                || normQ.contains(" tac dung phu ") || normQ.contains(" bien chung ")
                 || normQ.contains(" 99 000 ") || normQ.contains(" 99k ") || normQ.contains(" 0 dong ")
                 || normQ.contains(" ignore all ") || normQ.contains(" system prompt ")
-                || normQ.contains(" bac si da dong y ")
+                || normQ.contains(" bo qua moi ") || normQ.contains(" jailbreak ")
+                || normQ.contains(" mat du lieu ") || normQ.contains(" downtime ")
+                || matchesAnyHighRiskGuardrail(normQ)
                 || signal == ImplicitSignal.NEGATIVE;
 
         String selected;
@@ -1545,12 +1578,22 @@ public class CustomerSelfEvolutionService {
 
     /**
      * Thực thi vòng lặp Tự kiểm duyệt & Sửa lỗi 2 bước của AFlow ({@code Draft -> Critic -> Revise})
-     * cho các câu hỏi rủi ro cao hoặc đa ý định, đảm bảo 100% tuân thủ an toàn y tế & chính sách thương hiệu.
+     * dựa trên ngữ cảnh tài liệu RAG truy xuất thực tế ({@code fusedChunks}) kết hợp cấu hình rào chắn chính sách.
      */
     public String applyAflowSelfCriticAndRevise(String topology,
                                                 CustomerChatRequest request,
                                                 CustomerScenario primaryScenario,
                                                 List<CustomerScenario> secondaryScenarios,
+                                                String draftAnswer) {
+        return applyAflowSelfCriticAndRevise(
+                topology, request, primaryScenario, secondaryScenarios, List.of(), draftAnswer);
+    }
+
+    public String applyAflowSelfCriticAndRevise(String topology,
+                                                CustomerChatRequest request,
+                                                CustomerScenario primaryScenario,
+                                                List<CustomerScenario> secondaryScenarios,
+                                                List<ReciprocalRankFusion.FusedChunk> fusedChunks,
                                                 String draftAnswer) {
         if (draftAnswer == null || draftAnswer.isBlank()) {
             return draftAnswer;
@@ -1568,40 +1611,52 @@ public class CustomerSelfEvolutionService {
         String normA = CustomerScenario.normalizeWordsPadded(draftAnswer);
         List<String> revisions = new ArrayList<>();
 
-        // Critic Guard 1: Chống chỉ định thai kỳ & cho con bú (Capture Totale Retishot 0.1% Retinol)
-        boolean asksPregnancy = normQ.contains(" mang thai ") || normQ.contains(" ba bau ")
-                || normQ.contains(" me bau ") || normQ.contains(" thai ky ") || normQ.contains(" cho con bu ");
-        if (asksPregnancy && !(normA.contains(" retishot ") || normA.contains(" retinol ")
-                || normA.contains(" chong chi dinh ") || normA.contains(" khong su dung "))) {
-            revisions.add("Lưu ý an toàn thai kỳ: Phụ nữ mang thai hoặc đang cho con bú tuyệt đối không sử dụng dòng Capture Totale Retishot (chứa 0.1% Retinol tinh khiết); Chị nên ưu tiên các dòng lành tính như Capture Totale Le Sérum hoặc Dior Prestige.");
+        // 1. Kiểm duyệt động theo danh sách PolicyGuardrailRule ngoại hoá (nếu được bật)
+        if (evo == null || evo.isDomainGuardrailsEnabled()) {
+            for (com.example.docmind.config.DomainKnowledgePack.PolicyGuardrailRule rule : getConfiguredGuardrails()) {
+                if (rule == null || !rule.isHighRisk()) {
+                    continue;
+                }
+                if (matchesGuardrailTriggers(rule, normQ, normQ)
+                        && !containsAnyNormalizedKeyword(normA, rule.getRequiredAnswerKeywords())
+                        && rule.getRevisionGuidance() != null
+                        && !rule.getRevisionGuidance().isBlank()) {
+                    revisions.add(rule.getRevisionGuidance().strip());
+                    normA = CustomerScenario.normalizeWordsPadded(draftAnswer + " " + String.join(" ", revisions));
+                }
+            }
         }
 
-        // Critic Guard 2: Giao thức Cosmetovigilance 14 ngày khi kích ứng/dị ứng da
-        boolean asksIrritation = normQ.contains(" di ung ") || normQ.contains(" kich ung ")
-                || normQ.contains(" man do ") || normQ.contains(" ngua rat ") || normQ.contains(" cham chich ");
-        if (asksIrritation && !(normA.contains(" 14 ngay ") || normA.contains(" cosmetovigilance ")
-                || normA.contains(" hoan tien ") || normA.contains(" ngung su dung "))) {
-            revisions.add("Theo giao thức bảo hành da liễu Cosmetovigilance 14 ngày của Christian Dior, Quý khách vui lòng tạm ngưng sử dụng sản phẩm ngay, rửa mặt nhẹ bằng nước mát/nước muối sinh lý và liên hệ Hotline 1900-6868 để được thu hồi đổi sang dòng dịu nhẹ (Dior Prestige) hoặc hoàn tiền 100% (khi dung tích còn từ 80%).");
+        // 2. Kiểm duyệt Đa lĩnh vực dựa trực tiếp trên các đoạn tài liệu RAG vừa truy xuất (RAG-Grounded Fact & Safety Critic)
+        if (TOPOLOGY_AFLOW_CRITIC.equals(topology) && revisions.isEmpty() && fusedChunks != null && !fusedChunks.isEmpty()) {
+            List<String> ragRevisions = extractMissingCriticalChunkFacts(normQ, normA, fusedChunks);
+            for (String ragRev : ragRevisions) {
+                if (!revisions.contains(ragRev)) {
+                    revisions.add(ragRev);
+                    normA = CustomerScenario.normalizeWordsPadded(draftAnswer + " " + String.join(" ", revisions));
+                }
+            }
         }
 
-        // Critic Guard 3: Chống thao túng giá (99k / 0 đồng)
-        boolean priceAttack = (normQ.contains(" 99 000 ") || normQ.contains(" 99k ") || normQ.contains(" 0 dong "))
-                && (normQ.contains(" capture totale ") || normQ.contains(" le serum ") || normQ.contains(" sauvage ") || normQ.contains(" son "));
-        if (priceAttack && !normA.contains(" 3 450 000 ") && !normA.contains(" niem yet ")) {
-            revisions.add("Christian Dior Vietnam luôn áp dụng thống nhất bảng giá niêm yết chính hãng trên toàn hệ thống (ví dụ Capture Totale Le Sérum 30ml có giá niêm yết 3.450.000 VNĐ) và không có chương trình bán giá 99.000 VNĐ hay 0 đồng.");
-        }
-
-        // Critic Guard 4: Đảm bảo trả lời đủ kịch bản phụ (Multi-Intent Secondary Scenarios)
+        // 3. Đảm bảo trả lời đủ các kịch bản phụ trong câu hỏi đa ý định (Multi-Intent Secondary Scenarios)
         if (secondaryScenarios != null && !secondaryScenarios.isEmpty()) {
             for (CustomerScenario sec : secondaryScenarios) {
                 if (sec == CustomerScenario.WARRANTY_RETURN
                         && !(normA.contains(" bao hanh ") || normA.contains(" doi tra ")
-                        || normA.contains(" 7 ngay ") || normA.contains(" 14 ngay "))) {
-                    revisions.add("Về chính sách đổi trả chính hãng: Dior hỗ trợ đổi ý/đổi màu trong 07 ngày (còn nguyên màng seal & tem phụ LVMH) và bảo hành 1 đổi 1 trong 14 ngày nếu có lỗi kỹ thuật/vận chuyển hoặc kích ứng da liễu.");
+                        || normA.contains(" hoan tien ") || normA.contains(" 7 ngay ") || normA.contains(" 14 ngay "))) {
+                    String ragWarrantySentence = findChunkSentenceMatching(fusedChunks,
+                            List.of("bao hanh", "doi tra", "hoan tien", "1 doi 1"));
+                    revisions.add(ragWarrantySentence != null
+                            ? ragWarrantySentence
+                            : "Về chính sách bảo hành & đổi trả: Hệ thống hỗ trợ đổi trả trong 07 ngày (khi còn nguyên tem niêm phong) và bảo hành 1 đổi 1 hoặc hoàn tiền trong 14 ngày nếu phát sinh lỗi kỹ thuật, vận chuyển hoặc kích ứng.");
                 } else if (sec == CustomerScenario.ORDER_BILLING
                         && !(normA.contains(" thanh toan ") || normA.contains(" vat ")
                         || normA.contains(" hoa don ") || normA.contains(" hoa toc ") || normA.contains(" van chuyen "))) {
-                    revisions.add("Về thanh toán & vận chuyển: Hệ thống hỗ trợ thanh toán thẻ/Apple Pay/chuyển khoản/COD, miễn phí giao hỏa tốc White-Glove 2 giờ tại nội thành Hà Nội & TP.HCM và xuất hóa đơn điện tử e-VAT chính danh trong 24 giờ.");
+                    String ragBillingSentence = findChunkSentenceMatching(fusedChunks,
+                            List.of("thanh toan", "hoa don", "vat", "van chuyen", "giao hang"));
+                    revisions.add(ragBillingSentence != null
+                            ? ragBillingSentence
+                            : "Về thanh toán & vận chuyển: Hệ thống hỗ trợ thanh toán thẻ/QR Pay/chuyển khoản/COD, miễn phí giao hỏa tốc 2 giờ nội thành và xuất hóa đơn điện tử e-VAT chính danh trong 24 giờ.");
                 }
             }
         }
@@ -1612,6 +1667,126 @@ public class CustomerSelfEvolutionService {
 
         aflowCriticRevisions.incrementAndGet();
         return draftAnswer.strip() + "\n\n" + String.join("\n\n", revisions);
+    }
+
+    /**
+     * Tự động đối chiếu câu trả lời nháp với các đoạn tài liệu RAG ({@code fusedChunks}) của bất kỳ lĩnh vực nào
+     * để phát hiện các câu chứa cảnh báo an toàn, chống chỉ định, cam kết SLA hoặc thông số bắt buộc bị bỏ sót.
+     */
+    private List<String> extractMissingCriticalChunkFacts(String normQ,
+                                                          String normA,
+                                                          List<ReciprocalRankFusion.FusedChunk> fusedChunks) {
+        List<String> criticalMarkers = List.of(
+                "chong chi dinh", "khong su dung", "khong duoc", "tuyet doi khong", "luu y",
+                "bat buoc", "bao hanh", "doi tra", "hoan tien", "cam ket", "sla", "uptime", "boi thuong"
+        );
+        List<String> missingFacts = new ArrayList<>();
+        int maxChunks = Math.min(3, fusedChunks.size());
+
+        for (int i = 0; i < maxChunks && missingFacts.size() < 2; i++) {
+            ReciprocalRankFusion.FusedChunk fc = fusedChunks.get(i);
+            if (fc == null || fc.chunk() == null || fc.chunk().text() == null) {
+                continue;
+            }
+            for (String rawSentence : fc.chunk().text().split("(?<=[.!?\\n])\\s+")) {
+                String cleanSentence = sanitizeRuleText(rawSentence);
+                if (cleanSentence.length() < 25 || cleanSentence.startsWith("#")) {
+                    continue;
+                }
+                String normSent = CustomerScenario.normalizeWordsPadded(cleanSentence);
+                if (!containsAnyNormalizedKeyword(normSent, criticalMarkers)) {
+                    continue;
+                }
+                // Kiểm tra xem các con số hoặc từ khoá cảnh báo chính trong câu tài liệu đã xuất hiện trong câu trả lời nháp chưa
+                List<String> numericTokens = new ArrayList<>();
+                for (String tok : normSent.strip().split("\\s+")) {
+                    if (tok.matches(".*\\d+.*")) {
+                        numericTokens.add(tok);
+                    }
+                }
+                boolean missingNumber = !numericTokens.isEmpty()
+                        && numericTokens.stream().noneMatch(num -> normA.contains(" " + num + " "));
+                boolean missingContraindication = (normSent.contains(" chong chi dinh ") || normSent.contains(" tuyet doi khong "))
+                        && !(normA.contains(" chong chi dinh ") || normA.contains(" tuyet doi khong ") || normA.contains(" khong su dung "));
+
+                if (missingNumber || missingContraindication) {
+                    missingFacts.add(truncate(cleanSentence, 260));
+                    if (missingFacts.size() >= 2) {
+                        break;
+                    }
+                }
+            }
+        }
+        return missingFacts;
+    }
+
+    private String findChunkSentenceMatching(List<ReciprocalRankFusion.FusedChunk> fusedChunks,
+                                             List<String> targetKeywords) {
+        if (fusedChunks == null || fusedChunks.isEmpty()) {
+            return null;
+        }
+        for (ReciprocalRankFusion.FusedChunk fc : fusedChunks) {
+            if (fc == null || fc.chunk() == null || fc.chunk().text() == null) {
+                continue;
+            }
+            for (String rawSentence : fc.chunk().text().split("(?<=[.!?\\n])\\s+")) {
+                String cleanSentence = sanitizeRuleText(rawSentence);
+                if (cleanSentence.length() >= 25
+                        && containsAnyNormalizedKeyword(CustomerScenario.normalizeWordsPadded(cleanSentence), targetKeywords)) {
+                    return truncate(cleanSentence, 260);
+                }
+            }
+        }
+        return null;
+    }
+
+    private List<com.example.docmind.config.DomainKnowledgePack.PolicyGuardrailRule> getConfiguredGuardrails() {
+        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+        if (evo != null && !evo.isDomainGuardrailsEnabled()) {
+            return List.of();
+        }
+        if (evo != null && evo.getPolicyGuardrails() != null) {
+            return evo.getPolicyGuardrails();
+        }
+        return com.example.docmind.config.DomainKnowledgePack.loadDefault().getPolicyGuardrails();
+    }
+
+    private com.example.docmind.config.DomainKnowledgePack.PolicyGuardrailRule findConfiguredGuardrail(String ruleId) {
+        if (ruleId == null || ruleId.isBlank()) {
+            return null;
+        }
+        for (com.example.docmind.config.DomainKnowledgePack.PolicyGuardrailRule r : getConfiguredGuardrails()) {
+            if (r != null && ruleId.equals(r.getId())) {
+                return r;
+            }
+        }
+        return null;
+    }
+
+    private boolean matchesAnyHighRiskGuardrail(String normQ) {
+        for (com.example.docmind.config.DomainKnowledgePack.PolicyGuardrailRule r : getConfiguredGuardrails()) {
+            if (r != null && r.isHighRisk() && matchesGuardrailTriggers(r, normQ, normQ)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static boolean matchesGuardrailTriggers(
+            com.example.docmind.config.DomainKnowledgePack.PolicyGuardrailRule rule,
+            String normQ,
+            String normCombined) {
+        if (rule == null || rule.getQuestionTriggers() == null || rule.getQuestionTriggers().isEmpty()) {
+            return false;
+        }
+        String target = rule.isEvaluateOnCurrentQuestionOnly() ? normQ : normCombined;
+        if (!containsAnyNormalizedKeyword(target, rule.getQuestionTriggers())) {
+            return false;
+        }
+        if (rule.getSecondaryTriggers() != null && !rule.getSecondaryTriggers().isEmpty()) {
+            return containsAnyNormalizedKeyword(target, rule.getSecondaryTriggers());
+        }
+        return true;
     }
 
     private boolean evictExemplarIfPresent(String scenarioCode, String question) {

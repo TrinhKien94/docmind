@@ -41,19 +41,11 @@ public enum CustomerScenario {
                     "muon mua", "dat mua", "tu van mua", "bao gia", "bang gia", "muc gia",
                     "bao nhieu tien", "gia bao nhieu", "tu van goi", "chon goi",
                     "goi basic", "goi pro", "goi enterprise", "chot don", "dat hang",
-                    "kem nen", "son moi", "son duong", "nuoc hoa", "tinh chat", "kem duong",
-                    "sua rua mat", "phan nuoc", "che khuyet diem", "capture totale", "dior prestige",
-                    "dior forever", "dior snow", "rouge dior", "lip glow", "lip maximizer",
-                    "miss dior", "jadore", "sauvage", "undertone", "chon mau", "hop mau nao",
-                    "da dau", "da kho", "da nhay cam", "moi tham", "qua tang", "set qua",
-                    "tang vo", "tang ban gai", "my exclusive dior", "la collection privee", "privee",
-                    "beauty cabin", "hang the"
+                    "chon mau", "hop mau nao", "set qua", "hang the"
             ),
             List.of(
                     "mua", "gia", "khuyen mai", "uu dai", "giam gia", "goi dich vu", "san pham",
-                    "son", "serum", "cushion", "skincare", "makeup", "matte", "skin glow",
-                    "edp", "edt", "parfum", "elixir", "loyalty", "hang thanh vien",
-                    "white", "silver", "gold", "platinum"
+                    "loyalty", "hang thanh vien", "qua tang"
             )
     ),
 
@@ -79,15 +71,10 @@ public enum CustomerScenario {
             List.of(
                     "cach su dung", "huong dan su dung", "kich hoat", "ho tro ky thuat",
                     "khong vao duoc", "su dung dich vu", "nang cap goi", "cai dat", "cau hinh",
-                    "chu trinh", "routine", "thu tu thoa", "cach thoa", "cach dung", "layering",
-                    "thay loi", "loi refill", "kiem tra batch", "batch code", "check batch", "ma lo",
-                    "han su dung", "phu nu mang thai", "mang thai", "ba bau", "me bau", "thai ky",
-                    "cho con bu", "sau sinh", "bau bi", "co bau", "bau dung duoc khong",
-                    "khac ten", "khac chu", "engraving", "cach bao quan"
+                    "chu trinh", "cach dung", "han su dung", "cach bao quan"
             ),
             List.of(
-                    "huong dan", "tich hop", "su co", "dang dung", "tai khoan", "ky thuat",
-                    "refill", "bao quan", "tay trang", "chong nang", "retishot", "retinol"
+                    "huong dan", "tich hop", "su co", "dang dung", "tai khoan", "ky thuat", "bao quan"
             )
     ),
 
@@ -113,14 +100,10 @@ public enum CustomerScenario {
             List.of(
                     "bao hanh", "doi tra", "hoan tien", "khieu nai", "bi hong", "bi loi",
                     "1 doi 1", "boi thuong", "loi san pham", "loi dich vu",
-                    "di ung", "kich ung", "man do", "ngua rat", "cham chich", "noi mun",
-                    "gay son", "chay dau", "do mo hoi", "hong voi xit", "voi xit", "ket xoay", "airless pump",
-                    "doi y", "try first", "7 ngay", "14 ngay",
-                    "hang gia", "chinh hang", "tem phu", "cosmetovigilance", "5r02", "4n12", "6p01"
+                    "doi y", "7 ngay", "14 ngay", "hang gia", "chinh hang"
             ),
             List.of(
-                    "warranty", "refund", "return", "complaint", "doi mau", "doi mui", "vo chai", "ro ri",
-                    "auth", "fake", "xach tay"
+                    "warranty", "refund", "return", "complaint"
             )
     ),
 
@@ -144,15 +127,14 @@ public enum CustomerScenario {
                     "van_chuyen", "vanchuyen", "hoa_don", "hoadon"
             ),
             List.of(
-                    "thanh toan", "chuyen khoan", "hoa don", "xuat vat", "thue vat",
+                    "thanh toan", "chuyen khoan", "hoa don", "xuat hoa don", "hoa don vat", "xuat vat", "thue vat", "vat",
                     "van chuyen", "giao hang", "phi giao", "phi ship", "ship cod", "tra cuu don",
                     "hoa toc", "giao nhanh 2h", "2 gio", "2h", "freeship", "mien phi van chuyen", "tra gop",
-                    "dat coc", "hop qua", "goi qua", "thiep chuc", "mau thu", "dong goi",
-                    "cach nhiet", "click and collect"
+                    "dat coc", "hop qua", "goi qua", "thiep chuc", "dong goi"
             ),
             List.of(
                     "don hang", "cod", "ship", "payment", "invoice", "billing", "shipping",
-                    "vietqr", "the tin dung", "sample"
+                    "vietqr", "the tin dung"
             )
     ),
 
@@ -274,7 +256,20 @@ public enum CustomerScenario {
         if (cfg != null && cfg.getHighKeywords() != null && !cfg.getHighKeywords().isEmpty()) {
             return cfg.getHighKeywords();
         }
-        return defaultHighKeywords;
+        boolean includeDomainPack = props == null || props.getEvolution() == null
+                || props.getEvolution().isDomainGuardrailsEnabled();
+        if (!includeDomainPack) {
+            return defaultHighKeywords;
+        }
+        com.example.docmind.config.DomainKnowledgePack.ScenarioKeywordExtension ext =
+                com.example.docmind.config.DomainKnowledgePack.loadDefault().getScenarioKeywords().get(code);
+        if (ext == null || ext.getHighKeywords() == null || ext.getHighKeywords().isEmpty()) {
+            return defaultHighKeywords;
+        }
+        java.util.List<String> merged = new java.util.ArrayList<>(defaultHighKeywords.size() + ext.getHighKeywords().size());
+        merged.addAll(defaultHighKeywords);
+        merged.addAll(ext.getHighKeywords());
+        return merged;
     }
 
     public List<String> mediumKeywords(CustomerSupportProperties props) {
@@ -282,7 +277,20 @@ public enum CustomerScenario {
         if (cfg != null && cfg.getMediumKeywords() != null && !cfg.getMediumKeywords().isEmpty()) {
             return cfg.getMediumKeywords();
         }
-        return defaultMediumKeywords;
+        boolean includeDomainPack = props == null || props.getEvolution() == null
+                || props.getEvolution().isDomainGuardrailsEnabled();
+        if (!includeDomainPack) {
+            return defaultMediumKeywords;
+        }
+        com.example.docmind.config.DomainKnowledgePack.ScenarioKeywordExtension ext =
+                com.example.docmind.config.DomainKnowledgePack.loadDefault().getScenarioKeywords().get(code);
+        if (ext == null || ext.getMediumKeywords() == null || ext.getMediumKeywords().isEmpty()) {
+            return defaultMediumKeywords;
+        }
+        java.util.List<String> merged = new java.util.ArrayList<>(defaultMediumKeywords.size() + ext.getMediumKeywords().size());
+        merged.addAll(defaultMediumKeywords);
+        merged.addAll(ext.getMediumKeywords());
+        return merged;
     }
 
     public String defaultEvolutionGuideline(CustomerSupportProperties props, boolean hasRagChunks) {

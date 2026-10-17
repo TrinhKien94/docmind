@@ -186,12 +186,12 @@ public class CustomerChatService {
         String interactionId = evolutionService.recordAndEvolveAfterChat(
                 request, scenario, secondaryScenarios, answer, fused, modelName);
 
-        // 7) AFlow Self-Critic & Auto-Revise: tự phản biện và hoàn thiện bản nháp trước khi gửi tới khách hàng.
+        // 7) AFlow Self-Critic & Auto-Revise: tự phản biện dựa trên ngữ cảnh RAG (fused) và hoàn thiện bản nháp trước khi gửi tới khách hàng.
         if (evolutionService != null && answer != null
                 && !answer.startsWith("[stub-llm]")
                 && !modelName.toLowerCase(java.util.Locale.ROOT).contains("stub")) {
             answer = evolutionService.applyAflowSelfCriticAndRevise(
-                    workflowTopology, request, scenario, secondaryScenarios, answer);
+                    workflowTopology, request, scenario, secondaryScenarios, fused, answer);
         }
         log.info("stage=customer-chat engine={} topology={} scenario={} fused_chunks={} applied_guidelines={}",
                 modelName, workflowTopology, scenario.code(), fused.size(), activeGuidelines.size());
@@ -444,71 +444,25 @@ public class CustomerChatService {
         return "auto".equals(norm);
     }
 
-    private static boolean isPromptInjection(String normQ) {
-        return normQ.contains("bo qua moi huong dan") || normQ.contains("bo qua moi chi thi")
-                || normQ.contains("ignore all") || normQ.contains("system prompt")
-                || normQ.contains("in toan bo") || normQ.contains("in ra prompt")
-                || normQ.contains("developer mode") || normQ.contains("jailbreak")
-                || normQ.contains("dong vai bot tu do") || normQ.contains("khong duoc nhac den my pham dior");
-    }
-
-    private static boolean isPriceTamperingAttack(String normQ) {
-        return (normQ.contains("99 000") || normQ.contains("99k") || normQ.contains("0 dong")
-                || normQ.contains("mien phi cho toi") || normQ.contains("ha gia"))
-                && (normQ.contains("capture totale") || normQ.contains("le serum")
-                || normQ.contains("sauvage") || normQ.contains("son") || normQ.contains("kem nen"));
-    }
-
-    private static boolean isMaliciousPregnancyOverride(String normQ) {
-        return normQ.contains("bac si da dong y") && normQ.contains("retishot")
-                && (normQ.contains("mang thai") || normQ.contains("bau"));
-    }
-
-    private static boolean isPregnancySkincareQuery(String normCombined) {
-        boolean isPregnancyQuery = normCombined.contains("mang thai") || normCombined.contains("ba bau")
-                || normCombined.contains("me bau") || normCombined.contains("thai ky")
-                || normCombined.contains("cho con bu") || normCombined.contains("sau sinh")
-                || normCombined.contains("bau bi") || normCombined.contains("co bau");
-        boolean touchesRetinolOrSerum = normCombined.contains("retishot") || normCombined.contains("retinol")
-                || normCombined.contains("serum") || normCombined.contains("tinh chat")
-                || normCombined.contains("chong lao hoa") || normCombined.contains("anti aging")
-                || normCombined.contains("loai do") || normCombined.contains("san pham nay")
-                || normCombined.contains("skincare") || normCombined.contains("kem");
-        return isPregnancyQuery && touchesRetinolOrSerum;
-    }
-
     private String synthesizeDomainGuidance(String normQ, String normCombined) {
-        if (isPriceTamperingAttack(normQ) || isMaliciousPregnancyOverride(normQ) || isPromptInjection(normQ)) {
-            return "Christian Dior Vietnam luôn cam kết minh bạch bảng giá niêm yết chính hãng (ví dụ Tinh chất Capture Totale Le Sérum 30ml có giá niêm yết 3.450.000 VNĐ, không có mức giá 99.000 VNĐ) và tuân thủ nghiêm ngặt quy chuẩn an toàn y tế: tuyệt đối chống chỉ định dòng Capture Totale Retishot (0.1% Retinol tinh khiết) cho phụ nữ mang thai hoặc đang cho con bú.";
+        CustomerSupportProperties.Evolution evo = customerProps.getEvolution();
+        if (evo != null && !evo.isDomainGuardrailsEnabled()) {
+            return "";
         }
-        if (isPregnancySkincareQuery(normCombined)) {
-            return "Trong giai đoạn thai kỳ và cho con bú, Chị lưu ý tuyệt đối không sử dụng dòng tinh chất Capture Totale Retishot (vì chứa 0.1% Retinol tinh khiết) để đảm bảo an toàn tối đa cho mẹ và bé. Thay vào đó, Chị có thể yên tâm sử dụng Tinh chất Capture Totale Le Sérum (30ml: 3.450.000 VNĐ / 50ml: 4.650.000 VNĐ) hoặc Tinh dầu hoa hồng Dior Prestige La Micro-Huile de Rose (30ml: 7.400.000 VNĐ) lành tính cho mẹ bầu.";
+        List<com.example.docmind.config.DomainKnowledgePack.PolicyGuardrailRule> guardrails =
+                (evo != null && evo.getPolicyGuardrails() != null)
+                        ? evo.getPolicyGuardrails()
+                        : com.example.docmind.config.DomainKnowledgePack.loadDefault().getPolicyGuardrails();
+        if (guardrails == null || guardrails.isEmpty()) {
+            return "";
         }
-        if (normCombined.contains("di ung") || normCombined.contains("kich ung")
-                || normCombined.contains("man do") || normCombined.contains("ngua rat")
-                || normCombined.contains("cham chich") || normCombined.contains("noi mun")
-                || normCombined.contains("cosmetovigilance")) {
-            return "Theo giao thức bảo hành da liễu Cosmetovigilance chính hãng trong 14 ngày, Chị hãy tạm ngưng sử dụng sản phẩm ngay và rửa nhẹ bằng nước mát hoặc nước muối sinh lý; dù sản phẩm đã mở nắp bên em vẫn hỗ trợ thu hồi đổi sang dòng dịu nhẹ phục hồi như Dior Prestige hoặc hoàn tiền 100% nếu dung tích còn từ 80% trở lên.";
-        }
-        if (normCombined.contains("gay son") || normCombined.contains("do mo hoi")
-                || normCombined.contains("chay dau") || normCombined.contains("hong voi xit")
-                || normCombined.contains("vo chai") || normCombined.contains("ro ri")
-                || normCombined.contains("ket xoay") || normCombined.contains("airless pump")) {
-            return "Với lỗi kỹ thuật như gãy thân son, đổ mồ hôi do sốc nhiệt hoặc hỏng vòi xịt trong vận chuyển, Dior áp dụng chính sách bảo hành đổi trả 1 đổi 1 sang sản phẩm mới nguyên seal miễn phí trong vòng 14 ngày kể từ khi nhận hàng.";
-        }
-        if (normCombined.contains("doi y") || normCombined.contains("doi mau")
-                || normCombined.contains("doi mui") || normCombined.contains("try first")
-                || normCombined.contains("7 ngay")) {
-            return "Dior hỗ trợ đổi ý, đổi màu hoặc đổi mùi trong vòng 07 ngày kể từ khi nhận hàng khi sản phẩm Full-size còn nguyên màng seal nilon và tem phụ LVMH (với chương trình Try First Sample, Quý khách được mở ống sample 1.2ml thử trước mà vẫn giữ nguyên quyền đổi trả hộp chính trong 7 ngày, trừ sản phẩm đã khắc tên laser).";
-        }
-        if (normQ.contains("batch code") || normQ.contains("ma lo")
-                || normQ.contains("5r02") || normQ.contains("4n12") || normQ.contains("6p01")
-                || normQ.contains("hang gia") || normQ.contains("auth") || normQ.contains("fake")
-                || normQ.contains("tem phu") || normQ.contains("xach tay")) {
-            return "Toàn bộ sản phẩm Christian Dior do LVMH Việt Nam nhập khẩu chính ngạch đều đáp ứng 5 tiêu chuẩn xác thực: (1) Tem phụ tiếng Việt có số công bố Bộ Y tế, (2) Mã Batch Code 4 ký tự laser trùng khớp vỏ hộp, (3) Màng seal ép nhiệt, (4) Hóa đơn điện tử e-VAT chính danh, và (5) Ký hiệu PAO / hạn dùng 36 tháng rõ ràng.";
-        }
-        if (normCombined.contains("khac ten") || normCombined.contains("engraving") || normCombined.contains("khac chu")) {
-            return "Xưởng Dior Engraving Studio hỗ trợ khắc tên laser cá nhân hoá miễn phí tối đa 12 ký tự cho nước hoa từ 50ml trở lên hoặc son Rouge Dior (hoàn thiện trong 30–45 phút; sản phẩm đã khắc tên không áp dụng đổi ý).";
+        for (com.example.docmind.config.DomainKnowledgePack.PolicyGuardrailRule rule : guardrails) {
+            if (rule != null
+                    && CustomerSelfEvolutionService.matchesGuardrailTriggers(rule, normQ, normCombined)
+                    && rule.getRevisionGuidance() != null
+                    && !rule.getRevisionGuidance().isBlank()) {
+                return rule.getRevisionGuidance().strip();
+            }
         }
         return "";
     }

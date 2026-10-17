@@ -305,20 +305,46 @@ public class CustomerSupportProperties {
                 "y minh la", "hoi lai", "khong dung", "chung chung", "thieu", "te qua"
         ));
 
-        /** Bật/tắt kiểm tra an toàn chống chỉ định thai kỳ khi đánh giá chất lượng tư vấn mỹ phẩm. */
+        /** Bật/tắt kiểm tra an toàn chống chỉ định đối tượng nhạy cảm khi đánh giá chất lượng tư vấn. */
         private boolean pregnancySafetyCheckEnabled = true;
 
-        /** Từ khoá nhận diện câu hỏi liên quan đến phụ nữ mang thai hoặc cho con bú. */
+        /** Từ khoá nhận diện câu hỏi liên quan đến đối tượng nhạy cảm (phụ nữ mang thai hoặc cho con bú). */
         private List<String> pregnancyTriggerKeywords = new ArrayList<>(List.of(
                 "mang thai", "ba bau", "me bau", "thai ky", "cho con bu", "bau 3 thang",
                 "bau 4 thang", "bau 5 thang", "bau dung duoc khong", "co bau"
         ));
 
-        /** Từ khoá bắt buộc phải có trong câu trả lời tư vấn skincare cho phụ nữ mang thai. */
-        private List<String> pregnancySafetyRequiredKeywords = new ArrayList<>(List.of(
-                "retishot", "retinol", "chong chi dinh", "khong su dung", "khong dung",
-                "tranh", "an toan", "lanh tinh"
-        ));
+        /** Từ khoá xác nhận cảnh báo an toàn / chống chỉ định trong câu trả lời tư vấn. */
+        private List<String> pregnancySafetyRequiredKeywords = new ArrayList<>(
+                defaultSafetyRequiredKeywords()
+        );
+
+        /** Bật/tắt nạp gói quy tắc rào chắn chính sách & từ đồng nghĩa theo miền từ domainKnowledgePackPath. */
+        private boolean domainGuardrailsEnabled = true;
+
+        /** Đường dẫn tới tệp JSON chứa gói tri thức miền (classpath hoặc filesystem). */
+        private String domainKnowledgePackPath = "domain-knowledge-pack.json";
+
+        /** Từ điển mở rộng truy vấn khởi tạo (nạp từ gói tri thức miền hoặc cấu hình). */
+        private Map<String, String> seedQueryExpansions = new LinkedHashMap<>(
+                DomainKnowledgePack.loadDefault().getSeedQueryExpansions()
+        );
+
+        /** Danh sách các quy tắc rào chắn chính sách & tự kiểm duyệt AFlow (nạp từ gói tri thức miền hoặc cấu hình). */
+        private List<DomainKnowledgePack.PolicyGuardrailRule> policyGuardrails = new ArrayList<>(
+                DomainKnowledgePack.loadDefault().getPolicyGuardrails()
+        );
+
+        private static List<String> defaultSafetyRequiredKeywords() {
+            for (DomainKnowledgePack.PolicyGuardrailRule rule : DomainKnowledgePack.loadDefault().getPolicyGuardrails()) {
+                if ("pregnancy-contraindication-safety".equals(rule.getId())
+                        && rule.getRequiredAnswerKeywords() != null
+                        && !rule.getRequiredAnswerKeywords().isEmpty()) {
+                    return rule.getRequiredAnswerKeywords();
+                }
+            }
+            return List.of("chong chi dinh", "khong su dung", "khong dung", "tranh", "an toan", "lanh tinh");
+        }
 
         /**
          * Prompt hệ thống cho bộ tối ưu hoá TextGrad (tham khảo OPTIMIZER_SYSTEM_PROMPT trong EvoAgentX).

@@ -932,6 +932,77 @@ class CustomerChatServiceTest {
                 .anyMatch(g -> "GEPA_CROSSOVER".equals(g.generationMethod()) && g.rule().contains("[GEPA-Crossover]"));
     }
 
+    @Test
+    void domainAgnosticEvolutionWorksAcrossArbitraryIndustriesWithoutHardcodedRules() {
+        CustomerSupportProperties props = new CustomerSupportProperties();
+        props.getEvolution().setPersistToDisk(false);
+        props.getEvolution().setLlmReflectionEnabled(false);
+        // Tắt hoàn toàn gói rào chắn/từ điển mặc định để chứng minh engine hoạt động 100% đa lĩnh vực (Zero-Config)
+        props.getEvolution().setDomainGuardrailsEnabled(false);
+        props.getEvolution().setSeedQueryExpansions(Map.of());
+
+        CustomerSelfEvolutionService evolutionService =
+                new CustomerSelfEvolutionService(props, null, new ObjectMapper());
+
+        // 1. Lúc khởi tạo với seed rỗng, từ điển mở rộng truy vấn hoàn toàn trống (không dính từ khoá ngành hàng nào)
+        assertThat(evolutionService.getStatus().learnedSynonymsCount()).isZero();
+
+        // 2. Giả lập tài liệu RAG của lĩnh vực Hạ tầng Đám mây & Thiết bị Y tế (Cloud GPU & Pacemaker)
+        UUID saasDocId = UUID.randomUUID();
+        RetrievedChunk cloudSlaChunk = new RetrievedChunk(
+                UUID.randomUUID(),
+                saasDocId,
+                List.of("Hạ tầng Cloud GPU", "Cam kết SLA Cluster H100"),
+                List.of(),
+                1,
+                new double[]{0, 0, 10, 10},
+                "Gói Cloud GPU H100 có giá 45.000.000 VNĐ/tháng. Cam kết SLA uptime đạt 99.99% và bồi thường 200% phí dịch vụ nếu xảy ra downtime quá 15 phút. Chính sách hoàn tiền 100% trong 30 ngày đầu thử nghiệm.",
+                0.91
+        );
+        List<ReciprocalRankFusion.FusedChunk> fusedCloudChunks = List.of(
+                new ReciprocalRankFusion.FusedChunk(cloudSlaChunk, 0.91)
+        );
+
+        // 3. Sau 1 lượt tương tác chất lượng cao về "gpu h100", Self-Evolving RAG tự động học từ đồng nghĩa từ headingPath & nội dung chunk
+        evolutionService.recordAndEvolveAfterChat(
+                new CustomerChatRequest("báo giá gpu h100"),
+                CustomerScenario.SALES,
+                List.of(),
+                "Dạ em chào Anh/Chị! Gói Cloud GPU H100 có giá 45.000.000 VNĐ/tháng, cam kết SLA uptime 99.99% ạ. Anh/Chị cần em khởi tạo cluster dùng thử ngay không ạ?",
+                fusedCloudChunks,
+                "cloud-llm"
+        );
+
+        assertThat(evolutionService.getStatus().learnedSynonymsCount()).isGreaterThanOrEqualTo(1);
+        String expandedCloudQuery = evolutionService.expandQueryWithLearnedSynonyms("cho hỏi báo giá gpu h100");
+        assertThat(expandedCloudQuery)
+                .contains("ha tang cloud gpu")
+                .contains("cam ket sla cluster h100");
+
+        // 4. Kiểm tra AFlow RAG-Chunk Grounded Self-Critic: Khách hỏi về sự cố downtime & hoàn tiền nhưng bản nháp bỏ sót con số SLA 99.99% và 30 ngày trong chunk
+        CustomerChatRequest highRiskCloudReq = new CustomerChatRequest(
+                "Nếu cụm server bị downtime mất dữ liệu thì bồi thường thế nào và có được hoàn tiền không?");
+        String cloudTopo = evolutionService.selectWorkflowTopology(
+                highRiskCloudReq, CustomerScenario.WARRANTY_RETURN, List.of());
+        assertThat(cloudTopo).isEqualTo(CustomerSelfEvolutionService.TOPOLOGY_AFLOW_SELF_CRITIC);
+
+        String vagueCloudDraft = "Dạ em chào Anh/Chị! Bên em luôn hỗ trợ kỹ thuật 24/7 khi cụm server gặp sự cố ạ.";
+        String revisedCloudAnswer = evolutionService.applyAflowSelfCriticAndRevise(
+                cloudTopo,
+                highRiskCloudReq,
+                CustomerScenario.WARRANTY_RETURN,
+                List.of(),
+                fusedCloudChunks,
+                vagueCloudDraft
+        );
+
+        // AFlow Self-Critic tự động trích xuất câu chứa cam kết SLA 99.99%, bồi thường 200% và hoàn tiền 30 ngày trực tiếp từ RAG chunk!
+        assertThat(revisedCloudAnswer)
+                .contains("99.99%")
+                .contains("200%")
+                .contains("30 ngày");
+    }
+
     private static boolean isPortListening(String host, int port) {
         try (Socket socket = new Socket()) {
             socket.connect(new InetSocketAddress(host, port), 600);
